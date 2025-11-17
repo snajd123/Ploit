@@ -130,21 +130,34 @@ class FlagCalculator:
         faced_raise = any(a.facing_bet for a in voluntary_actions)
         flags.faced_raise = faced_raise
 
-        # 3-bet: Raised after someone else raised
+        # 3-bet: Check if player made the 2nd raise
         if raise_count >= 2:
-            flags.faced_three_bet = self._player_faced_raise_number(player_name, 2)
+            made_3bet = self._player_made_raise_number(player_name, 2)
+            flags.made_three_bet = made_3bet
 
-            if flags.faced_three_bet:
-                # Folded to 3-bet
-                if any(a.action_type == ActionType.FOLD for a in voluntary_actions):
-                    flags.folded_to_three_bet = True
-                # Called 3-bet
-                elif any(a.action_type == ActionType.CALL for a in voluntary_actions):
-                    flags.called_three_bet = True
-                # Made 3-bet
-                elif any(a.action_type == ActionType.RAISE for a in voluntary_actions):
-                    made_3bet = self._player_made_raise_number(player_name, 2)
-                    flags.made_three_bet = made_3bet
+            # Check if player faced a 3-bet (faced the 2nd raise)
+            # Note: A player can both make a 3-bet AND face a 4-bet in the same hand
+            faced_3bet = self._player_faced_raise_number(player_name, 2)
+            flags.faced_three_bet = faced_3bet
+
+            if faced_3bet:
+                # How did they respond to the 3-bet?
+                # Get actions AFTER they faced the 3-bet
+                preflop_all = [a for a in self.hand.actions if a.street == Street.PREFLOP]
+                raises = [a for a in preflop_all if a.action_type == ActionType.RAISE and a.is_aggressive]
+
+                if len(raises) >= 2:
+                    second_raise_idx = preflop_all.index(raises[1])
+                    actions_after_3bet = [a for a in preflop_all[second_raise_idx + 1:]
+                                         if a.player_name == player_name and
+                                         a.action_type not in [ActionType.POST_SB, ActionType.POST_BB]]
+
+                    if actions_after_3bet:
+                        last_action = actions_after_3bet[-1]
+                        if last_action.action_type == ActionType.FOLD:
+                            flags.folded_to_three_bet = True
+                        elif last_action.action_type == ActionType.CALL:
+                            flags.called_three_bet = True
 
         # 4-bet
         if raise_count >= 3:
@@ -268,12 +281,15 @@ class FlagCalculator:
             if facing_bet:
                 setattr(flags, f'faced_cbet_{street}', True)
 
-                # How did they respond?
-                if any(a.action_type == ActionType.FOLD for a in street_actions):
+                # How did they respond? Check in order of severity (can have multiple responses)
+                # e.g., player can call then raise (check-raise), so check last action
+                last_action = street_actions[-1]
+
+                if last_action.action_type == ActionType.FOLD:
                     setattr(flags, f'folded_to_cbet_{street}', True)
-                elif any(a.action_type == ActionType.CALL for a in street_actions):
+                elif last_action.action_type == ActionType.CALL:
                     setattr(flags, f'called_cbet_{street}', True)
-                elif any(a.action_type == ActionType.RAISE for a in street_actions):
+                elif last_action.action_type == ActionType.RAISE:
                     setattr(flags, f'raised_cbet_{street}', True)
 
     def _calculate_check_raise_flags(self, player_name: str, flags: PlayerHandSummaryFlags) -> None:
@@ -418,16 +434,27 @@ class FlagCalculator:
         """
         # Check if hand text contains SHOW DOWN
         if "*** SHOW DOWN ***" in self.hand.raw_text:
-            # Check if this player showed cards
-            # Pattern: "PlayerName: shows [cards]" or in summary
-            if player_name in self.hand.raw_text:
-                # Simplified: if player saw river and showdown happened, they went to showdown
-                if flags.saw_river:
+            # Check if this player showed cards (more specific pattern)
+            shows_pattern = f"{player_name}: shows ["
+            mucked_pattern = f"{player_name}: mucks ["
+
+            # Player went to showdown if they showed or mucked cards
+            if shows_pattern in self.hand.raw_text or mucked_pattern in self.hand.raw_text:
+                flags.went_to_showdown = True
+            # Also check if they saw river but didn't fold (they went to showdown passively)
+            elif flags.saw_river:
+                # Check if they didn't fold on river
+                river_actions = [a for a in self.hand.actions
+                                if a.street == Street.RIVER and a.player_name == player_name]
+                folded_river = any(a.action_type == ActionType.FOLD for a in river_actions)
+                if not folded_river:
                     flags.went_to_showdown = True
 
         # Won at showdown: check if they collected from pot
+        # Check both "collected" and "wins" patterns
         collect_pattern = f"{player_name} collected"
-        if collect_pattern in self.hand.raw_text and flags.went_to_showdown:
+        wins_pattern = f"{player_name} wins"
+        if (collect_pattern in self.hand.raw_text or wins_pattern in self.hand.raw_text) and flags.went_to_showdown:
             flags.won_at_showdown = True
 
     def _calculate_profit_loss(self, player_name: str, flags: PlayerHandSummaryFlags) -> None:
