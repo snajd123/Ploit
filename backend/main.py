@@ -5,7 +5,7 @@ Provides REST API endpoints for:
 - Uploading hand history files
 - Querying player statistics
 - Database overview
-- Claude AI integration (placeholder for Phase 6)
+- Claude AI integration for natural language queries
 """
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, status
@@ -20,7 +20,7 @@ import time
 import logging
 
 from backend.database import get_db, check_db_connection
-from backend.services import DatabaseService
+from backend.services import DatabaseService, ClaudeService
 from backend.parser import PokerStarsParser
 from backend.config import get_settings
 
@@ -122,6 +122,28 @@ class ErrorResponse(BaseModel):
     """Error response model"""
     detail: str
     timestamp: datetime
+
+
+class ClaudeQueryRequest(BaseModel):
+    """Request model for Claude AI query"""
+    query: str = Field(..., description="Natural language question about poker data", min_length=1)
+    conversation_history: Optional[List[Dict[str, str]]] = Field(None, description="Optional conversation history for context")
+
+
+class ClaudeToolCall(BaseModel):
+    """Tool call information"""
+    tool: str
+    input: Dict[str, Any]
+    result: Dict[str, Any]
+
+
+class ClaudeQueryResponse(BaseModel):
+    """Response model for Claude AI query"""
+    success: bool
+    response: str
+    tool_calls: Optional[List[ClaudeToolCall]] = None
+    usage: Optional[Dict[str, int]] = None
+    error: Optional[str] = None
 
 
 # ========================================
@@ -438,27 +460,71 @@ async def get_database_schema():
 
 @app.post(
     "/api/query/claude",
+    response_model=ClaudeQueryResponse,
     tags=["Claude AI"],
-    summary="Query Claude AI (Placeholder)",
-    description="Natural language query to Claude AI (Phase 6)"
+    summary="Query Claude AI",
+    description="Ask natural language questions about poker data and receive strategic analysis"
 )
-async def query_claude(request: Dict[str, str]):
+async def query_claude(
+    request: ClaudeQueryRequest,
+    db: Session = Depends(get_db)
+):
     """
     Query Claude AI with natural language.
 
-    This is a placeholder endpoint for Phase 6.
+    Users can ask ANY question about their poker database and receive:
+    - Sophisticated statistical analysis
+    - Strategic recommendations
+    - Player type classifications
+    - Exploit suggestions based on composite metrics
+
+    Example queries:
+    - "Who are the most exploitable players at NL50?"
+    - "Show me all TAGs with high pressure vulnerability"
+    - "Which players fold too much to 3-bets from the button?"
+    - "Analyze my performance against LAG players"
 
     Args:
-        request: Dictionary with 'query' key
+        request: ClaudeQueryRequest with query and optional conversation history
+        db: Database session (injected)
 
     Returns:
-        Placeholder response
+        ClaudeQueryResponse with analysis and recommendations
     """
-    return {
-        "response": "Claude AI integration will be implemented in Phase 6",
-        "query": request.get("query", ""),
-        "status": "placeholder"
-    }
+    try:
+        logger.info(f"Processing Claude query: {request.query[:100]}...")
+
+        # Initialize Claude service
+        claude_service = ClaudeService(db)
+
+        # Process query
+        result = claude_service.query(
+            user_query=request.query,
+            conversation_history=request.conversation_history
+        )
+
+        # Convert tool calls to Pydantic models if present
+        tool_calls = None
+        if result.get("tool_calls"):
+            tool_calls = [
+                ClaudeToolCall(**tc) for tc in result["tool_calls"]
+            ]
+
+        return ClaudeQueryResponse(
+            success=result["success"],
+            response=result.get("response", ""),
+            tool_calls=tool_calls,
+            usage=result.get("usage"),
+            error=result.get("error")
+        )
+
+    except Exception as e:
+        logger.error(f"Error processing Claude query: {str(e)}", exc_info=True)
+        return ClaudeQueryResponse(
+            success=False,
+            response="I apologize, but I encountered an error processing your query. Please try rephrasing your question.",
+            error=str(e)
+        )
 
 
 # ========================================

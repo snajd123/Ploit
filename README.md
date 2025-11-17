@@ -135,7 +135,7 @@ See [POKER_APP_PROJECT_PLAN.md](POKER_APP_PROJECT_PLAN.md) for detailed formulas
 - [x] Phase 3: Database Service
 - [x] Phase 4: Statistical Calculator
 - [x] Phase 5: FastAPI Backend
-- [ ] Phase 6: Claude Integration
+- [x] Phase 6: Claude Integration
 - [ ] Phase 7: Frontend Development
 - [ ] Phase 8: Integration & Testing
 - [ ] Phase 9: Deployment
@@ -145,6 +145,7 @@ See [POKER_APP_PROJECT_PLAN.md](POKER_APP_PROJECT_PLAN.md) for detailed formulas
 
 - [Project Plan](POKER_APP_PROJECT_PLAN.md) - Complete technical specification
 - [Development Rules](RULES.md) - Development guidelines and workflow
+- [Claude Integration](backend/services/CLAUDE_INTEGRATION.md) - Natural language query documentation
 - Database Schema - See `backend/database_schema.sql`
 
 ## License
