@@ -77,6 +77,8 @@ class DatabaseService:
                 raw_hand_text=hand.raw_text
             )
             self.session.add(raw_hand)
+            # Flush to catch duplicate hand_id errors before inserting actions
+            self.session.flush()
 
             # Insert hand actions
             for action in hand.actions:
