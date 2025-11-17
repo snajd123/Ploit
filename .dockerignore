@@ -1,0 +1,54 @@
+# Frontend files (not needed for backend container)
+frontend/
+node_modules/
+*.md
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Environment files (use Railway environment variables)
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# Testing
+backend/tests/
+*.coverage
+htmlcov/
+.pytest_cache/
+
+# Documentation
+docs/
+DEPLOY.md
+DEPLOYMENT_SECURITY.md
+POKER_APP_PROJECT_PLAN.md
+RULES.md
+TESTING_GUIDE.md
+
+# Scripts
+deploy.sh
+healthcheck.sh
+
+# Railway/Render configs
+railway.json
+render.yaml
+vercel.json
