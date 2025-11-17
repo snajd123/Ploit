@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Search, ArrowUpDown } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { api } from '../services/api';
 import PlayerBadge from '../components/PlayerBadge';
 
@@ -129,7 +129,7 @@ const PlayersList = () => {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <PlayerBadge playerType={player.player_type} size="sm" />
+                      <PlayerBadge playerType={player.player_type || null} size="sm" />
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {player.total_hands.toLocaleString()}

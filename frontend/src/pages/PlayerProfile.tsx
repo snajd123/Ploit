@@ -37,12 +37,12 @@ const PlayerProfile = () => {
 
   // Prepare composite metrics for radar chart
   const compositeMetrics = [
-    { metric: 'EI', value: player.exploitability_index || 0, fullMark: 100 },
-    { metric: 'PVS', value: player.pressure_vulnerability_score || 0, fullMark: 100 },
-    { metric: 'ACR', value: player.aggression_consistency_ratio || 0, fullMark: 100 },
-    { metric: 'PAI', value: player.positional_awareness_index || 0, fullMark: 100 },
-    { metric: 'BDE', value: player.blind_defense_efficiency || 0, fullMark: 100 },
-    { metric: 'MPS', value: player.multi_street_persistence_score || 0, fullMark: 100 },
+    { metric: 'EI', value: player.exploitability_index ?? 0, fullMark: 100 },
+    { metric: 'PVS', value: player.pressure_vulnerability_score ?? 0, fullMark: 100 },
+    { metric: 'ACR', value: player.aggression_consistency_ratio ?? 0, fullMark: 100 },
+    { metric: 'PAI', value: player.positional_awareness_index ?? 0, fullMark: 100 },
+    { metric: 'BDE', value: player.blind_defense_efficiency ?? 0, fullMark: 100 },
+    { metric: 'MPS', value: player.multi_street_persistence_score ?? 0, fullMark: 100 },
   ];
 
   return (
@@ -62,7 +62,7 @@ const PlayerProfile = () => {
           <div>
             <h1 className="text-3xl font-bold text-gray-900">{player.player_name}</h1>
             <div className="flex items-center space-x-4 mt-3">
-              <PlayerBadge playerType={player.player_type} size="lg" />
+              <PlayerBadge playerType={player.player_type || null} size="lg" />
               <span className="text-sm text-gray-500">
                 {player.total_hands.toLocaleString()} hands
               </span>
@@ -98,49 +98,49 @@ const PlayerProfile = () => {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatCard
             title="VPIP%"
-            value={player.vpip_pct !== null ? `${player.vpip_pct.toFixed(1)}%` : 'N/A'}
+            value={player.vpip_pct !== null && player.vpip_pct !== undefined ? `${player.vpip_pct.toFixed(1)}%` : 'N/A'}
             subtitle="Voluntarily Put $ In Pot"
             color="blue"
           />
           <StatCard
             title="PFR%"
-            value={player.pfr_pct !== null ? `${player.pfr_pct.toFixed(1)}%` : 'N/A'}
+            value={player.pfr_pct !== null && player.pfr_pct !== undefined ? `${player.pfr_pct.toFixed(1)}%` : 'N/A'}
             subtitle="Pre-Flop Raise"
             color="green"
           />
           <StatCard
             title="3-Bet%"
-            value={player.three_bet_pct !== null ? `${player.three_bet_pct.toFixed(1)}%` : 'N/A'}
+            value={player.three_bet_pct !== null && player.three_bet_pct !== undefined ? `${player.three_bet_pct.toFixed(1)}%` : 'N/A'}
             subtitle="3-Bet Percentage"
             color="yellow"
           />
           <StatCard
             title="Fold to 3-Bet%"
-            value={player.fold_to_three_bet_pct !== null ? `${player.fold_to_three_bet_pct.toFixed(1)}%` : 'N/A'}
+            value={player.fold_to_three_bet_pct !== null && player.fold_to_three_bet_pct !== undefined ? `${player.fold_to_three_bet_pct.toFixed(1)}%` : 'N/A'}
             subtitle="Fold to 3-Bet"
             color="red"
           />
           <StatCard
             title="C-Bet Flop%"
-            value={player.cbet_flop_pct !== null ? `${player.cbet_flop_pct.toFixed(1)}%` : 'N/A'}
+            value={player.cbet_flop_pct !== null && player.cbet_flop_pct !== undefined ? `${player.cbet_flop_pct.toFixed(1)}%` : 'N/A'}
             subtitle="Continuation Bet"
             color="blue"
           />
           <StatCard
             title="Fold to C-Bet%"
-            value={player.fold_to_cbet_flop_pct !== null ? `${player.fold_to_cbet_flop_pct.toFixed(1)}%` : 'N/A'}
+            value={player.fold_to_cbet_flop_pct !== null && player.fold_to_cbet_flop_pct !== undefined ? `${player.fold_to_cbet_flop_pct.toFixed(1)}%` : 'N/A'}
             subtitle="Fold to C-Bet"
             color="green"
           />
           <StatCard
             title="WTSD%"
-            value={player.wtsd_pct !== null ? `${player.wtsd_pct.toFixed(1)}%` : 'N/A'}
+            value={player.wtsd_pct !== null && player.wtsd_pct !== undefined ? `${player.wtsd_pct.toFixed(1)}%` : 'N/A'}
             subtitle="Went To Showdown"
             color="yellow"
           />
           <StatCard
             title="W$SD%"
-            value={player.wsd_pct !== null ? `${player.wsd_pct.toFixed(1)}%` : 'N/A'}
+            value={player.wsd_pct !== null && player.wsd_pct !== undefined ? `${player.wsd_pct.toFixed(1)}%` : 'N/A'}
             subtitle="Won $ at Showdown"
             color="gray"
           />
@@ -159,40 +159,40 @@ const PlayerProfile = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <StatCard
             title="Pressure Vulnerability Score"
-            value={player.pressure_vulnerability_score !== null ? player.pressure_vulnerability_score.toFixed(1) : 'N/A'}
+            value={player.pressure_vulnerability_score !== null && player.pressure_vulnerability_score !== undefined ? player.pressure_vulnerability_score.toFixed(1) : 'N/A'}
             subtitle="Fold frequency under pressure"
             icon={<Shield size={24} />}
             color="blue"
           />
           <StatCard
             title="Aggression Consistency Ratio"
-            value={player.aggression_consistency_ratio !== null ? player.aggression_consistency_ratio.toFixed(1) : 'N/A'}
+            value={player.aggression_consistency_ratio !== null && player.aggression_consistency_ratio !== undefined ? player.aggression_consistency_ratio.toFixed(1) : 'N/A'}
             subtitle="Give-up tendency across streets"
             icon={<TrendingUp size={24} />}
             color="green"
           />
           <StatCard
             title="Positional Awareness Index"
-            value={player.positional_awareness_index !== null ? player.positional_awareness_index.toFixed(1) : 'N/A'}
+            value={player.positional_awareness_index !== null && player.positional_awareness_index !== undefined ? player.positional_awareness_index.toFixed(1) : 'N/A'}
             subtitle="Position-specific play quality"
             icon={<Target size={24} />}
             color="yellow"
           />
           <StatCard
             title="Blind Defense Efficiency"
-            value={player.blind_defense_efficiency !== null ? player.blind_defense_efficiency.toFixed(1) : 'N/A'}
+            value={player.blind_defense_efficiency !== null && player.blind_defense_efficiency !== undefined ? player.blind_defense_efficiency.toFixed(1) : 'N/A'}
             subtitle="Quality of blind defense"
             color="red"
           />
           <StatCard
             title="Multi-Street Persistence"
-            value={player.multi_street_persistence_score !== null ? player.multi_street_persistence_score.toFixed(1) : 'N/A'}
+            value={player.multi_street_persistence_score !== null && player.multi_street_persistence_score !== undefined ? player.multi_street_persistence_score.toFixed(1) : 'N/A'}
             subtitle="Commitment across streets"
             color="blue"
           />
           <StatCard
             title="Delayed Aggression Coefficient"
-            value={player.delayed_aggression_coefficient !== null ? player.delayed_aggression_coefficient.toFixed(1) : 'N/A'}
+            value={player.delayed_aggression_coefficient !== null && player.delayed_aggression_coefficient !== undefined ? player.delayed_aggression_coefficient.toFixed(1) : 'N/A'}
             subtitle="Check-raise and trap frequency"
             color="green"
           />
