@@ -594,14 +594,85 @@ class DatabaseService:
             if not player_stats:
                 return None
 
-            # Convert to dictionary
+            # Helper to convert Decimal to float
+            def to_float(value):
+                return float(value) if value is not None else None
+
+            # Convert to dictionary with ALL stats
             return {
                 'player_name': player_stats.player_name,
                 'total_hands': player_stats.total_hands,
-                'vpip_pct': float(player_stats.vpip_pct) if player_stats.vpip_pct else None,
-                'pfr_pct': float(player_stats.pfr_pct) if player_stats.pfr_pct else None,
-                # Add all other stats...
-                # (truncated for brevity - would include all fields)
+                # Preflop statistics
+                'vpip_pct': to_float(player_stats.vpip_pct),
+                'pfr_pct': to_float(player_stats.pfr_pct),
+                'limp_pct': to_float(player_stats.limp_pct),
+                'three_bet_pct': to_float(player_stats.three_bet_pct),
+                'fold_to_three_bet_pct': to_float(player_stats.fold_to_three_bet_pct),
+                'four_bet_pct': to_float(player_stats.four_bet_pct),
+                'cold_call_pct': to_float(player_stats.cold_call_pct),
+                'squeeze_pct': to_float(player_stats.squeeze_pct),
+                # Positional VPIP
+                'vpip_utg': to_float(player_stats.vpip_utg),
+                'vpip_hj': to_float(player_stats.vpip_hj),
+                'vpip_mp': to_float(player_stats.vpip_mp),
+                'vpip_co': to_float(player_stats.vpip_co),
+                'vpip_btn': to_float(player_stats.vpip_btn),
+                'vpip_sb': to_float(player_stats.vpip_sb),
+                'vpip_bb': to_float(player_stats.vpip_bb),
+                # Steal and blind defense
+                'steal_attempt_pct': to_float(player_stats.steal_attempt_pct),
+                'fold_to_steal_pct': to_float(player_stats.fold_to_steal_pct),
+                'three_bet_vs_steal_pct': to_float(player_stats.three_bet_vs_steal_pct),
+                # Continuation betting
+                'cbet_flop_pct': to_float(player_stats.cbet_flop_pct),
+                'cbet_turn_pct': to_float(player_stats.cbet_turn_pct),
+                'cbet_river_pct': to_float(player_stats.cbet_river_pct),
+                # Facing cbets
+                'fold_to_cbet_flop_pct': to_float(player_stats.fold_to_cbet_flop_pct),
+                'fold_to_cbet_turn_pct': to_float(player_stats.fold_to_cbet_turn_pct),
+                'fold_to_cbet_river_pct': to_float(player_stats.fold_to_cbet_river_pct),
+                'call_cbet_flop_pct': to_float(player_stats.call_cbet_flop_pct),
+                'call_cbet_turn_pct': to_float(player_stats.call_cbet_turn_pct),
+                'call_cbet_river_pct': to_float(player_stats.call_cbet_river_pct),
+                'raise_cbet_flop_pct': to_float(player_stats.raise_cbet_flop_pct),
+                'raise_cbet_turn_pct': to_float(player_stats.raise_cbet_turn_pct),
+                'raise_cbet_river_pct': to_float(player_stats.raise_cbet_river_pct),
+                # Check-raise
+                'check_raise_flop_pct': to_float(player_stats.check_raise_flop_pct),
+                'check_raise_turn_pct': to_float(player_stats.check_raise_turn_pct),
+                'check_raise_river_pct': to_float(player_stats.check_raise_river_pct),
+                # Donk betting
+                'donk_bet_flop_pct': to_float(player_stats.donk_bet_flop_pct),
+                'donk_bet_turn_pct': to_float(player_stats.donk_bet_turn_pct),
+                'donk_bet_river_pct': to_float(player_stats.donk_bet_river_pct),
+                # Float
+                'float_flop_pct': to_float(player_stats.float_flop_pct),
+                # Aggression
+                'af': to_float(player_stats.af),
+                'afq': to_float(player_stats.afq),
+                # Showdown
+                'wtsd_pct': to_float(player_stats.wtsd_pct),
+                'wsd_pct': to_float(player_stats.wsd_pct),
+                # Win rate
+                'total_profit_loss': to_float(player_stats.total_profit_loss),
+                'bb_per_100': to_float(player_stats.bb_per_100),
+                # Composite metrics
+                'exploitability_index': to_float(player_stats.exploitability_index),
+                'pressure_vulnerability_score': to_float(player_stats.pressure_vulnerability_score),
+                'aggression_consistency_ratio': to_float(player_stats.aggression_consistency_ratio),
+                'positional_awareness_index': to_float(player_stats.positional_awareness_index),
+                'blind_defense_efficiency': to_float(player_stats.blind_defense_efficiency),
+                'value_bluff_imbalance_ratio': to_float(player_stats.value_bluff_imbalance_ratio),
+                'range_polarization_factor': to_float(player_stats.range_polarization_factor),
+                'street_fold_gradient': to_float(player_stats.street_fold_gradient),
+                'delayed_aggression_coefficient': to_float(player_stats.delayed_aggression_coefficient),
+                'multi_street_persistence_score': to_float(player_stats.multi_street_persistence_score),
+                'optimal_stake_skill_rating': to_float(player_stats.optimal_stake_skill_rating),
+                'player_type': player_stats.player_type,
+                # Metadata
+                'last_updated': player_stats.last_updated,
+                'first_hand_date': player_stats.first_hand_date,
+                'last_hand_date': player_stats.last_hand_date
             }
 
         except SQLAlchemyError as e:
