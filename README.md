@@ -137,7 +137,7 @@ See [POKER_APP_PROJECT_PLAN.md](POKER_APP_PROJECT_PLAN.md) for detailed formulas
 - [x] Phase 5: FastAPI Backend
 - [x] Phase 6: Claude Integration
 - [x] Phase 7: Frontend Development
-- [ ] Phase 8: Integration & Testing
+- [x] Phase 8: Integration & Testing
 - [ ] Phase 9: Deployment
 - [ ] Phase 10: Documentation
 
@@ -147,6 +147,8 @@ See [POKER_APP_PROJECT_PLAN.md](POKER_APP_PROJECT_PLAN.md) for detailed formulas
 - [Development Rules](RULES.md) - Development guidelines and workflow
 - [Claude Integration](backend/services/CLAUDE_INTEGRATION.md) - Natural language query documentation
 - [Frontend Guide](frontend/README.md) - React frontend documentation
+- [Testing Guide](docs/TESTING_GUIDE.md) - Comprehensive testing procedures
+- [Deployment Checklist](docs/DEPLOYMENT_CHECKLIST.md) - Production deployment guide
 - Database Schema - See `backend/database_schema.sql`
 
 ## License
