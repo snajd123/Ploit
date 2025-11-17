@@ -8,7 +8,8 @@
       "Bash(npm create:*)",
       "Bash(node:*)",
       "Bash(npm:*)",
-      "Bash(apt-get install:*)"
+      "Bash(apt-get install:*)",
+      "Bash(chmod:*)"
     ],
     "deny": [],
     "ask": []

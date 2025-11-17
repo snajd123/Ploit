@@ -138,7 +138,7 @@ See [POKER_APP_PROJECT_PLAN.md](POKER_APP_PROJECT_PLAN.md) for detailed formulas
 - [x] Phase 6: Claude Integration
 - [x] Phase 7: Frontend Development
 - [x] Phase 8: Integration & Testing
-- [ ] Phase 9: Deployment
+- [x] Phase 9: Deployment
 - [ ] Phase 10: Documentation
 
 ## Documentation
@@ -148,8 +148,27 @@ See [POKER_APP_PROJECT_PLAN.md](POKER_APP_PROJECT_PLAN.md) for detailed formulas
 - [Claude Integration](backend/services/CLAUDE_INTEGRATION.md) - Natural language query documentation
 - [Frontend Guide](frontend/README.md) - React frontend documentation
 - [Testing Guide](docs/TESTING_GUIDE.md) - Comprehensive testing procedures
-- [Deployment Checklist](docs/DEPLOYMENT_CHECKLIST.md) - Production deployment guide
+- [Deployment Checklist](docs/DEPLOYMENT_CHECKLIST.md) - Detailed deployment guide
+- **[Quick Deploy Guide](DEPLOY.md) - Deploy in 30 minutes!** ⚡
 - Database Schema - See `backend/database_schema.sql`
+
+## Deployment
+
+Ready to go live? Follow the [Quick Deploy Guide](DEPLOY.md) to deploy in ~30 minutes:
+
+```bash
+# Interactive deployment helper
+./deploy.sh
+
+# Post-deployment verification
+./healthcheck.sh
+```
+
+**Deployment Platforms:**
+- Backend: Railway or Render (Dockerfile included)
+- Frontend: Vercel (vercel.json configured)
+- Database: Supabase (schema ready)
+- All configurations included!
 
 ## License
 
