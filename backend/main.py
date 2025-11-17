@@ -594,32 +594,59 @@ async def recalculate_all_stats(db: Session = Depends(get_db)):
     try:
         service = DatabaseService(db)
 
-        # Get all unique player names from player_hand_summary
-        from backend.models.database_models import PlayerHandSummary
+        # Step 1: Recalculate flags for all hands
+        from backend.models.database_models import RawHand, PlayerHandSummary
+
+        hand_ids = db.query(RawHand.hand_id).all()
+        hand_ids = [hand_id[0] for hand_id in hand_ids]
+
+        logger.info(f"Starting flag recalculation for {len(hand_ids)} hands")
+
+        hands_updated = 0
+        hands_failed = 0
+
+        for i, hand_id in enumerate(hand_ids):
+            try:
+                if service.recalculate_hand_flags(hand_id):
+                    hands_updated += 1
+                else:
+                    hands_failed += 1
+
+                if (i + 1) % 100 == 0:
+                    logger.info(f"Recalculated flags for {i + 1}/{len(hand_ids)} hands")
+            except Exception as e:
+                hands_failed += 1
+                logger.error(f"Failed to recalculate hand {hand_id}: {str(e)}")
+
+        logger.info(f"Flag recalculation complete: {hands_updated} updated, {hands_failed} failed")
+
+        # Step 2: Recalculate player stats from updated flags
         player_names = db.query(PlayerHandSummary.player_name).distinct().all()
         player_names = [name[0] for name in player_names]
 
         logger.info(f"Starting stats recalculation for {len(player_names)} players")
 
-        updated_count = 0
-        failed_count = 0
+        players_updated = 0
+        players_failed = 0
 
         for player_name in player_names:
             try:
                 service.update_player_stats(player_name)
-                updated_count += 1
-                logger.info(f"Updated stats for {player_name} ({updated_count}/{len(player_names)})")
+                players_updated += 1
+                logger.info(f"Updated stats for {player_name} ({players_updated}/{len(player_names)})")
             except Exception as e:
-                failed_count += 1
+                players_failed += 1
                 logger.error(f"Failed to update stats for {player_name}: {str(e)}")
 
-        logger.info(f"Stats recalculation complete: {updated_count} updated, {failed_count} failed")
+        logger.info(f"Stats recalculation complete: {players_updated} updated, {players_failed} failed")
 
         return {
             "message": "Statistics recalculated successfully",
+            "hands_recalculated": hands_updated,
+            "hands_failed": hands_failed,
             "players_processed": len(player_names),
-            "players_updated": updated_count,
-            "players_failed": failed_count
+            "players_updated": players_updated,
+            "players_failed": players_failed
         }
 
     except Exception as e:

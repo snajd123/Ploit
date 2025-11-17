@@ -74,11 +74,10 @@ const Settings = () => {
                   <CheckCircle className="text-green-500 flex-shrink-0" size={20} />
                   <div>
                     <p className="text-sm font-medium text-green-800">{recalcResult.message}</p>
-                    <p className="text-sm text-green-700 mt-1">
-                      Processed: {recalcResult.players_processed} players |
-                      Updated: {recalcResult.players_updated} |
-                      Failed: {recalcResult.players_failed}
-                    </p>
+                    <div className="text-sm text-green-700 mt-2 space-y-1">
+                      <p>• Hands recalculated: {recalcResult.hands_recalculated} (failed: {recalcResult.hands_failed})</p>
+                      <p>• Players updated: {recalcResult.players_updated} of {recalcResult.players_processed} (failed: {recalcResult.players_failed})</p>
+                    </div>
                   </div>
                 </div>
               </div>

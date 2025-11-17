@@ -235,6 +235,95 @@ class DatabaseService:
     # Statistics Calculation
     # ========================================
 
+    def recalculate_hand_flags(self, hand_id: int) -> bool:
+        """
+        Recalculate flags for a single hand using the latest flag calculation logic.
+
+        This method:
+        1. Gets the raw hand text from raw_hands
+        2. Re-parses it to create a Hand object with actions
+        3. Recalculates flags using FlagCalculator
+        4. Updates player_hand_summary records
+
+        Args:
+            hand_id: Hand ID to recalculate
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            from backend.parser.pokerstars_parser import PokerStarsParser
+
+            # Get raw hand
+            raw_hand = self.session.query(RawHand).filter(
+                RawHand.hand_id == hand_id
+            ).first()
+
+            if not raw_hand:
+                logger.warning(f"Hand {hand_id} not found in raw_hands")
+                return False
+
+            # Parse the hand
+            parser = PokerStarsParser()
+            hand = parser.parse_single_hand(raw_hand.raw_hand_text)
+
+            if not hand or not hand.player_flags:
+                logger.warning(f"Failed to parse hand {hand_id}")
+                return False
+
+            # Update player_hand_summary for each player
+            for player_name, flags in hand.player_flags.items():
+                summary = self.session.query(PlayerHandSummary).filter(
+                    PlayerHandSummary.hand_id == hand_id,
+                    PlayerHandSummary.player_name == player_name
+                ).first()
+
+                if summary:
+                    # Update flags
+                    summary.vpip = flags.vpip
+                    summary.pfr = flags.pfr
+                    summary.limp = flags.limp
+                    summary.faced_raise = flags.faced_raise
+                    summary.faced_three_bet = flags.faced_three_bet
+                    summary.folded_to_three_bet = flags.folded_to_three_bet
+                    summary.called_three_bet = flags.called_three_bet
+                    summary.made_three_bet = flags.made_three_bet
+                    summary.four_bet = flags.four_bet
+                    summary.cold_call = flags.cold_call
+                    summary.squeeze = flags.squeeze
+                    summary.saw_flop = flags.saw_flop
+                    summary.saw_turn = flags.saw_turn
+                    summary.saw_river = flags.saw_river
+                    summary.cbet_opportunity_flop = flags.cbet_opportunity_flop
+                    summary.cbet_made_flop = flags.cbet_made_flop
+                    summary.cbet_opportunity_turn = flags.cbet_opportunity_turn
+                    summary.cbet_made_turn = flags.cbet_made_turn
+                    summary.cbet_opportunity_river = flags.cbet_opportunity_river
+                    summary.cbet_made_river = flags.cbet_made_river
+                    summary.faced_cbet_flop = flags.faced_cbet_flop
+                    summary.folded_to_cbet_flop = flags.folded_to_cbet_flop
+                    summary.called_cbet_flop = flags.called_cbet_flop
+                    summary.raised_cbet_flop = flags.raised_cbet_flop
+                    summary.faced_cbet_turn = flags.faced_cbet_turn
+                    summary.folded_to_cbet_turn = flags.folded_to_cbet_turn
+                    summary.called_cbet_turn = flags.called_cbet_turn
+                    summary.raised_cbet_turn = flags.raised_cbet_turn
+                    summary.faced_cbet_river = flags.faced_cbet_river
+                    summary.folded_to_cbet_river = flags.folded_to_cbet_river
+                    summary.called_cbet_river = flags.called_cbet_river
+                    summary.raised_cbet_river = flags.raised_cbet_river
+                    summary.went_to_showdown = flags.went_to_showdown
+                    summary.won_at_showdown = flags.won_at_showdown
+                    # Add other flags as needed
+
+            self.session.commit()
+            return True
+
+        except Exception as e:
+            self.session.rollback()
+            logger.error(f"Error recalculating flags for hand {hand_id}: {str(e)}")
+            return False
+
     def update_player_stats(self, player_name: str) -> bool:
         """
         Recalculate aggregated stats for a single player.
