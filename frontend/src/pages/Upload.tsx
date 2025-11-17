@@ -1,10 +1,10 @@
 import { useState, useCallback } from 'react';
-import { Upload as UploadIcon, FileText, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { Upload as UploadIcon, FileText, CheckCircle, XCircle, AlertCircle, X } from 'lucide-react';
 import { api } from '../services/api';
 import type { UploadResponse } from '../types';
 
 const Upload = () => {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [result, setResult] = useState<UploadResponse | null>(null);
@@ -26,33 +26,37 @@ const Upload = () => {
     e.stopPropagation();
     setDragActive(false);
 
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      const file = e.dataTransfer.files[0];
-      if (file.name.endsWith('.txt')) {
-        setSelectedFile(file);
+    if (e.dataTransfer.files) {
+      const files = Array.from(e.dataTransfer.files).filter(file => file.name.endsWith('.txt'));
+      if (files.length > 0) {
+        setSelectedFiles(files);
         setError(null);
         setResult(null);
       } else {
-        setError('Please select a .txt file');
+        setError('Please select .txt files only');
       }
     }
   }, []);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      if (file.name.endsWith('.txt')) {
-        setSelectedFile(file);
+    if (e.target.files) {
+      const files = Array.from(e.target.files).filter(file => file.name.endsWith('.txt'));
+      if (files.length > 0) {
+        setSelectedFiles(files);
         setError(null);
         setResult(null);
       } else {
-        setError('Please select a .txt file');
+        setError('Please select .txt files only');
       }
     }
   };
 
+  const removeFile = (index: number) => {
+    setSelectedFiles(files => files.filter((_, i) => i !== index));
+  };
+
   const handleUpload = async () => {
-    if (!selectedFile) return;
+    if (selectedFiles.length === 0) return;
 
     setUploading(true);
     setProgress(0);
@@ -60,9 +64,12 @@ const Upload = () => {
     setResult(null);
 
     try {
-      const response = await api.uploadHandHistory(selectedFile, setProgress);
+      const response = selectedFiles.length === 1
+        ? await api.uploadHandHistory(selectedFiles[0], setProgress)
+        : await api.uploadHandHistoryBatch(selectedFiles, setProgress);
+
       setResult(response);
-      setSelectedFile(null);
+      setSelectedFiles([]);
     } catch (err) {
       setError((err as Error).message || 'Upload failed');
     } finally {
@@ -71,13 +78,15 @@ const Upload = () => {
     }
   };
 
+  const totalSize = selectedFiles.reduce((acc, file) => acc + file.size, 0);
+
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       {/* Page header */}
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Upload Hand History</h1>
         <p className="mt-2 text-gray-600">
-          Import PokerStars .txt hand history files for analysis
+          Import PokerStars .txt hand history files for analysis (supports multiple files)
         </p>
       </div>
 
@@ -98,7 +107,7 @@ const Upload = () => {
           <div className="mt-4">
             <label htmlFor="file-upload" className="cursor-pointer">
               <span className="mt-2 block text-sm font-semibold text-gray-900">
-                Drop your file here, or{' '}
+                Drop your files here, or{' '}
                 <span className="text-blue-600 hover:text-blue-500">browse</span>
               </span>
               <input
@@ -106,35 +115,54 @@ const Upload = () => {
                 name="file-upload"
                 type="file"
                 accept=".txt"
+                multiple
                 className="sr-only"
                 onChange={handleFileSelect}
                 disabled={uploading}
               />
             </label>
             <p className="mt-1 text-xs text-gray-500">
-              PokerStars .txt files only
+              PokerStars .txt files only • Multiple files supported
             </p>
           </div>
         </div>
 
-        {/* Selected file */}
-        {selectedFile && !uploading && !result && (
-          <div className="mt-4 p-4 bg-gray-50 rounded-lg flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <FileText className="text-gray-400" size={24} />
-              <div>
-                <p className="text-sm font-medium text-gray-900">{selectedFile.name}</p>
-                <p className="text-xs text-gray-500">
-                  {(selectedFile.size / 1024).toFixed(2)} KB
-                </p>
-              </div>
+        {/* Selected files */}
+        {selectedFiles.length > 0 && !uploading && !result && (
+          <div className="mt-4 space-y-2">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-medium text-gray-700">
+                {selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''} selected ({(totalSize / 1024).toFixed(2)} KB)
+              </p>
+              <button
+                onClick={handleUpload}
+                className="btn-primary"
+              >
+                Upload & Parse {selectedFiles.length > 1 ? 'All' : ''}
+              </button>
             </div>
-            <button
-              onClick={handleUpload}
-              className="btn-primary"
-            >
-              Upload & Parse
-            </button>
+            <div className="max-h-64 overflow-y-auto space-y-2">
+              {selectedFiles.map((file, index) => (
+                <div key={index} className="p-3 bg-gray-50 rounded-lg flex items-center justify-between group hover:bg-gray-100">
+                  <div className="flex items-center space-x-3 flex-1 min-w-0">
+                    <FileText className="text-gray-400 flex-shrink-0" size={20} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-gray-900 truncate">{file.name}</p>
+                      <p className="text-xs text-gray-500">
+                        {(file.size / 1024).toFixed(2)} KB
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => removeFile(index)}
+                    className="ml-2 p-1 rounded-full hover:bg-gray-200 opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Remove file"
+                  >
+                    <X size={16} className="text-gray-500" />
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -142,7 +170,9 @@ const Upload = () => {
         {uploading && (
           <div className="mt-4">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-gray-700">Uploading...</span>
+              <span className="text-sm font-medium text-gray-700">
+                Uploading {selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''}...
+              </span>
               <span className="text-sm font-medium text-gray-700">{progress}%</span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2">
@@ -230,11 +260,11 @@ const Upload = () => {
           </li>
           <li className="flex items-start">
             <span className="font-semibold text-blue-600 mr-2">2.</span>
-            <span>Select or drag the .txt file into the upload area</span>
+            <span>Select one or multiple .txt files, or drag them into the upload area</span>
           </li>
           <li className="flex items-start">
             <span className="font-semibold text-blue-600 mr-2">3.</span>
-            <span>Click "Upload & Parse" to process the hands</span>
+            <span>Click "Upload & Parse" to process all hands at once</span>
           </li>
           <li className="flex items-start">
             <span className="font-semibold text-blue-600 mr-2">4.</span>

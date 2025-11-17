@@ -53,6 +53,28 @@ class ApiClient {
     return response.data;
   }
 
+  // Upload multiple hand history files
+  async uploadHandHistoryBatch(files: File[], onProgress?: (progress: number) => void): Promise<UploadResponse> {
+    const formData = new FormData();
+    files.forEach((file) => {
+      formData.append('files', file);
+    });
+
+    const response = await this.client.post<UploadResponse>('/api/upload/batch', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      onUploadProgress: (progressEvent) => {
+        if (onProgress && progressEvent.total) {
+          const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          onProgress(progress);
+        }
+      },
+    });
+
+    return response.data;
+  }
+
   // Get all players
   async getPlayers(params?: {
     min_hands?: number;
