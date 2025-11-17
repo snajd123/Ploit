@@ -380,7 +380,7 @@ class PokerStarsParser:
         """
         try:
             # Extract blinds from hand text
-            header_match = re.search(self.HAND_HEADER_PATTERN, hand_text)
+            header_match = re.search(self.HAND_HEADER_PATTERN, hand_text, re.MULTILINE)
             if not header_match:
                 return []
 

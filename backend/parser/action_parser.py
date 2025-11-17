@@ -124,7 +124,7 @@ class ActionParser:
             List of blind post actions
         """
         actions = []
-        blind_pattern = r'([^:]+): posts (small blind|big blind|small & big blinds) [\$€]?([\d.]+)'
+        blind_pattern = r'([^\n:]+): posts (small blind|big blind|small & big blinds) [\$€]?([\d.]+)'
 
         for match in re.finditer(blind_pattern, preflop_section):
             player_name = match.group(1).strip()
