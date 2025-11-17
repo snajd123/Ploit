@@ -61,14 +61,14 @@ const Dashboard = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
           title="Total Hands"
-          value={stats?.total_hands.toLocaleString() || '0'}
+          value={stats?.total_hands ? stats.total_hands.toLocaleString() : '0'}
           subtitle="Parsed and stored"
           icon={<Database size={24} />}
           color="blue"
         />
         <StatCard
           title="Total Players"
-          value={stats?.total_players.toLocaleString() || '0'}
+          value={stats?.total_players ? stats.total_players.toLocaleString() : '0'}
           subtitle="Unique players tracked"
           icon={<Users size={24} />}
           color="green"
