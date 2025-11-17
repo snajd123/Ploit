@@ -686,14 +686,20 @@ async def debug_player_flags(player_name: str, db: Session = Depends(get_db)):
                 "position": s.position,
                 "vpip": s.vpip,
                 "pfr": s.pfr,
+                "limp": s.limp,
+                "faced_raise": s.faced_raise,
                 "made_three_bet": s.made_three_bet,
                 "faced_three_bet": s.faced_three_bet,
                 "folded_to_three_bet": s.folded_to_three_bet,
                 "saw_flop": s.saw_flop,
+                "saw_turn": s.saw_turn,
+                "saw_river": s.saw_river,
                 "cbet_opportunity_flop": s.cbet_opportunity_flop,
                 "cbet_made_flop": s.cbet_made_flop,
                 "faced_cbet_flop": s.faced_cbet_flop,
                 "folded_to_cbet_flop": s.folded_to_cbet_flop,
+                "called_cbet_flop": s.called_cbet_flop,
+                "raised_cbet_flop": s.raised_cbet_flop,
                 "went_to_showdown": s.went_to_showdown,
                 "won_at_showdown": s.won_at_showdown
             })
@@ -706,6 +712,87 @@ async def debug_player_flags(player_name: str, db: Session = Depends(get_db)):
 
     except Exception as e:
         logger.error(f"Error debugging player {player_name}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error: {str(e)}"
+        )
+
+
+@app.get(
+    "/api/database/stats-debug/{player_name}",
+    tags=["Database"],
+    summary="Debug player stats calculation",
+    description="Show raw counts used for statistics calculation"
+)
+async def debug_player_stats(player_name: str, db: Session = Depends(get_db)):
+    """
+    Get raw counts used for calculating player statistics.
+
+    Shows the numerator and denominator for each stat to debug N/A values.
+    """
+    try:
+        from backend.models.database_models import PlayerHandSummary
+
+        summaries = db.query(PlayerHandSummary).filter(
+            PlayerHandSummary.player_name == player_name
+        ).all()
+
+        if not summaries:
+            return {"error": f"No hands found for player {player_name}"}
+
+        def count_true(attr: str) -> int:
+            return sum(1 for s in summaries if getattr(s, attr, False))
+
+        total_hands = len(summaries)
+        vpip_count = count_true('vpip')
+        pfr_count = count_true('pfr')
+        faced_raise_count = count_true('faced_raise')
+        made_3bet_count = count_true('made_three_bet')
+        faced_3bet_count = count_true('faced_three_bet')
+        saw_flop_count = count_true('saw_flop')
+        saw_turn_count = count_true('saw_turn')
+        saw_river_count = count_true('saw_river')
+        cbet_opp_flop = count_true('cbet_opportunity_flop')
+        cbet_made_flop = count_true('cbet_made_flop')
+        faced_cbet_flop = count_true('faced_cbet_flop')
+        folded_to_cbet_flop = count_true('folded_to_cbet_flop')
+        went_to_showdown = count_true('went_to_showdown')
+        won_at_showdown = count_true('won_at_showdown')
+
+        return {
+            "player_name": player_name,
+            "total_hands": total_hands,
+            "counts": {
+                "vpip": f"{vpip_count}/{total_hands} = {round(vpip_count/total_hands*100, 1)}%" if total_hands > 0 else "0/0",
+                "pfr": f"{pfr_count}/{total_hands} = {round(pfr_count/total_hands*100, 1)}%" if total_hands > 0 else "0/0",
+                "three_bet": f"{made_3bet_count}/{faced_raise_count} = {round(made_3bet_count/faced_raise_count*100, 1) if faced_raise_count > 0 else 'N/A'}",
+                "fold_to_three_bet": f"{count_true('folded_to_three_bet')}/{faced_3bet_count} = {round(count_true('folded_to_three_bet')/faced_3bet_count*100, 1) if faced_3bet_count > 0 else 'N/A'}",
+                "cbet_flop": f"{cbet_made_flop}/{cbet_opp_flop} = {round(cbet_made_flop/cbet_opp_flop*100, 1) if cbet_opp_flop > 0 else 'N/A'}",
+                "fold_to_cbet_flop": f"{folded_to_cbet_flop}/{faced_cbet_flop} = {round(folded_to_cbet_flop/faced_cbet_flop*100, 1) if faced_cbet_flop > 0 else 'N/A'}",
+                "wtsd": f"{went_to_showdown}/{saw_flop_count} = {round(went_to_showdown/saw_flop_count*100, 1) if saw_flop_count > 0 else 'N/A'}",
+                "wsd": f"{won_at_showdown}/{went_to_showdown} = {round(won_at_showdown/went_to_showdown*100, 1) if went_to_showdown > 0 else 'N/A'}"
+            },
+            "raw_counts": {
+                "total_hands": total_hands,
+                "vpip_count": vpip_count,
+                "pfr_count": pfr_count,
+                "faced_raise_count": faced_raise_count,
+                "made_3bet_count": made_3bet_count,
+                "faced_3bet_count": faced_3bet_count,
+                "saw_flop_count": saw_flop_count,
+                "saw_turn_count": saw_turn_count,
+                "saw_river_count": saw_river_count,
+                "cbet_opp_flop": cbet_opp_flop,
+                "cbet_made_flop": cbet_made_flop,
+                "faced_cbet_flop": faced_cbet_flop,
+                "folded_to_cbet_flop": folded_to_cbet_flop,
+                "went_to_showdown": went_to_showdown,
+                "won_at_showdown": won_at_showdown
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Error debugging stats for {player_name}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error: {str(e)}"
