@@ -1,0 +1,116 @@
+PokerStars Hand #123456789012: Hold'em No Limit ($0.25/$0.50 USD) - 2025/11/17 10:30:15 ET
+Table 'Andromeda V' 6-max Seat #1 is the button
+Seat 1: Player1 ($50.00 in chips)
+Seat 2: Player2 ($75.50 in chips)
+Seat 3: Player3 ($100.00 in chips)
+Seat 4: Player4 ($62.25 in chips)
+Seat 5: Player5 ($88.75 in chips)
+Seat 6: Player6 ($55.00 in chips)
+Player2: posts small blind $0.25
+Player3: posts big blind $0.50
+*** HOLE CARDS ***
+Player4: folds
+Player5: folds
+Player6: raises $1.50 to $2.00
+Player1: folds
+Player2: folds
+Player3: calls $1.50
+*** FLOP *** [Ah 7c 3d]
+Player3: checks
+Player6: bets $3.00
+Player3: calls $3.00
+*** TURN *** [Ah 7c 3d] [Ks]
+Player3: checks
+Player6: bets $7.50
+Player3: folds
+Uncalled bet ($7.50) returned to Player6
+Player6 collected $9.75 from pot
+Player6: doesn't show hand
+*** SUMMARY ***
+Total pot $10.25 | Rake $0.50
+Board [Ah 7c 3d Ks]
+Seat 1: Player1 (button) folded before Flop (didn't bet)
+Seat 2: Player2 (small blind) folded before Flop
+Seat 3: Player3 (big blind) folded on the Turn
+Seat 4: Player4 folded before Flop (didn't bet)
+Seat 5: Player5 folded before Flop (didn't bet)
+Seat 6: Player6 collected ($9.75)
+
+PokerStars Hand #123456789013: Hold'em No Limit ($0.25/$0.50 USD) - 2025/11/17 10:35:22 ET
+Table 'Cassiopeia II' 6-max Seat #3 is the button
+Seat 1: Alice ($50.00 in chips)
+Seat 2: Bob ($62.50 in chips)
+Seat 3: Charlie ($45.75 in chips)
+Seat 4: David ($100.00 in chips)
+Seat 5: Eve ($55.25 in chips)
+Seat 6: Frank ($72.00 in chips)
+David: posts small blind $0.25
+Eve: posts big blind $0.50
+*** HOLE CARDS ***
+Frank: raises $1.00 to $1.50
+Alice: raises $4.50 to $6.00
+Bob: folds
+Charlie: folds
+David: folds
+Eve: folds
+Frank: calls $4.50
+*** FLOP *** [Kh Qd Jc]
+Frank: checks
+Alice: bets $8.00
+Frank: raises $16.00 to $24.00
+Alice: raises $20.00 to $44.00 and is all-in
+Frank: calls $20.00
+*** TURN *** [Kh Qd Jc] [2s]
+*** RIVER *** [Kh Qd Jc 2s] [9h]
+*** SHOW DOWN ***
+Frank: shows [Ac Td] (a straight, Ten to Ace)
+Alice: shows [Kd Kc] (three of a kind, Kings)
+Frank collected $98.75 from pot
+*** SUMMARY ***
+Total pot $100.75 | Rake $2.00
+Board [Kh Qd Jc 2s 9h]
+Seat 1: Alice showed [Kd Kc] and lost with three of a kind, Kings
+Seat 2: Bob folded before Flop (didn't bet)
+Seat 3: Charlie (button) folded before Flop (didn't bet)
+Seat 4: David (small blind) folded before Flop
+Seat 5: Eve (big blind) folded before Flop
+Seat 6: Frank showed [Ac Td] and won ($98.75) with a straight, Ten to Ace
+
+PokerStars Hand #123456789014: Hold'em No Limit ($0.25/$0.50 USD) - 2025/11/17 10:40:33 ET
+Table 'Orion III' 6-max Seat #5 is the button
+Seat 1: Tom ($50.00 in chips)
+Seat 2: Jerry ($45.00 in chips)
+Seat 3: Mike ($75.25 in chips)
+Seat 4: Sarah ($60.50 in chips)
+Seat 5: Emma ($82.00 in chips)
+Seat 6: Luke ($55.75 in chips)
+Luke: posts small blind $0.25
+Tom: posts big blind $0.50
+*** HOLE CARDS ***
+Jerry: folds
+Mike: raises $1.00 to $1.50
+Sarah: calls $1.50
+Emma: folds
+Luke: folds
+Tom: calls $1.00
+*** FLOP *** [5h 5d 2c]
+Tom: checks
+Mike: bets $2.25
+Sarah: calls $2.25
+Tom: folds
+*** TURN *** [5h 5d 2c] [Qh]
+Mike: checks
+Sarah: bets $5.00
+Mike: folds
+Uncalled bet ($5.00) returned to Sarah
+Sarah collected $9.25 from pot
+Sarah: doesn't show hand
+*** SUMMARY ***
+Total pot $9.75 | Rake $0.50
+Board [5h 5d 2c Qh]
+Seat 1: Tom (big blind) folded on the Flop
+Seat 2: Jerry folded before Flop (didn't bet)
+Seat 3: Mike folded on the Turn
+Seat 4: Sarah collected ($9.25)
+Seat 5: Emma (button) folded before Flop (didn't bet)
+Seat 6: Luke (small blind) folded before Flop
