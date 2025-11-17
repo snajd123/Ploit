@@ -21,6 +21,7 @@ from backend.models.database_models import (
 )
 from backend.parser.data_structures import Hand, Action, PlayerHandSummaryFlags
 from backend.database import get_db
+from backend.services.stats_calculator import StatsCalculator
 
 logger = logging.getLogger(__name__)
 
@@ -260,6 +261,13 @@ class DatabaseService:
             # Calculate traditional stats
             stats = self._calculate_traditional_stats(summaries)
 
+            # Calculate composite metrics
+            calculator = StatsCalculator(stats)
+            composite_metrics = calculator.calculate_all_metrics()
+
+            # Merge composite metrics into stats
+            stats.update(composite_metrics)
+
             # Check if player exists in player_stats
             player_stats = self.session.query(PlayerStats).filter(
                 PlayerStats.player_name == player_name
@@ -276,7 +284,7 @@ class DatabaseService:
                 self.session.add(player_stats)
 
             self.session.commit()
-            logger.info(f"Updated stats for {player_name}: {stats['total_hands']} hands")
+            logger.info(f"Updated stats for {player_name}: {stats['total_hands']} hands, type={stats.get('player_type')}")
             return True
 
         except SQLAlchemyError as e:
@@ -442,20 +450,8 @@ class DatabaseService:
             'bb_per_100': None,  # TODO: Calculate from stake level
             # Dates
             'first_hand_date': first_hand_date,
-            'last_hand_date': last_hand_date,
-            # Composite metrics (will be calculated separately)
-            'exploitability_index': None,
-            'pressure_vulnerability_score': None,
-            'aggression_consistency_ratio': None,
-            'positional_awareness_index': None,
-            'blind_defense_efficiency': None,
-            'value_bluff_imbalance_ratio': None,
-            'range_polarization_factor': None,
-            'street_fold_gradient': None,
-            'delayed_aggression_coefficient': None,
-            'multi_street_persistence_score': None,
-            'optimal_stake_skill_rating': None,
-            'player_type': None
+            'last_hand_date': last_hand_date
+            # Note: Composite metrics calculated by StatsCalculator and merged separately
         }
 
         return stats

@@ -133,7 +133,7 @@ See [POKER_APP_PROJECT_PLAN.md](POKER_APP_PROJECT_PLAN.md) for detailed formulas
 - [x] Phase 1: Database Setup
 - [x] Phase 2: Hand History Parser
 - [x] Phase 3: Database Service
-- [ ] Phase 4: Statistical Calculator
+- [x] Phase 4: Statistical Calculator
 - [ ] Phase 5: FastAPI Backend
 - [ ] Phase 6: Claude Integration
 - [ ] Phase 7: Frontend Development
