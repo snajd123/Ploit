@@ -799,6 +799,47 @@ async def debug_player_stats(player_name: str, db: Session = Depends(get_db)):
         )
 
 
+@app.get(
+    "/api/database/test-calculation/{player_name}",
+    tags=["Database"],
+    summary="Test stats calculation",
+    description="Calculate stats without saving to database"
+)
+async def test_stats_calculation(player_name: str, db: Session = Depends(get_db)):
+    """
+    Test what stats would be calculated for a player without saving.
+    """
+    try:
+        from backend.services.database_service import DatabaseService
+        from backend.models.database_models import PlayerHandSummary
+
+        service = DatabaseService(db)
+
+        summaries = db.query(PlayerHandSummary).filter(
+            PlayerHandSummary.player_name == player_name
+        ).all()
+
+        if not summaries:
+            return {"error": f"No hands found for player {player_name}"}
+
+        # Calculate stats
+        stats = service._calculate_traditional_stats(summaries)
+
+        return {
+            "player_name": player_name,
+            "calculated_stats": stats,
+            "note": "These are the stats that WOULD be saved to player_stats table"
+        }
+
+    except Exception as e:
+        logger.error(f"Error testing calculation for {player_name}: {str(e)}")
+        import traceback
+        return {
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
+
 @app.delete(
     "/api/database/clear",
     tags=["Database"],
