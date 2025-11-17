@@ -86,8 +86,9 @@ class ActionParser:
         """
         sections = {}
 
-        # Find HOLE CARDS (preflop start)
-        preflop_match = re.search(r'\*\*\* HOLE CARDS \*\*\*(.*?)(?:\*\*\* FLOP \*\*\*|\*\*\* SUMMARY \*\*\*|$)',
+        # Find preflop (including blinds which come before HOLE CARDS)
+        # Extract from after player seats to FLOP or SUMMARY
+        preflop_match = re.search(r'in chips\)(.*?)(?:\*\*\* FLOP \*\*\*|\*\*\* SUMMARY \*\*\*|$)',
                                   hand_text, re.DOTALL)
         if preflop_match:
             sections['preflop'] = preflop_match.group(1)
@@ -123,7 +124,7 @@ class ActionParser:
             List of blind post actions
         """
         actions = []
-        blind_pattern = r'([^:]+): posts (small blind|big blind|small & big blinds) \$?([\d.]+)'
+        blind_pattern = r'([^:]+): posts (small blind|big blind|small & big blinds) [\$€]?([\d.]+)'
 
         for match in re.finditer(blind_pattern, preflop_section):
             player_name = match.group(1).strip()
@@ -176,14 +177,14 @@ class ActionParser:
         """
         actions = []
 
-        # Action patterns
+        # Action patterns (supports both $ and € currencies)
         patterns = [
             (r'([^:]+): folds', 'fold'),
             (r'([^:]+): checks', 'check'),
-            (r'([^:]+): calls \$?([\d.]+)', 'call'),
-            (r'([^:]+): bets \$?([\d.]+)', 'bet'),
-            (r'([^:]+): raises \$?[\d.]+ to \$?([\d.]+)', 'raise'),
-            (r'Uncalled bet \(\$?([\d.]+)\) returned to ([^\n]+)', 'uncalled'),
+            (r'([^:]+): calls [\$€]?([\d.]+)', 'call'),
+            (r'([^:]+): bets [\$€]?([\d.]+)', 'bet'),
+            (r'([^:]+): raises [\$€]?[\d.]+ to [\$€]?([\d.]+)', 'raise'),
+            (r'Uncalled bet \([\$€]?([\d.]+)\) returned to ([^\n]+)', 'uncalled'),
         ]
 
         for line in section_text.split('\n'):
