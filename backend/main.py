@@ -657,6 +657,61 @@ async def recalculate_all_stats(db: Session = Depends(get_db)):
         )
 
 
+@app.get(
+    "/api/database/debug/{player_name}",
+    tags=["Database"],
+    summary="Debug player flags",
+    description="Get sample hand flags for debugging"
+)
+async def debug_player_flags(player_name: str, db: Session = Depends(get_db)):
+    """
+    Get sample hand flags for a player to debug statistics.
+
+    Returns 5 sample hands with their calculated flags.
+    """
+    try:
+        from backend.models.database_models import PlayerHandSummary
+
+        summaries = db.query(PlayerHandSummary).filter(
+            PlayerHandSummary.player_name == player_name
+        ).limit(10).all()
+
+        if not summaries:
+            return {"error": f"No hands found for player {player_name}"}
+
+        result = []
+        for s in summaries:
+            result.append({
+                "hand_id": s.hand_id,
+                "position": s.position,
+                "vpip": s.vpip,
+                "pfr": s.pfr,
+                "made_three_bet": s.made_three_bet,
+                "faced_three_bet": s.faced_three_bet,
+                "folded_to_three_bet": s.folded_to_three_bet,
+                "saw_flop": s.saw_flop,
+                "cbet_opportunity_flop": s.cbet_opportunity_flop,
+                "cbet_made_flop": s.cbet_made_flop,
+                "faced_cbet_flop": s.faced_cbet_flop,
+                "folded_to_cbet_flop": s.folded_to_cbet_flop,
+                "went_to_showdown": s.went_to_showdown,
+                "won_at_showdown": s.won_at_showdown
+            })
+
+        return {
+            "player_name": player_name,
+            "total_hands": len(summaries),
+            "sample_hands": result
+        }
+
+    except Exception as e:
+        logger.error(f"Error debugging player {player_name}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error: {str(e)}"
+        )
+
+
 @app.delete(
     "/api/database/clear",
     tags=["Database"],
