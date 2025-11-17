@@ -410,6 +410,7 @@ class DatabaseService:
         pfr_count = count_true('pfr')
         limp_count = count_true('limp')
 
+        faced_raise_count = count_true('faced_raise')
         faced_3bet_count = count_true('faced_three_bet')
         folded_to_3bet_count = count_true('folded_to_three_bet')
         made_3bet_count = count_true('made_three_bet')
@@ -495,7 +496,7 @@ class DatabaseService:
             'vpip_pct': calc_pct(vpip_count, total_hands),
             'pfr_pct': calc_pct(pfr_count, total_hands),
             'limp_pct': calc_pct(limp_count, total_hands),
-            'three_bet_pct': calc_pct(made_3bet_count, faced_3bet_count) if faced_3bet_count > 0 else None,
+            'three_bet_pct': calc_pct(made_3bet_count, faced_raise_count) if faced_raise_count > 0 else None,
             'fold_to_three_bet_pct': calc_pct(folded_to_3bet_count, faced_3bet_count) if faced_3bet_count > 0 else None,
             'four_bet_pct': calc_pct(four_bet_count, made_3bet_count) if made_3bet_count > 0 else None,
             'cold_call_pct': calc_pct(cold_call_count, total_hands),
