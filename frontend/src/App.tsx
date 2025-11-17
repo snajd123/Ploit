@@ -1,0 +1,26 @@
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import Layout from './components/Layout';
+import Dashboard from './pages/Dashboard';
+import Upload from './pages/Upload';
+import PlayersList from './pages/PlayersList';
+import PlayerProfile from './pages/PlayerProfile';
+import ClaudeChat from './pages/ClaudeChat';
+
+function App() {
+  return (
+    <Router>
+      <Routes>
+        <Route path="/" element={<Layout />}>
+          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route path="dashboard" element={<Dashboard />} />
+          <Route path="upload" element={<Upload />} />
+          <Route path="players" element={<PlayersList />} />
+          <Route path="players/:playerName" element={<PlayerProfile />} />
+          <Route path="claude" element={<ClaudeChat />} />
+        </Route>
+      </Routes>
+    </Router>
+  );
+}
+
+export default App;
