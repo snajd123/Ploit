@@ -29,17 +29,17 @@ class PokerStarsParser:
     Extracts all hand data and calculates player statistics flags.
     """
 
-    # Regex patterns for parsing
-    HAND_HEADER_PATTERN = r"PokerStars Hand #(\d+):\s+Hold'em No Limit \(\$?([\d.]+)/\$?([\d.]+).*?\) - (.*?)$"
+    # Regex patterns for parsing (supports both $ and € currencies)
+    HAND_HEADER_PATTERN = r"PokerStars Hand #(\d+):\s+Hold'em No Limit \([\$€]?([\d.]+)/[\$€]?([\d.]+).*?\) - (.*?)$"
     TABLE_PATTERN = r"Table '([^']+)' (\d+)-max Seat #(\d+) is the button"
-    SEAT_PATTERN = r"Seat (\d+): ([^\(]+) \(\$?([\d.]+) in chips\)"
-    BLIND_PATTERN = r"([^:]+): posts (small blind|big blind|small & big blinds) \$?([\d.]+)"
-    ACTION_PATTERN = r"([^:]+): (folds|checks|calls|bets|raises)(?: \$?([\d.]+))?(?: to \$?([\d.]+))?( and is all-in)?"
+    SEAT_PATTERN = r"Seat (\d+): ([^\(]+) \([\$€]?([\d.]+) in chips\)"
+    BLIND_PATTERN = r"([^:]+): posts (small blind|big blind|small & big blinds) [\$€]?([\d.]+)"
+    ACTION_PATTERN = r"([^:]+): (folds|checks|calls|bets|raises)(?: [\$€]?([\d.]+))?(?: to [\$€]?([\d.]+))?( and is all-in)?"
     BOARD_PATTERN = r"\*\*\* (FLOP|TURN|RIVER) \*\*\* \[([^\]]+)\]"
-    POT_PATTERN = r"Total pot \$?([\d.]+)"
-    RAKE_PATTERN = r"Rake \$?([\d.]+)"
-    UNCALLED_PATTERN = r"Uncalled bet \(\$?([\d.]+)\) returned to ([^\n]+)"
-    COLLECTED_PATTERN = r"([^:]+) collected \$?([\d.]+) from pot"
+    POT_PATTERN = r"Total pot [\$€]?([\d.]+)"
+    RAKE_PATTERN = r"Rake [\$€]?([\d.]+)"
+    UNCALLED_PATTERN = r"Uncalled bet \([\$€]?([\d.]+)\) returned to ([^\n]+)"
+    COLLECTED_PATTERN = r"([^:]+) collected [\$€]?([\d.]+) from pot"
     SHOWDOWN_PATTERN = r"\*\*\* SHOW DOWN \*\*\*"
     SUMMARY_PATTERN = r"\*\*\* SUMMARY \*\*\*"
 

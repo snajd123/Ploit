@@ -297,6 +297,119 @@ async def upload_hand_history(
         )
 
 
+@app.post(
+    "/api/upload/batch",
+    response_model=UploadResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Upload"],
+    summary="Upload multiple hand history files",
+    description="Upload and parse multiple PokerStars .txt hand history files at once"
+)
+async def upload_hand_history_batch(
+    files: List[UploadFile] = File(..., description="Multiple PokerStars hand history .txt files"),
+    db: Session = Depends(get_db)
+):
+    """
+    Upload and parse multiple PokerStars hand history files at once.
+
+    Processes all files and combines results into a single upload session.
+
+    Args:
+        files: List of uploaded .txt files
+        db: Database session (injected)
+
+    Returns:
+        Combined upload summary for all files
+    """
+    start_time = time.time()
+    total_hands_parsed = 0
+    total_hands_failed = 0
+    all_affected_players = set()
+    stake_level = None
+
+    try:
+        parser = PokerStarsParser()
+        service = DatabaseService(db)
+
+        for file in files:
+            # Validate file type
+            if not file.filename.endswith('.txt'):
+                logger.warning(f"Skipping non-.txt file: {file.filename}")
+                continue
+
+            # Save uploaded file temporarily
+            with tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.txt') as tmp_file:
+                content = await file.read()
+                tmp_file.write(content)
+                tmp_path = tmp_file.name
+
+            try:
+                # Parse hands
+                logger.info(f"Parsing file: {file.filename}")
+                parse_result = parser.parse_file(tmp_path)
+
+                if parse_result.total_hands == 0:
+                    logger.warning(f"No valid hands found in {file.filename}")
+                    continue
+
+                # Insert hands into database
+                logger.info(f"Inserting {len(parse_result.hands)} hands from {file.filename}")
+                insert_result = service.insert_hand_batch(parse_result.hands)
+
+                total_hands_parsed += insert_result['hands_inserted']
+                total_hands_failed += insert_result['hands_failed']
+
+                # Track affected players
+                for hand in parse_result.hands:
+                    all_affected_players.update(hand.player_flags.keys())
+
+                # Get stake level from first file's first hand
+                if not stake_level and parse_result.hands:
+                    stake_level = parse_result.hands[0].stake_level
+
+            finally:
+                # Clean up temporary file
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+
+        # Update player statistics for all affected players
+        logger.info(f"Updating stats for {len(all_affected_players)} players")
+        for player in all_affected_players:
+            service.update_player_stats(player)
+
+        # Calculate processing time
+        processing_time = time.time() - start_time
+
+        # Create upload session
+        session_id = service.create_upload_session(
+            filename=f"{len(files)} files",
+            hands_parsed=total_hands_parsed,
+            hands_failed=total_hands_failed,
+            players_updated=len(all_affected_players),
+            stake_level=stake_level,
+            processing_time=int(processing_time)
+        )
+
+        logger.info(f"Batch upload complete: session_id={session_id}, files={len(files)}, hands={total_hands_parsed}")
+
+        return UploadResponse(
+            session_id=session_id,
+            hands_parsed=total_hands_parsed,
+            hands_failed=total_hands_failed,
+            players_updated=len(all_affected_players),
+            stake_level=stake_level,
+            processing_time=round(processing_time, 2),
+            message=f"Successfully processed {total_hands_parsed} hands from {len(files)} files"
+        )
+
+    except Exception as e:
+        logger.error(f"Error processing batch upload: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error processing files: {str(e)}"
+        )
+
+
 @app.get(
     "/api/players",
     response_model=List[PlayerListItem],
