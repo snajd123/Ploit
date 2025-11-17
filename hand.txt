@@ -1,0 +1,29 @@
+PokerStars Hand #2324249884:  Hold'em No Limit (€0.02/€0.04) - 2025/11/14 16:07:54 EET
+Table 'Baade' 6-max Seat #1 is the button
+Seat 1: GfunkEra (€4.24 in chips)
+Seat 2: snajd (€4.43 in chips)
+Seat 3: smileme (€4 in chips)
+Seat 4: asfgewhr (€6.50 in chips)
+Seat 5: fred4444 (€3.99 in chips)
+Seat 6: Dontlimp (€3.23 in chips)
+snajd: posts small blind €0.02
+smileme: posts big blind €0.04
+*** HOLE CARDS ***
+Dealt to snajd [7s 4h]
+asfgewhr: folds
+fred4444: raises €0.04 to €0.08
+Dontlimp: folds
+GfunkEra: folds
+snajd: folds
+smileme: folds
+Uncalled bet (€0.04) returned to fred4444
+fred4444 collected €0.1 from pot
+fred4444: doesn't show hand
+*** SUMMARY ***
+Total pot €0.14 | Rake €0
+Seat 1: GfunkEra (€4.24) folded before Flop (didn't bet)
+Seat 2: snajd (€4.43) folded before Flop (didn't bet)
+Seat 3: smileme (€4) folded before Flop (didn't bet)
+Seat 4: asfgewhr (€6.50) folded before Flop (didn't bet)
+Seat 5: fred4444 (€3.99) folded before Flop (didn't bet)
+Seat 6: Dontlimp (€3.23) folded before Flop (didn't bet)

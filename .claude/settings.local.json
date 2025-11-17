@@ -9,7 +9,9 @@
       "Bash(node:*)",
       "Bash(npm:*)",
       "Bash(apt-get install:*)",
-      "Bash(chmod:*)"
+      "Bash(chmod:*)",
+      "Bash(git ls-tree:*)",
+      "Bash(python3:*)"
     ],
     "deny": [],
     "ask": []

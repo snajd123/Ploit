@@ -109,6 +109,32 @@ class ApiClient {
     const response = await this.client.get('/api/database/schema');
     return response.data;
   }
+
+  // Recalculate all player statistics
+  async recalculateStats(): Promise<{
+    message: string;
+    players_processed: number;
+    players_updated: number;
+    players_failed: number;
+  }> {
+    const response = await this.client.post('/api/database/recalculate-stats');
+    return response.data;
+  }
+
+  // Clear all database data
+  async clearDatabase(): Promise<{
+    message: string;
+    deleted: {
+      raw_hands: number;
+      hand_actions: number;
+      player_hand_summary: number;
+      player_stats: number;
+      upload_sessions: number;
+    };
+  }> {
+    const response = await this.client.delete('/api/database/clear');
+    return response.data;
+  }
 }
 
 // Export singleton instance

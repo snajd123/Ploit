@@ -1,5 +1,5 @@
 import { Outlet, NavLink } from 'react-router-dom';
-import { LayoutDashboard, Upload, Users, MessageSquare } from 'lucide-react';
+import { LayoutDashboard, Upload, Users, MessageSquare, Settings } from 'lucide-react';
 
 const Layout = () => {
   const navItems = [
@@ -7,6 +7,7 @@ const Layout = () => {
     { to: '/upload', icon: Upload, label: 'Upload' },
     { to: '/players', icon: Users, label: 'Players' },
     { to: '/claude', icon: MessageSquare, label: 'Claude AI' },
+    { to: '/settings', icon: Settings, label: 'Settings' },
   ];
 
   return (

@@ -572,6 +572,132 @@ async def get_database_schema():
 
 
 @app.post(
+    "/api/database/recalculate-stats",
+    tags=["Database"],
+    summary="Recalculate all player statistics",
+    description="Recalculate statistics for all players using the latest flag calculation logic"
+)
+async def recalculate_all_stats(db: Session = Depends(get_db)):
+    """
+    Recalculate statistics for all players.
+
+    This endpoint:
+    1. Gets all unique player names from player_hand_summary
+    2. Recalculates their statistics using the current flag calculation logic
+    3. Updates the player_stats table
+
+    Use this after fixing flag calculation bugs to update existing data.
+
+    Returns:
+        Summary of recalculation including number of players updated
+    """
+    try:
+        service = DatabaseService(db)
+
+        # Get all unique player names from player_hand_summary
+        from backend.models.database_models import PlayerHandSummary
+        player_names = db.query(PlayerHandSummary.player_name).distinct().all()
+        player_names = [name[0] for name in player_names]
+
+        logger.info(f"Starting stats recalculation for {len(player_names)} players")
+
+        updated_count = 0
+        failed_count = 0
+
+        for player_name in player_names:
+            try:
+                service.update_player_stats(player_name)
+                updated_count += 1
+                logger.info(f"Updated stats for {player_name} ({updated_count}/{len(player_names)})")
+            except Exception as e:
+                failed_count += 1
+                logger.error(f"Failed to update stats for {player_name}: {str(e)}")
+
+        logger.info(f"Stats recalculation complete: {updated_count} updated, {failed_count} failed")
+
+        return {
+            "message": "Statistics recalculated successfully",
+            "players_processed": len(player_names),
+            "players_updated": updated_count,
+            "players_failed": failed_count
+        }
+
+    except Exception as e:
+        logger.error(f"Error recalculating stats: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error recalculating statistics: {str(e)}"
+        )
+
+
+@app.delete(
+    "/api/database/clear",
+    tags=["Database"],
+    summary="Clear all database data",
+    description="Delete all data from all tables (USE WITH CAUTION)"
+)
+async def clear_database(db: Session = Depends(get_db)):
+    """
+    Clear all data from the database.
+
+    WARNING: This is a destructive operation that cannot be undone.
+
+    Deletes all data from:
+    - player_stats
+    - player_hand_summary
+    - hand_actions
+    - raw_hands
+    - upload_sessions
+
+    Returns:
+        Confirmation message with counts of deleted records
+    """
+    try:
+        from backend.models.database_models import (
+            PlayerStats, PlayerHandSummary, HandAction, RawHand, UploadSession
+        )
+
+        # Count records before deletion
+        stats_count = db.query(PlayerStats).count()
+        summary_count = db.query(PlayerHandSummary).count()
+        actions_count = db.query(HandAction).count()
+        hands_count = db.query(RawHand).count()
+        sessions_count = db.query(UploadSession).count()
+
+        logger.warning("Starting database clear operation")
+
+        # Delete in order respecting foreign keys
+        db.query(PlayerStats).delete()
+        db.query(PlayerHandSummary).delete()
+        db.query(HandAction).delete()
+        db.query(RawHand).delete()
+        db.query(UploadSession).delete()
+
+        db.commit()
+
+        logger.warning(f"Database cleared: {hands_count} hands, {actions_count} actions, {summary_count} summaries, {stats_count} player stats, {sessions_count} sessions")
+
+        return {
+            "message": "Database cleared successfully",
+            "deleted": {
+                "raw_hands": hands_count,
+                "hand_actions": actions_count,
+                "player_hand_summary": summary_count,
+                "player_stats": stats_count,
+                "upload_sessions": sessions_count
+            }
+        }
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error clearing database: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error clearing database: {str(e)}"
+        )
+
+
+@app.post(
     "/api/query/claude",
     response_model=ClaudeQueryResponse,
     tags=["Claude AI"],
