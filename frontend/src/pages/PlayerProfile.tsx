@@ -214,7 +214,11 @@ const PlayerProfile = () => {
           {/* Deviation Heatmap */}
           <div className="mb-6">
             <DeviationHeatmap
-              deviations={exploitAnalysis.analyses.flatMap(a => a.deviations)}
+              deviations={
+                exploitAnalysis.analyses
+                  .filter(a => a.comparison_type === 'baseline' || a.scenario === 'Poker Theory Baselines')
+                  .flatMap(a => a.deviations)
+              }
               playerName={player.player_name}
             />
           </div>
