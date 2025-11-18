@@ -37,6 +37,21 @@ const playerTypeConfig: Record<NonNullable<PlayerType>, { color: string; label: 
     label: 'Fish',
     description: 'Recreational player with major leaks',
   },
+  LOOSE_PASSIVE: {
+    color: 'bg-orange-100 text-orange-800 border-orange-300',
+    label: 'Loose/Passive',
+    description: 'Plays too many hands passively',
+  },
+  TIGHT: {
+    color: 'bg-slate-100 text-slate-800 border-slate-300',
+    label: 'Tight',
+    description: 'Tight player - hard to categorize',
+  },
+  UNKNOWN: {
+    color: 'bg-gray-100 text-gray-600 border-gray-300',
+    label: 'Unknown',
+    description: 'Unable to classify - needs more data',
+  },
 };
 
 const sizeClasses = {
