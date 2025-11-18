@@ -48,7 +48,7 @@ class ClaudeService:
         """
         self.db = db_session
         self.client = Anthropic(api_key=settings.anthropic_api_key)
-        self.model = "claude-3-sonnet-20240229"  # Claude 3 Sonnet (fallback for compatibility)
+        self.model = "claude-3-5-sonnet-20241022"  # Claude 3.5 Sonnet (latest)
 
     def query(self, user_query: str, conversation_history: Optional[List[Dict[str, str]]] = None) -> Dict[str, Any]:
         """
