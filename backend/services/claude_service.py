@@ -99,58 +99,72 @@ class ClaudeService:
                 messages=messages
             )
 
-            # Process response and handle tool calls
+            # Process response and handle tool calls (with recursive handling)
             final_text = ""
             tool_calls = []
+            final_response = response  # Track the last response for usage stats
+            max_iterations = 5  # Prevent infinite loops
+            iteration = 0
 
-            for block in response.content:
-                if block.type == "text":
-                    final_text += self._clean_response_text(block.text)
-                elif block.type == "tool_use":
-                    # Execute database query
-                    tool_result = self._execute_database_query(block.input.get("query", ""))
-                    tool_calls.append({
-                        "tool": block.name,
-                        "input": block.input,
-                        "result": tool_result
-                    })
+            current_response = response
+            while iteration < max_iterations:
+                has_tool_call = False
 
-                    # Continue conversation with tool result
-                    if tool_result["success"]:
-                        messages.append({
-                            "role": "assistant",
-                            "content": response.content
-                        })
-                        messages.append({
-                            "role": "user",
-                            "content": [{
-                                "type": "tool_result",
-                                "tool_use_id": block.id,
-                                "content": str(tool_result["data"])
-                            }]
+                for block in current_response.content:
+                    if block.type == "text":
+                        final_text += self._clean_response_text(block.text)
+                    elif block.type == "tool_use":
+                        has_tool_call = True
+                        # Execute database query
+                        tool_result = self._execute_database_query(block.input.get("query", ""))
+                        tool_calls.append({
+                            "tool": block.name,
+                            "input": block.input,
+                            "result": tool_result
                         })
 
-                        # Get final response after tool use
-                        followup = self.client.messages.create(
-                            model=self.model,
-                            max_tokens=4096,
-                            system=self._get_system_prompt(),
-                            tools=[self._get_database_tool()],
-                            messages=messages
-                        )
+                        # Continue conversation with tool result
+                        if tool_result["success"]:
+                            messages.append({
+                                "role": "assistant",
+                                "content": current_response.content
+                            })
+                            messages.append({
+                                "role": "user",
+                                "content": [{
+                                    "type": "tool_result",
+                                    "tool_use_id": block.id,
+                                    "content": str(tool_result["data"])
+                                }]
+                            })
 
-                        for followup_block in followup.content:
-                            if followup_block.type == "text":
-                                final_text += self._clean_response_text(followup_block.text)
+                            # Get followup response after tool use
+                            current_response = self.client.messages.create(
+                                model=self.model,
+                                max_tokens=4096,
+                                system=self._get_system_prompt(),
+                                tools=[self._get_database_tool()],
+                                messages=messages
+                            )
+
+                            # Update final_response to track the last response for usage stats
+                            final_response = current_response
+                            break  # Exit for loop to process new response
+
+                # If no tool calls were made, we're done
+                if not has_tool_call:
+                    break
+
+                iteration += 1
 
             return {
                 "success": True,
                 "response": final_text,
                 "tool_calls": tool_calls,
-                "stop_reason": response.stop_reason,
+                "stop_reason": final_response.stop_reason,
                 "usage": {
-                    "input_tokens": response.usage.input_tokens,
-                    "output_tokens": response.usage.output_tokens
+                    "input_tokens": final_response.usage.input_tokens,
+                    "output_tokens": final_response.usage.output_tokens
                 }
             }
 
