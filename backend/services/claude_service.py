@@ -50,6 +50,23 @@ class ClaudeService:
         self.client = Anthropic(api_key=settings.anthropic_api_key)
         self.model = "claude-3-opus-20240229"  # Claude 3 Opus (should be universally available)
 
+    def _clean_response_text(self, text: str) -> str:
+        """
+        Remove internal thinking tags from Claude's response.
+
+        Args:
+            text: Raw response text from Claude
+
+        Returns:
+            Cleaned text without thinking tags
+        """
+        import re
+        # Remove <thinking>...</thinking> blocks
+        cleaned = re.sub(r'<thinking>.*?</thinking>', '', text, flags=re.DOTALL)
+        # Remove extra whitespace
+        cleaned = re.sub(r'\n\s*\n\s*\n', '\n\n', cleaned)
+        return cleaned.strip()
+
     def query(self, user_query: str, conversation_history: Optional[List[Dict[str, str]]] = None) -> Dict[str, Any]:
         """
         Process a natural language query about poker data.
@@ -88,7 +105,7 @@ class ClaudeService:
 
             for block in response.content:
                 if block.type == "text":
-                    final_text += block.text
+                    final_text += self._clean_response_text(block.text)
                 elif block.type == "tool_use":
                     # Execute database query
                     tool_result = self._execute_database_query(block.input.get("query", ""))
@@ -124,7 +141,7 @@ class ClaudeService:
 
                         for followup_block in followup.content:
                             if followup_block.type == "text":
-                                final_text += followup_block.text
+                                final_text += self._clean_response_text(followup_block.text)
 
             return {
                 "success": True,
