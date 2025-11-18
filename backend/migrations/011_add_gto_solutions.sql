@@ -23,9 +23,9 @@ CREATE TABLE IF NOT EXISTS gto_solutions (
     gto_raise_frequency DECIMAL(5,2),
 
     -- Bet sizing (as % of pot)
-    gto_bet_size_small DECIMAL(5,2),    -- e.g., 33
-    gto_bet_size_medium DECIMAL(5,2),   -- e.g., 66
-    gto_bet_size_large DECIMAL(5,2),    -- e.g., 100
+    gto_bet_size_small DECIMAL(6,2),    -- e.g., 33 (changed from 5,2 to 6,2 for all-in bets)
+    gto_bet_size_medium DECIMAL(6,2),   -- e.g., 66
+    gto_bet_size_large DECIMAL(6,2),    -- e.g., 100 or 1764 (all-in)
 
     -- Expected values (in big blinds)
     ev_oop DECIMAL(8,2),

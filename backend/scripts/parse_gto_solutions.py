@@ -40,39 +40,63 @@ class GTOSolutionParser:
         """
         Extract action frequencies from the game tree.
 
+        TexasSolver JSON structure:
+        {
+            "actions": ["CHECK", "BET 3.000000", "BET 6.000000", "BET 97.000000"],
+            "strategy": {
+                "actions": [...],
+                "strategy": {
+                    "2d2c": [0.999769, 0.000219, 0.000010, 0.0],
+                    "2h2c": [0.999774, 0.000215, 0.000010, 0.0],
+                    ... 279 hand combos
+                }
+            }
+        }
+
         Returns dict with:
         - gto_bet_frequency: % of range that bets
         - gto_check_frequency: % of range that checks
-        - gto_fold_frequency: % of range that folds
-        - gto_call_frequency: % of range that calls
+        - gto_fold_frequency: % of range that folds (for IP facing bet)
+        - gto_call_frequency: % of range that calls (for IP facing bet)
         - gto_raise_frequency: % of range that raises
         """
         if not self.data:
             return {}
 
-        # Navigate to root node
-        root = self.data.get('tree', {})
+        # Get actions list from root
+        actions = self.data.get('actions', [])
 
-        # Get action distribution from root
-        actions = root.get('actions', [])
-        strategy = root.get('strategy', [])
+        # Get hand-by-hand strategies from root
+        strategy_data = self.data.get('strategy', {})
+        hand_strategies = strategy_data.get('strategy', {})
 
-        if not actions or not strategy:
+        if not actions or not hand_strategies:
+            print(f"  Warning: No actions or strategies found in JSON")
             return {}
 
-        # Map actions to frequencies
-        freq_map = {}
-        for action, freq in zip(actions, strategy):
-            action_type = self._classify_action(action)
-            freq_map[action_type] = freq_map.get(action_type, 0.0) + freq
+        # Calculate average frequency for each action across all hands
+        num_hands = len(hand_strategies)
+        action_freqs = {}
 
-        # Convert to percentages
+        for action_idx, action in enumerate(actions):
+            # Sum frequencies for this action across all hand combos
+            total_freq = sum(
+                hand_freqs[action_idx]
+                for hand_freqs in hand_strategies.values()
+            )
+            # Average and convert to percentage
+            avg_freq = (total_freq / num_hands) * 100
+
+            # Classify action type
+            action_type = self._classify_action(action)
+            action_freqs[action_type] = action_freqs.get(action_type, 0.0) + avg_freq
+
         return {
-            'gto_bet_frequency': round(freq_map.get('bet', 0.0) * 100, 2),
-            'gto_check_frequency': round(freq_map.get('check', 0.0) * 100, 2),
-            'gto_fold_frequency': round(freq_map.get('fold', 0.0) * 100, 2),
-            'gto_call_frequency': round(freq_map.get('call', 0.0) * 100, 2),
-            'gto_raise_frequency': round(freq_map.get('raise', 0.0) * 100, 2),
+            'gto_bet_frequency': round(action_freqs.get('bet', 0.0), 2),
+            'gto_check_frequency': round(action_freqs.get('check', 0.0), 2),
+            'gto_fold_frequency': round(action_freqs.get('fold', 0.0), 2),
+            'gto_call_frequency': round(action_freqs.get('call', 0.0), 2),
+            'gto_raise_frequency': round(action_freqs.get('raise', 0.0), 2),
         }
 
     def _classify_action(self, action: str) -> str:
@@ -96,6 +120,9 @@ class GTOSolutionParser:
         """
         Extract bet sizing distribution.
 
+        TexasSolver bet actions format: "BET 3.000000" means bet of 3 BB
+        Need to convert to % of pot based on scenario pot size.
+
         Returns:
         - gto_bet_size_small: Small bet sizing (% of pot)
         - gto_bet_size_medium: Medium bet sizing
@@ -104,77 +131,83 @@ class GTOSolutionParser:
         if not self.data:
             return {}
 
-        root = self.data.get('tree', {})
-        actions = root.get('actions', [])
-        strategy = root.get('strategy', [])
+        actions = self.data.get('actions', [])
 
-        # Extract bet sizes
-        bet_sizes = {}
-        for action, freq in zip(actions, strategy):
-            if 'bet' in action.lower() and freq > 0.05:  # Only significant actions
-                # Try to extract size from action name (e.g., "bet_50" = 50% pot)
-                parts = action.split('_')
-                if len(parts) > 1:
-                    try:
-                        size = int(parts[1])
-                        if size < 40:
-                            bet_sizes['small'] = size
-                        elif size < 65:
-                            bet_sizes['medium'] = size
-                        else:
-                            bet_sizes['large'] = size
-                    except:
-                        pass
+        # Extract bet sizes from action strings
+        bet_sizes_bb = []
+        for action in actions:
+            if action.startswith('BET '):
+                try:
+                    # Parse "BET 3.000000" -> 3.0 BB
+                    size_bb = float(action.split()[1])
+                    bet_sizes_bb.append(size_bb)
+                except (ValueError, IndexError):
+                    pass
+
+        # Convert BB to % of pot
+        # Assume pot size from scenario (5.5 BB for SRP, 20.5 BB for 3bet)
+        pot_size = 5.5  # Default SRP pot
+        if '3bet' in self.scenario_name.lower():
+            pot_size = 20.5
+
+        bet_sizes_pct = sorted([round((size / pot_size) * 100) for size in bet_sizes_bb])
+
+        # Classify into small/medium/large
+        result = {}
+        if len(bet_sizes_pct) >= 1:
+            result['gto_bet_size_small'] = bet_sizes_pct[0]
+        if len(bet_sizes_pct) >= 2:
+            result['gto_bet_size_medium'] = bet_sizes_pct[1]
+        if len(bet_sizes_pct) >= 3:
+            result['gto_bet_size_large'] = bet_sizes_pct[2]
 
         return {
-            'gto_bet_size_small': bet_sizes.get('small'),
-            'gto_bet_size_medium': bet_sizes.get('medium'),
-            'gto_bet_size_large': bet_sizes.get('large'),
+            'gto_bet_size_small': result.get('gto_bet_size_small'),
+            'gto_bet_size_medium': result.get('gto_bet_size_medium'),
+            'gto_bet_size_large': result.get('gto_bet_size_large'),
         }
 
     def extract_evs(self) -> Dict:
         """
         Extract expected values for each player.
 
+        Note: EV calculation from TexasSolver's full game tree is complex.
+        For MVP, we'll leave EVs as NULL and can add them later if needed.
+        The critical data is the action frequencies, not the EVs.
+
         Returns:
-        - ev_oop: EV for out-of-position player (in BB)
-        - ev_ip: EV for in-position player (in BB)
+        - ev_oop: EV for out-of-position player (in BB) - NULL for now
+        - ev_ip: EV for in-position player (in BB) - NULL for now
         """
-        if not self.data:
-            return {}
-
-        evs = self.data.get('evs', {})
-
+        # Return NULL - can calculate from game tree later if needed
         return {
-            'ev_oop': round(evs.get('player0', 0.0), 2),
-            'ev_ip': round(evs.get('player1', 0.0), 2),
+            'ev_oop': None,
+            'ev_ip': None,
         }
 
     def extract_ranges(self) -> Dict:
         """
         Extract hand ranges for each action.
 
+        Note: Full hand-by-hand range extraction would require parsing the
+        strategy for each action and categorizing hands. For MVP, we'll store
+        the frequencies (which are already averaged across all hands) and can
+        add detailed ranges later if needed.
+
         Returns JSONB-formatted ranges for:
-        - gto_betting_range
-        - gto_checking_range
-        - gto_raising_range
-        - gto_calling_range
-        - gto_folding_range
+        - gto_betting_range - NULL for now
+        - gto_checking_range - NULL for now
+        - gto_raising_range - NULL for now
+        - gto_calling_range - NULL for now
+        - gto_folding_range - NULL for now
         """
-        if not self.data:
-            return {}
-
-        # TexasSolver stores ranges in the 'ranges' section
-        ranges = self.data.get('ranges', {})
-
-        # For now, return simplified structure
-        # Full implementation would parse hand-by-hand strategies
+        # Return NULL - can extract detailed hand ranges later if needed
         return {
-            'gto_betting_range': json.dumps(ranges.get('player0_betting', {})),
-            'gto_checking_range': json.dumps(ranges.get('player0_checking', {})),
-            'gto_raising_range': json.dumps(ranges.get('player0_raising', {})),
-            'gto_calling_range': json.dumps(ranges.get('player0_calling', {})),
-            'gto_folding_range': json.dumps(ranges.get('player0_folding', {})),
+            'gto_betting_range': None,
+            'gto_checking_range': None,
+            'gto_raising_range': None,
+            'gto_calling_range': None,
+            'gto_folding_range': None,
         }
 
     def parse_scenario_name(self) -> Dict:
@@ -287,8 +320,15 @@ def parse_all_solutions(output_dir: str) -> List[Dict]:
             solutions.append(solution)
             print(f"  ✓ Extracted: {solution['scenario_name']}")
             print(f"    Bet freq: {solution.get('gto_bet_frequency', 0):.1f}%")
-            print(f"    EV (OOP): {solution.get('ev_oop', 0):.2f} BB")
-            print(f"    EV (IP):  {solution.get('ev_ip', 0):.2f} BB")
+
+            # Handle None values for EVs
+            ev_oop = solution.get('ev_oop')
+            ev_ip = solution.get('ev_ip')
+            if ev_oop is not None and ev_ip is not None:
+                print(f"    EV (OOP): {ev_oop:.2f} BB")
+                print(f"    EV (IP):  {ev_ip:.2f} BB")
+            else:
+                print(f"    EVs: Not extracted (can add later if needed)")
         else:
             print(f"  ✗ Failed to parse {json_file.name}")
 
@@ -297,6 +337,12 @@ def parse_all_solutions(output_dir: str) -> List[Dict]:
 
 def generate_sql_insert(solution: Dict) -> str:
     """Generate SQL INSERT statement for a solution"""
+    # Helper function to format values for SQL
+    def fmt_val(val):
+        if val is None:
+            return 'NULL'
+        return str(val)
+
     sql = f"""
 INSERT INTO gto_solutions (
     scenario_name, scenario_type, board,
@@ -315,16 +361,16 @@ INSERT INTO gto_solutions (
     '{solution['position_ip']}',
     {solution['pot_size']},
     {solution['stack_depth']},
-    {solution.get('gto_bet_frequency', 'NULL')},
-    {solution.get('gto_check_frequency', 'NULL')},
-    {solution.get('gto_fold_frequency', 'NULL')},
-    {solution.get('gto_call_frequency', 'NULL')},
-    {solution.get('gto_raise_frequency', 'NULL')},
-    {solution.get('gto_bet_size_small') or 'NULL'},
-    {solution.get('gto_bet_size_medium') or 'NULL'},
-    {solution.get('gto_bet_size_large') or 'NULL'},
-    {solution.get('ev_oop', 'NULL')},
-    {solution.get('ev_ip', 'NULL')},
+    {fmt_val(solution.get('gto_bet_frequency'))},
+    {fmt_val(solution.get('gto_check_frequency'))},
+    {fmt_val(solution.get('gto_fold_frequency'))},
+    {fmt_val(solution.get('gto_call_frequency'))},
+    {fmt_val(solution.get('gto_raise_frequency'))},
+    {fmt_val(solution.get('gto_bet_size_small'))},
+    {fmt_val(solution.get('gto_bet_size_medium'))},
+    {fmt_val(solution.get('gto_bet_size_large'))},
+    {fmt_val(solution.get('ev_oop'))},
+    {fmt_val(solution.get('ev_ip'))},
     '{solution.get('description', '')}',
     '{solution.get('solver_version', 'TexasSolver-0.2.0')}'
 )

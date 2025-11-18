@@ -15,7 +15,22 @@
       "Bash(/dev/null)",
       "Bash(unzip:*)",
       "Bash(./TexasSolver:*)",
-      "Bash(./console_solver:*)"
+      "Bash(./console_solver:*)",
+      "Bash(pkill:*)",
+      "Bash(timeout 60 ./console_solver:*)",
+      "Bash(timeout 30 ./console_solver:*)",
+      "Bash(./run_all_solves.sh)",
+      "Bash(cat:*)",
+      "Bash(POSTGRES_USER=ploit_user POSTGRES_PASSWORD=ploit123 POSTGRES_DB=ploit_db python3:*)",
+      "Bash(railway whoami:*)",
+      "Bash(pip3 install:*)",
+      "Bash(psql:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(curl:*)",
+      "Bash(sh -s -- -y)",
+      "Bash(source \"$HOME/.cargo/env\")",
+      "Bash(rustc:*)",
+      "Bash(git clone:*)"
     ],
     "deny": [],
     "ask": []

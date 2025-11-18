@@ -13,6 +13,7 @@ import type {
   ClaudeQueryRequest,
   ClaudeQueryResponse,
   HealthResponse,
+  PlayerExploitAnalysisResponse,
 } from '../types';
 
 class ApiClient {
@@ -133,6 +134,15 @@ class ApiClient {
     };
   }> {
     const response = await this.client.delete('/api/database/clear');
+    return response.data;
+  }
+
+  // Analyze player against poker theory baselines and GTO scenarios
+  async analyzePlayerExploits(playerName: string, scenarios?: string[]): Promise<PlayerExploitAnalysisResponse> {
+    const response = await this.client.post<PlayerExploitAnalysisResponse>(
+      `/api/gto/analyze/${encodeURIComponent(playerName)}`,
+      { scenarios }
+    );
     return response.data;
   }
 }

@@ -1,0 +1,15 @@
+set_pot 5.5
+set_effective_stack 97.5
+set_board Ah,9s,3h
+set_range_ip AA,KK,QQ,JJ,TT,99,88,77,66,55,AK,AQ,AJ
+set_range_oop AA,KK,QQ,JJ,TT,99,88,77,66,55,44,33,22,AK,AQ,AJ
+set_bet_sizes oop,flop,bet,50
+set_bet_sizes ip,flop,bet,50
+set_allin_threshold 0.67
+build_tree
+set_thread_num 4
+set_accuracy 1.0
+set_max_iteration 100
+set_print_interval 50
+start_solve
+dump_result /root/Documents/Ploit/solver/outputs/test_minimal.json

@@ -1,0 +1,15 @@
+# GTO Wizard Batch Import Template
+# Format: scenario_id|range_text|action_frequencies
+# Lines starting with # are comments
+
+# RFI Scenarios
+# 1|2d2c: 1,2h2c: 1,...|raise=100
+# 2|2d2c: 1,2h2c: 1,...|raise=100
+# 3|2d2c: 1,2h2c: 1,...|raise=100
+4|PASTE_RANGE_HERE|raise=100
+
+# 3Bet Scenarios
+# 100|PASTE_RANGE_HERE|raise=100
+# 101|PASTE_RANGE_HERE|raise=100
+
+# Add more scenarios below...

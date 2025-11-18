@@ -149,3 +149,45 @@ export interface HealthResponse {
   database: string;
   timestamp: string;
 }
+
+// Baseline Comparison Types
+export interface Deviation {
+  stat: string;
+  player: number;
+  baseline?: number;
+  gto?: number;
+  deviation: number;
+  abs_deviation: number;
+  severity: 'negligible' | 'minor' | 'moderate' | 'severe' | 'extreme';
+  exploitable: boolean;
+  direction: 'over' | 'under';
+  exploit_direction?: string;
+  estimated_ev?: number;
+}
+
+export interface BaselineComparisonResponse {
+  scenario: string;
+  baseline_type?: string;
+  baseline_source?: string;
+  position?: string;
+  gto_baseline?: {
+    scenario_type?: string;
+    board?: string;
+    description?: string;
+    gto_bet_freq?: number;
+    gto_fold_freq?: number;
+    gto_raise_freq?: number;
+  };
+  deviations: Deviation[];
+  exploitable_count: number;
+  total_estimated_ev: number;
+  summary: string;
+}
+
+export interface PlayerExploitAnalysisResponse {
+  player_name: string;
+  scenarios_analyzed: number;
+  total_estimated_ev: number;
+  analyses: BaselineComparisonResponse[];
+  summary: string;
+}

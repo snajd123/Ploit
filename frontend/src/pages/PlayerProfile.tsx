@@ -9,6 +9,9 @@ import PositionalVPIPChart from '../components/PositionalVPIPChart';
 import PreflopAggressionChart from '../components/PreflopAggressionChart';
 import CBetStreetsChart from '../components/CBetStreetsChart';
 import ShowdownChart from '../components/ShowdownChart';
+import ExploitDashboard from '../components/ExploitDashboard';
+import BaselineComparison from '../components/BaselineComparison';
+import DeviationHeatmap from '../components/DeviationHeatmap';
 
 const PlayerProfile = () => {
   const { playerName } = useParams<{ playerName: string }>();
@@ -17,6 +20,13 @@ const PlayerProfile = () => {
   const { data: player, isLoading, error } = useQuery({
     queryKey: ['player', playerName],
     queryFn: () => api.getPlayerProfile(playerName!),
+    enabled: !!playerName,
+  });
+
+  // Fetch baseline/exploit analysis
+  const { data: exploitAnalysis } = useQuery({
+    queryKey: ['playerExploits', playerName],
+    queryFn: () => api.analyzePlayerExploits(playerName!),
     enabled: !!playerName,
   });
 
@@ -187,6 +197,35 @@ const PlayerProfile = () => {
           />
         </div>
       </div>
+
+      {/* Exploit Analysis Section */}
+      {exploitAnalysis && exploitAnalysis.analyses && exploitAnalysis.analyses.length > 0 && (
+        <div>
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">Exploit Analysis</h2>
+
+          {/* Exploit Dashboard Summary */}
+          <div className="mb-6">
+            <ExploitDashboard
+              deviations={exploitAnalysis.analyses.flatMap(a => a.deviations)}
+              playerName={player.player_name}
+            />
+          </div>
+
+          {/* Deviation Heatmap */}
+          <div className="mb-6">
+            <DeviationHeatmap
+              deviations={exploitAnalysis.analyses.flatMap(a => a.deviations)}
+              playerName={player.player_name}
+            />
+          </div>
+
+          {/* Baseline Comparison Table */}
+          <BaselineComparison
+            deviations={exploitAnalysis.analyses.flatMap(a => a.deviations)}
+            playerName={player.player_name}
+          />
+        </div>
+      )}
 
       {/* Composite metrics chart */}
       <MetricChart
