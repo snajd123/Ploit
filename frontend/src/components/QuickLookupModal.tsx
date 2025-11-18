@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { X, Search, Target, AlertCircle, ExternalLink } from 'lucide-react';
 import { api } from '../services/api';
+import SinglePlayerAutocomplete from './SinglePlayerAutocomplete';
 
 interface QuickLookupModalProps {
   isOpen: boolean;
@@ -87,12 +88,11 @@ const QuickLookupModal: React.FC<QuickLookupModalProps> = ({
         {/* Search Input */}
         <div className="px-6 py-4 border-b border-gray-200">
           <div className="flex gap-2">
-            <input
-              type="text"
+            <SinglePlayerAutocomplete
               value={playerName}
-              onChange={(e) => setPlayerName(e.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder="Enter player name..."
+              onChange={setPlayerName}
+              onSelect={(name) => setSearchName(name)}
+              placeholder="Start typing player name..."
               className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               autoFocus
             />
