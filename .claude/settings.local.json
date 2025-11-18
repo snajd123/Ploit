@@ -31,7 +31,8 @@
       "Bash(source \"$HOME/.cargo/env\")",
       "Bash(rustc:*)",
       "Bash(git clone:*)",
-      "Bash(pip3 list:*)"
+      "Bash(pip3 list:*)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []
