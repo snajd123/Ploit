@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { X, Search, Target, AlertCircle } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { X, Search, Target, AlertCircle, ExternalLink } from 'lucide-react';
 import { api } from '../services/api';
 
 interface QuickLookupModalProps {
@@ -14,6 +15,7 @@ const QuickLookupModal: React.FC<QuickLookupModalProps> = ({
   onClose,
   initialPlayerName = ''
 }) => {
+  const navigate = useNavigate();
   const [playerName, setPlayerName] = useState(initialPlayerName);
   const [searchName, setSearchName] = useState('');
 
@@ -32,6 +34,13 @@ const QuickLookupModal: React.FC<QuickLookupModalProps> = ({
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       handleSearch();
+    }
+  };
+
+  const handleViewProfile = () => {
+    if (searchName) {
+      navigate(`/players/${encodeURIComponent(searchName)}`);
+      onClose();
     }
   };
 
@@ -129,8 +138,17 @@ const QuickLookupModal: React.FC<QuickLookupModalProps> = ({
             <div className="space-y-4">
               {/* Player Header */}
               <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="text-2xl font-bold text-gray-900">{playerData.player_name}</h3>
+                <div className="flex-1">
+                  <div className="flex items-center gap-3">
+                    <h3 className="text-2xl font-bold text-gray-900">{playerData.player_name}</h3>
+                    <button
+                      onClick={handleViewProfile}
+                      className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 p-2 rounded-lg transition-colors"
+                      title="View full profile"
+                    >
+                      <ExternalLink className="w-5 h-5" />
+                    </button>
+                  </div>
                   <div className="flex items-center gap-2 mt-2">
                     <span className={`inline-block px-2 py-1 rounded text-sm font-medium ${getPlayerTypeColor(playerData.player_type)}`}>
                       {playerData.player_type || 'UNKNOWN'}

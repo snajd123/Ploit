@@ -359,6 +359,51 @@ async def quick_lookup(
     exploitable_devs.sort(key=lambda x: x['abs_deviation'], reverse=True)
     top_5 = exploitable_devs[:5]
 
+    # Helper function to get explicit exploitation strategy
+    def get_explicit_exploit(dev):
+        stat = dev['stat']
+        direction = dev['exploit_direction']
+        deviation = dev['deviation']
+
+        # Map stat names to explicit strategies
+        exploit_strategies = {
+            'VPIP': {
+                'positive': f"→ They play too many hands. 3-bet them more aggressively, especially from position. Value bet thinner post-flop.",
+                'negative': f"→ They play too tight. Steal their blinds frequently and avoid paying them off with marginal hands."
+            },
+            'PFR': {
+                'positive': f"→ They raise too often. Call more in position to see flops and outplay them post-flop. Trap with strong hands.",
+                'negative': f"→ They're too passive preflop. Attack their limps with raises. When they do raise, respect it more."
+            },
+            'CBET_FLOP': {
+                'positive': f"→ They c-bet too much. Float the flop more often and attack on later streets when they check.",
+                'negative': f"→ They give up too easily. Bet when they check and continue barreling on multiple streets."
+            },
+            'FOLD_TO_CBET_FLOP': {
+                'positive': f"→ They fold too much to c-bets. Continuation bet aggressively with your entire range, especially on dry boards.",
+                'negative': f"→ They're a calling station. Only c-bet for value and give up with pure air. Avoid bluffing them."
+            },
+            'FOLD_TO_3BET': {
+                'positive': f"→ They fold too much to 3-bets. 3-bet them with a polarized range, adding more bluffs. Print money.",
+                'negative': f"→ They don't fold to 3-bets. Only 3-bet for value and be prepared to see flops. Tighten up your 3-betting range."
+            },
+            '3BET': {
+                'positive': f"→ They 3-bet too much. Trap them with strong hands by flatting. 4-bet bluff them occasionally.",
+                'negative': f"→ They never 3-bet. Open wider from late position and respect their 3-bets when they finally make one."
+            },
+            'WTSD': {
+                'positive': f"→ They go to showdown too often. Value bet thin and avoid bluffing - they'll call you down with weak hands.",
+                'negative': f"→ They fold too much on later streets. Barrel more often and apply pressure with bluffs on turn and river."
+            }
+        }
+
+        # Get the appropriate strategy
+        is_positive = deviation > 0
+        exploit_key = 'positive' if is_positive else 'negative'
+        strategy = exploit_strategies.get(stat, {}).get(exploit_key, direction)
+
+        return strategy
+
     return {
         'player_name': player_name,
         'player_type': player.player_type,
@@ -374,7 +419,7 @@ async def quick_lookup(
         'top_exploits': [
             {
                 'stat': dev['stat'],
-                'exploit': dev['exploit_direction'],
+                'exploit': get_explicit_exploit(dev),
                 'deviation': f"{dev['deviation']:+.1f}%",
                 'severity': dev['severity']
             }
