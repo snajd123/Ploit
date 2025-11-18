@@ -1,5 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { useRef } from 'react';
 import { ArrowLeft, TrendingUp, Target, Shield } from 'lucide-react';
 import { api } from '../services/api';
 import PlayerBadge from '../components/PlayerBadge';
@@ -16,6 +17,7 @@ import DeviationHeatmap from '../components/DeviationHeatmap';
 const PlayerProfile = () => {
   const { playerName } = useParams<{ playerName: string }>();
   const navigate = useNavigate();
+  const baselineTableRef = useRef<HTMLDivElement>(null);
 
   const { data: player, isLoading, error } = useQuery({
     queryKey: ['player', playerName],
@@ -29,6 +31,11 @@ const PlayerProfile = () => {
     queryFn: () => api.analyzePlayerExploits(playerName!),
     enabled: !!playerName,
   });
+
+  // Scroll to baseline comparison table
+  const scrollToBaselineTable = () => {
+    baselineTableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   if (isLoading) {
     return (
@@ -208,6 +215,7 @@ const PlayerProfile = () => {
             <ExploitDashboard
               deviations={exploitAnalysis.analyses.flatMap(a => a.deviations)}
               playerName={player.player_name}
+              onViewDetails={scrollToBaselineTable}
             />
           </div>
 
@@ -224,14 +232,16 @@ const PlayerProfile = () => {
           </div>
 
           {/* Baseline Comparison Table */}
-          <BaselineComparison
-            deviations={
-              exploitAnalysis.analyses
-                .filter(a => a.comparison_type === 'baseline' || a.scenario === 'Poker Theory Baselines')
-                .flatMap(a => a.deviations)
-            }
-            playerName={player.player_name}
-          />
+          <div ref={baselineTableRef}>
+            <BaselineComparison
+              deviations={
+                exploitAnalysis.analyses
+                  .filter(a => a.comparison_type === 'baseline' || a.scenario === 'Poker Theory Baselines')
+                  .flatMap(a => a.deviations)
+              }
+              playerName={player.player_name}
+            />
+          </div>
         </div>
       )}
 
