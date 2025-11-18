@@ -305,13 +305,19 @@ class GTOService:
         Uses comprehensive baseline data when GTO solutions are unavailable.
         """
         deviations = []
-        position = player_stats.get('position', 'BTN')
+        position = player_stats.get('position', None)
 
         # Compare VPIP
         if 'vpip_pct' in player_stats:
-            vpip_range = baseline_provider.get_vpip_range(position)
             player_vpip = float(player_stats['vpip_pct'] or 0)
-            baseline_vpip = sum(vpip_range) / 2  # midpoint
+
+            # Use overall VPIP baseline (not position-specific) when position is unknown
+            if position:
+                vpip_range = baseline_provider.get_vpip_range(position)
+                baseline_vpip = sum(vpip_range) / 2  # midpoint
+            else:
+                # Use overall baseline from SHOWDOWN_BASELINES
+                baseline_vpip = 23.0  # Overall 6-max VPIP baseline
 
             dev = baseline_provider.calculate_deviation(player_vpip, baseline_vpip)
             dev['stat'] = 'VPIP'
@@ -321,7 +327,12 @@ class GTOService:
         # Compare PFR
         if 'pfr_pct' in player_stats:
             player_pfr = float(player_stats['pfr_pct'] or 0)
-            baseline_rfi = baseline_provider.get_rfi_frequency(position) or 20
+
+            # Use overall PFR baseline when position is unknown
+            if position:
+                baseline_rfi = baseline_provider.get_rfi_frequency(position) or 20
+            else:
+                baseline_rfi = 18.0  # Overall 6-max PFR baseline
 
             dev = baseline_provider.calculate_deviation(player_pfr, baseline_rfi)
             dev['stat'] = 'PFR'
