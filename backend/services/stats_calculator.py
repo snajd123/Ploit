@@ -514,28 +514,36 @@ class StatsCalculator:
             if vpip > Decimal('45') and pfr > Decimal('35'):
                 return 'MANIAC'
 
-            # CALLING STATION
-            if vpip > Decimal('35') and gap > Decimal('15'):
+            # CALLING STATION (loose passive)
+            if vpip > Decimal('35') and gap > Decimal('12'):
                 return 'CALLING_STATION'
 
-            # LAG
-            if Decimal('25') <= vpip <= Decimal('35') and \
-               Decimal('18') <= pfr <= Decimal('28') and \
-               gap < Decimal('7'):
+            # LAG (loose aggressive)
+            if vpip >= Decimal('25') and \
+               pfr >= Decimal('18') and \
+               gap < Decimal('12'):
                 return 'LAG'
 
-            # TAG
+            # TAG (tight aggressive)
             if Decimal('15') <= vpip <= Decimal('25') and \
                Decimal('12') <= pfr <= Decimal('20') and \
-               gap < Decimal('5'):
+               gap < Decimal('8'):
                 return 'TAG'
 
-            # NIT
-            if vpip < Decimal('15') and pfr < Decimal('12'):
+            # NIT (tight passive)
+            if vpip < Decimal('20') and pfr < Decimal('15') and gap > Decimal('5'):
                 return 'NIT'
 
-            # Default to TAG if unclear
-            return 'TAG'
+            # LOOSE_PASSIVE (doesn't fit other categories but loose)
+            if vpip > Decimal('30'):
+                return 'LOOSE_PASSIVE'
+
+            # TIGHT (doesn't fit other categories but tight)
+            if vpip < Decimal('25'):
+                return 'TIGHT'
+
+            # Unknown / Balanced
+            return 'UNKNOWN'
 
         except Exception as e:
             logger.error(f"Error classifying player type: {e}")
