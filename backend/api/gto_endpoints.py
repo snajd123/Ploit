@@ -233,20 +233,36 @@ async def analyze_player_exploits(
 
     results = []
     total_ev = 0
+    using_baselines = False
 
     for scenario in scenarios:
         comparison = service.compare_player_to_gto(player_dict, scenario)
 
         if 'error' not in comparison:
-            results.append(comparison)
-            total_ev += comparison.get('total_estimated_ev', 0)
+            # Check if this is a baseline comparison (no GTO solution)
+            if comparison.get('comparison_type') == 'baseline':
+                # Only add baseline comparison once
+                if not using_baselines:
+                    results.append(comparison)
+                    total_ev += comparison.get('total_estimated_ev', 0)
+                    using_baselines = True
+            else:
+                # Add GTO solution comparisons normally
+                results.append(comparison)
+                total_ev += comparison.get('total_estimated_ev', 0)
+
+    # Adjust summary based on comparison type
+    if using_baselines and len(results) == 1:
+        summary = f"Using poker theory baselines - found {results[0]['exploitable_count']} exploitable deviations"
+    else:
+        summary = f"Found {sum(r['exploitable_count'] for r in results)} exploitable deviations across {len(results)} scenarios"
 
     return {
         "player_name": player_name,
         "scenarios_analyzed": len(results),
         "total_estimated_ev": round(total_ev, 2),
         "analyses": results,
-        "summary": f"Found {sum(r['exploitable_count'] for r in results)} exploitable deviations across {len(results)} scenarios"
+        "summary": summary
     }
 
 

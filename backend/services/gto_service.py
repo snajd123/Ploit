@@ -203,6 +203,7 @@ class GTOService:
             total_exploit_value += ev
 
         return {
+            'comparison_type': 'gto',
             'scenario': scenario_name,
             'gto_baseline': {
                 'scenario_type': gto.get('scenario_type'),
@@ -421,6 +422,7 @@ class GTOService:
             total_exploit_value += ev
 
         return {
+            'comparison_type': 'baseline',
             'scenario': 'Poker Theory Baselines',
             'baseline_type': 'theory',
             'baseline_source': 'Modern Poker Theory + GTO Approximations',
