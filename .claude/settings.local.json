@@ -11,7 +11,11 @@
       "Bash(apt-get install:*)",
       "Bash(chmod:*)",
       "Bash(git ls-tree:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(/dev/null)",
+      "Bash(unzip:*)",
+      "Bash(./TexasSolver:*)",
+      "Bash(./console_solver:*)"
     ],
     "deny": [],
     "ask": []
