@@ -3,14 +3,17 @@ Service for querying GTO solutions and comparing to player stats.
 
 This service provides access to pre-computed GTO solutions and calculates
 deviations between player statistics and optimal GTO frequencies.
+Falls back to poker theory baselines when GTO data is unavailable.
 """
 
 from typing import Dict, Optional, List
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 import logging
+from .poker_baselines import BaselineProvider
 
 logger = logging.getLogger(__name__)
+baseline_provider = BaselineProvider()
 
 
 class GTOService:
@@ -112,25 +115,27 @@ class GTOService:
     def compare_player_to_gto(
         self,
         player_stats: Dict,
-        scenario_name: str
+        scenario_name: Optional[str] = None
     ) -> Dict:
         """
-        Compare player statistics to GTO baseline.
+        Compare player statistics to GTO baseline or poker theory baselines.
 
         Args:
             player_stats: Player stats dict from player_stats table
-            scenario_name: GTO scenario to compare against
+            scenario_name: Optional GTO scenario to compare against
 
         Returns:
             Comparison dict with deviations and exploits
         """
-        gto = self.get_gto_solution(scenario_name)
+        # Try to get GTO solution first
+        gto = None
+        if scenario_name:
+            gto = self.get_gto_solution(scenario_name)
 
+        # If no GTO solution, use poker theory baselines
         if not gto:
-            return {
-                'error': f'GTO solution not found: {scenario_name}',
-                'available_scenarios': self.list_scenarios(limit=10)
-            }
+            logger.info(f"Using poker theory baselines (GTO solution not found)")
+            return self._compare_to_baselines(player_stats)
 
         deviations = []
 
@@ -292,3 +297,120 @@ class GTOService:
         counts['total'] = sum(counts.values())
 
         return counts
+
+    def _compare_to_baselines(self, player_stats: Dict) -> Dict:
+        """
+        Compare player stats to poker theory baselines.
+
+        Uses comprehensive baseline data when GTO solutions are unavailable.
+        """
+        deviations = []
+        position = player_stats.get('position', 'BTN')
+
+        # Compare VPIP
+        if 'vpip_pct' in player_stats:
+            vpip_range = baseline_provider.get_vpip_range(position)
+            player_vpip = float(player_stats['vpip_pct'] or 0)
+            baseline_vpip = sum(vpip_range) / 2  # midpoint
+
+            dev = baseline_provider.calculate_deviation(player_vpip, baseline_vpip)
+            dev['stat'] = 'VPIP'
+            dev['exploit_direction'] = 'too loose' if dev['deviation'] > 0 else 'too tight'
+            deviations.append(dev)
+
+        # Compare PFR
+        if 'pfr_pct' in player_stats:
+            player_pfr = float(player_stats['pfr_pct'] or 0)
+            baseline_rfi = baseline_provider.get_rfi_frequency(position) or 20
+
+            dev = baseline_provider.calculate_deviation(player_pfr, baseline_rfi)
+            dev['stat'] = 'PFR'
+            dev['exploit_direction'] = 'too aggressive' if dev['deviation'] > 0 else 'too passive'
+            deviations.append(dev)
+
+        # Compare 3bet frequency
+        if 'three_bet_pct' in player_stats:
+            player_3bet = float(player_stats['three_bet_pct'] or 0)
+            # Use average across positions
+            baseline_3bet = 8.0
+
+            dev = baseline_provider.calculate_deviation(player_3bet, baseline_3bet)
+            dev['stat'] = '3Bet'
+            dev['exploit_direction'] = 'over-3betting' if dev['deviation'] > 0 else 'under-3betting'
+            deviations.append(dev)
+
+        # Compare fold to 3bet
+        if 'fold_to_three_bet_pct' in player_stats:
+            player_fold = float(player_stats['fold_to_three_bet_pct'] or 0)
+            baseline_fold = baseline_provider.get_fold_to_3bet(position)
+
+            dev = baseline_provider.calculate_deviation(player_fold, baseline_fold)
+            dev['stat'] = 'Fold to 3Bet'
+            dev['exploit_direction'] = 'over-folding' if dev['deviation'] > 0 else 'under-folding'
+            deviations.append(dev)
+
+        # Compare cbet flop
+        if 'cbet_flop_pct' in player_stats:
+            player_cbet = float(player_stats['cbet_flop_pct'] or 0)
+            baseline_cbet = baseline_provider.get_cbet_frequency('IP', 'flop')
+
+            dev = baseline_provider.calculate_deviation(player_cbet, baseline_cbet)
+            dev['stat'] = 'Flop CBet'
+            dev['exploit_direction'] = 'over-betting' if dev['deviation'] > 0 else 'under-betting'
+            deviations.append(dev)
+
+        # Compare fold to cbet
+        if 'fold_to_cbet_flop_pct' in player_stats:
+            player_fold_cbet = float(player_stats['fold_to_cbet_flop_pct'] or 0)
+            baseline_fold_cbet = baseline_provider.get_fold_to_cbet('OOP', 'flop')
+
+            dev = baseline_provider.calculate_deviation(player_fold_cbet, baseline_fold_cbet)
+            dev['stat'] = 'Fold to CBet'
+            dev['exploit_direction'] = 'over-folding' if dev['deviation'] > 0 else 'under-folding'
+            deviations.append(dev)
+
+        # Compare WTSD
+        if 'wtsd_pct' in player_stats:
+            from .poker_baselines import SHOWDOWN_BASELINES
+            player_wtsd = float(player_stats['wtsd_pct'] or 0)
+            baseline_wtsd = SHOWDOWN_BASELINES['WTSD']
+
+            dev = baseline_provider.calculate_deviation(player_wtsd, baseline_wtsd)
+            dev['stat'] = 'WTSD'
+            dev['exploit_direction'] = 'too sticky' if dev['deviation'] > 0 else 'too nitty'
+            deviations.append(dev)
+
+        # Compare W$SD
+        if 'wwsf_pct' in player_stats:  # Won When Saw Flop
+            from .poker_baselines import SHOWDOWN_BASELINES
+            player_wsd = float(player_stats['wwsf_pct'] or 0)
+            baseline_wsd = SHOWDOWN_BASELINES['W$SD']
+
+            dev = baseline_provider.calculate_deviation(player_wsd, baseline_wsd)
+            dev['stat'] = 'W$SD'
+            dev['exploit_direction'] = 'value-heavy' if dev['deviation'] > 0 else 'bluff-heavy'
+            deviations.append(dev)
+
+        # Calculate exploit value
+        exploitable_devs = [d for d in deviations if d.get('exploitable', False)]
+        total_exploit_value = 0
+
+        for dev in exploitable_devs:
+            ev = self.calculate_exploit_ev(
+                deviation=dev['abs_deviation'],
+                frequency=10,
+                pot_size=7.0
+            )
+            dev['estimated_ev'] = ev
+            total_exploit_value += ev
+
+        return {
+            'scenario': 'Poker Theory Baselines',
+            'baseline_type': 'theory',
+            'baseline_source': 'Modern Poker Theory + GTO Approximations',
+            'position': position,
+            'deviations': deviations,
+            'exploitable_count': len(exploitable_devs),
+            'total_estimated_ev': round(total_exploit_value, 2),
+            'summary': self._generate_exploit_summary(deviations)
+        }

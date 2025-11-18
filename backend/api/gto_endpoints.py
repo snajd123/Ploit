@@ -239,3 +239,37 @@ async def analyze_player_exploits(
         "analyses": results,
         "summary": f"Found {sum(r['exploitable_count'] for r in results)} exploitable deviations across {len(results)} scenarios"
     }
+
+
+@router.get("/baselines")
+async def get_baselines():
+    """
+    Get all poker theory baselines.
+    
+    Returns comprehensive baseline statistics for exploit detection.
+    """
+    baselines = baseline_provider.get_baseline_stats()
+    
+    return {
+        "baseline_type": "poker_theory",
+        "source": "Modern Poker Theory + GTO Approximations",
+        "baselines": baselines,
+        "stat_count": len(baselines),
+        "message": "Comprehensive poker theory baselines for exploit detection"
+    }
+
+
+@router.get("/baselines/position/{position}")
+async def get_position_baselines(position: str):
+    """
+    Get position-specific baselines.
+    
+    Returns RFI frequencies, VPIP ranges, and opening ranges for a position.
+    """
+    return {
+        "position": position.upper(),
+        "rfi_frequency": baseline_provider.get_rfi_frequency(position),
+        "vpip_range": baseline_provider.get_vpip_range(position),
+        "opening_range": baseline_provider.get_opening_range(position),
+        "fold_to_3bet_average": baseline_provider.get_fold_to_3bet(position)
+    }
