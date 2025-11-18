@@ -86,8 +86,7 @@ async def generate_pre_game_strategy(
             'fold_to_three_bet_pct': player.fold_to_three_bet_pct,
             'cbet_flop_pct': player.cbet_flop_pct,
             'fold_to_cbet_flop_pct': player.fold_to_cbet_flop_pct,
-            'wtsd_pct': player.wtsd_pct,
-            'wwsf_pct': player.wwsf_pct
+            'wtsd_pct': player.wtsd_pct
         })
 
         # Get top 3 exploits
