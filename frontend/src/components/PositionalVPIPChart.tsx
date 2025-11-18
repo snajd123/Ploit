@@ -52,7 +52,7 @@ const PositionalVPIPChart: React.FC<PositionalVPIPChartProps> = (props) => {
           <XAxis dataKey="position" />
           <YAxis label={{ value: 'VPIP %', angle: -90, position: 'insideLeft' }} />
           <Tooltip
-            formatter={(value: number, name: string, props: any) => {
+            formatter={(value: number, name: string) => {
               if (name === 'vpip') {
                 return [`${value.toFixed(1)}%`, 'Actual VPIP'];
               }

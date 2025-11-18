@@ -1,4 +1,3 @@
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 
 interface ShowdownChartProps {
   wtsd_pct?: number | null;

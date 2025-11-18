@@ -6,15 +6,70 @@ export interface PlayerStats {
   player_name: string;
   total_hands: number;
 
-  // Traditional stats
+  // Traditional stats - Preflop
   vpip_pct?: number;
   pfr_pct?: number;
+  limp_pct?: number;
   three_bet_pct?: number;
   fold_to_three_bet_pct?: number;
+  four_bet_pct?: number;
+  cold_call_pct?: number;
+  squeeze_pct?: number;
+
+  // Positional VPIP
+  vpip_utg?: number;
+  vpip_hj?: number;
+  vpip_mp?: number;
+  vpip_co?: number;
+  vpip_btn?: number;
+  vpip_sb?: number;
+  vpip_bb?: number;
+
+  // Steal and blind defense
+  steal_attempt_pct?: number;
+  fold_to_steal_pct?: number;
+  three_bet_vs_steal_pct?: number;
+
+  // Continuation betting
   cbet_flop_pct?: number;
+  cbet_turn_pct?: number;
+  cbet_river_pct?: number;
+
+  // Facing cbets
   fold_to_cbet_flop_pct?: number;
+  fold_to_cbet_turn_pct?: number;
+  fold_to_cbet_river_pct?: number;
+  call_cbet_flop_pct?: number;
+  call_cbet_turn_pct?: number;
+  call_cbet_river_pct?: number;
+  raise_cbet_flop_pct?: number;
+  raise_cbet_turn_pct?: number;
+  raise_cbet_river_pct?: number;
+
+  // Check-raise
+  check_raise_flop_pct?: number;
+  check_raise_turn_pct?: number;
+  check_raise_river_pct?: number;
+
+  // Donk betting
+  donk_bet_flop_pct?: number;
+  donk_bet_turn_pct?: number;
+  donk_bet_river_pct?: number;
+
+  // Float
+  float_flop_pct?: number;
+
+  // Aggression
+  af?: number;
+  afq?: number;
+
+  // Showdown
   wtsd_pct?: number;
   wsd_pct?: number;
+
+  // Win rate
+  total_profit_loss?: number;
+  bb_per_100?: number;
 
   // Composite metrics
   exploitability_index?: number;
@@ -36,7 +91,7 @@ export interface PlayerStats {
   last_updated?: string;
 }
 
-export type PlayerType = 'NIT' | 'TAG' | 'LAG' | 'CALLING_STATION' | 'MANIAC' | 'FISH' | null;
+export type PlayerType = 'NIT' | 'TAG' | 'LAG' | 'CALLING_STATION' | 'MANIAC' | 'FISH' | 'LOOSE_PASSIVE' | 'TIGHT' | 'UNKNOWN' | null;
 
 export interface PlayerListItem {
   player_name: string;
