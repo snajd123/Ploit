@@ -247,7 +247,7 @@ Format as JSON with keys: session_summary, table_dynamics, overall_strategy, foc
         client = Anthropic(api_key=settings.anthropic_api_key)
 
         response = client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model="claude-3-opus-20240229",
             max_tokens=8000,
             system="You are a professional poker strategy advisor. You MUST respond with ONLY valid JSON - no explanatory text, no markdown formatting, just the JSON object itself. Do not include ```json``` code blocks.",
             messages=[{
