@@ -123,33 +123,39 @@ class ClaudeService:
                             "result": tool_result
                         })
 
-                        # Continue conversation with tool result
+                        # Always send tool result back to Claude (even on error)
+                        messages.append({
+                            "role": "assistant",
+                            "content": current_response.content
+                        })
+
+                        # Format tool result content
                         if tool_result["success"]:
-                            messages.append({
-                                "role": "assistant",
-                                "content": current_response.content
-                            })
-                            messages.append({
-                                "role": "user",
-                                "content": [{
-                                    "type": "tool_result",
-                                    "tool_use_id": block.id,
-                                    "content": str(tool_result["data"])
-                                }]
-                            })
+                            result_content = str(tool_result["data"])
+                        else:
+                            result_content = f"Error: {tool_result.get('error', 'Unknown error')}"
 
-                            # Get followup response after tool use
-                            current_response = self.client.messages.create(
-                                model=self.model,
-                                max_tokens=4096,
-                                system=self._get_system_prompt(),
-                                tools=[self._get_database_tool()],
-                                messages=messages
-                            )
+                        messages.append({
+                            "role": "user",
+                            "content": [{
+                                "type": "tool_result",
+                                "tool_use_id": block.id,
+                                "content": result_content
+                            }]
+                        })
 
-                            # Update final_response to track the last response for usage stats
-                            final_response = current_response
-                            break  # Exit for loop to process new response
+                        # Get followup response after tool use
+                        current_response = self.client.messages.create(
+                            model=self.model,
+                            max_tokens=4096,
+                            system=self._get_system_prompt(),
+                            tools=[self._get_database_tool()],
+                            messages=messages
+                        )
+
+                        # Update final_response to track the last response for usage stats
+                        final_response = current_response
+                        break  # Exit for loop to process new response
 
                 # If no tool calls were made, we're done
                 if not has_tool_call:
