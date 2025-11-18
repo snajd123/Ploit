@@ -5,7 +5,7 @@ Provides RESTful access to pre-computed GTO solutions and
 player deviation analysis.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from pydantic import BaseModel, Field
@@ -181,7 +181,7 @@ async def get_gto_stats(db: Session = Depends(get_db)):
 @router.post("/analyze/{player_name}")
 async def analyze_player_exploits(
     player_name: str,
-    scenarios: Optional[List[str]] = None,
+    scenarios: Optional[List[str]] = Body(None),
     db: Session = Depends(get_db)
 ):
     """
