@@ -23,6 +23,7 @@ from backend.database import get_db, check_db_connection
 from backend.services import DatabaseService, ClaudeService
 from backend.parser import PokerStarsParser
 from backend.config import get_settings
+from backend.verification_endpoint import router as verification_router
 
 # Configure logging
 logging.basicConfig(
@@ -51,6 +52,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include verification router
+app.include_router(verification_router)
 
 # ========================================
 # Pydantic Models
