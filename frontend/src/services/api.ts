@@ -149,6 +149,7 @@ class ApiClient {
   // Generate pre-game strategy
   async generatePreGameStrategy(request: {
     opponent_names: string[];
+    hero_name?: string;
     stakes?: string;
     game_type?: string;
   }): Promise<any> {

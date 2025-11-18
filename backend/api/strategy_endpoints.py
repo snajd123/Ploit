@@ -21,6 +21,7 @@ router = APIRouter(prefix="/api/strategy", tags=["Strategy"])
 class PreGameStrategyRequest(BaseModel):
     """Request for pre-game strategy"""
     opponent_names: List[str]
+    hero_name: Optional[str] = None
     stakes: Optional[str] = None
     game_type: Optional[str] = "6-max Cash"
 
@@ -59,6 +60,39 @@ async def generate_pre_game_strategy(
     gto_service = GTOService(db)
     opponent_summaries = []
     all_exploits = []
+
+    # Get hero stats if provided
+    hero_stats = None
+    hero_analysis = None
+    if request.hero_name:
+        hero_player = db.query(PlayerStats).filter(
+            PlayerStats.player_name == request.hero_name
+        ).first()
+
+        if hero_player:
+            hero_stats = {
+                'player_name': hero_player.player_name,
+                'player_type': hero_player.player_type,
+                'total_hands': hero_player.total_hands,
+                'vpip_pct': hero_player.vpip_pct,
+                'pfr_pct': hero_player.pfr_pct,
+                'three_bet_pct': hero_player.three_bet_pct,
+                'cbet_flop_pct': hero_player.cbet_flop_pct,
+                'wtsd_pct': hero_player.wtsd_pct,
+                'aggression_factor': hero_player.af,
+                'exploitability_index': hero_player.exploitability_index
+            }
+
+            # Get hero's deviations from GTO
+            hero_analysis = gto_service.compare_player_to_gto({
+                'vpip_pct': hero_player.vpip_pct,
+                'pfr_pct': hero_player.pfr_pct,
+                'three_bet_pct': hero_player.three_bet_pct,
+                'fold_to_three_bet_pct': hero_player.fold_to_three_bet_pct,
+                'cbet_flop_pct': hero_player.cbet_flop_pct,
+                'fold_to_cbet_flop_pct': hero_player.fold_to_cbet_flop_pct,
+                'wtsd_pct': hero_player.wtsd_pct
+            })
 
     # Analyze each opponent
     for opponent_name in request.opponent_names:
@@ -118,7 +152,28 @@ async def generate_pre_game_strategy(
     # Generate AI strategy using Claude
     prompt = f"""Generate a comprehensive pre-game poker strategy for an upcoming {request.game_type} session at {request.stakes or 'unknown stakes'}.
 
-OPPONENTS ANALYSIS:
+"""
+
+    # Add hero analysis if provided
+    if hero_stats:
+        prompt += f"""YOUR PROFILE ({hero_stats['player_name']}):
+- Player Type: {hero_stats['player_type'] or 'Unknown'}
+- Total Hands: {hero_stats['total_hands']}
+- VPIP: {hero_stats['vpip_pct']:.1f}% | PFR: {hero_stats['pfr_pct']:.1f}% | 3Bet: {hero_stats['three_bet_pct']:.1f}%
+- CBet: {hero_stats['cbet_flop_pct']:.1f}% | WTSD: {hero_stats['wtsd_pct']:.1f}%
+- Exploitability Index: {hero_stats['exploitability_index']:.1f}/100
+
+YOUR TENDENCIES:
+"""
+        if hero_analysis:
+            hero_devs = [d for d in hero_analysis['deviations'] if d.get('exploitable', False)]
+            hero_devs.sort(key=lambda x: x['abs_deviation'], reverse=True)
+            for dev in hero_devs[:3]:
+                prompt += f"- {dev['stat']}: {dev['exploit_direction']} ({dev['deviation']:+.1f}%)\n"
+
+        prompt += "\n"
+
+    prompt += """OPPONENTS ANALYSIS:
 """
 
     for opp in opponent_summaries:
@@ -132,12 +187,42 @@ OPPONENTS ANALYSIS:
         prompt += "\n"
 
     prompt += """
-Please provide:
-1. SESSION SUMMARY (2-3 sentences about the table composition)
-2. TABLE DYNAMICS (how the table will likely play, aggression levels, who will clash)
-3. OVERALL STRATEGY (your general approach for this specific table)
-4. FOCUS AREAS (3-5 bullet points of key things to focus on)
-5. QUICK TIPS (3-5 actionable tips for this session)
+Please provide a PERSONALIZED strategy """
+
+    if hero_stats:
+        prompt += f"""that considers {hero_stats['player_name']}'s playing style and tendencies. """
+
+    prompt += """Include:
+1. SESSION SUMMARY (2-3 sentences about the table composition"""
+
+    if hero_stats:
+        prompt += f""" and how it matches up with {hero_stats['player_name']}'s style"""
+
+    prompt += """)
+2. TABLE DYNAMICS (how the table will likely play, aggression levels, who will clash"""
+
+    if hero_stats:
+        prompt += f""", and specifically how opponents will react to {hero_stats['player_name']}'s tendencies"""
+
+    prompt += """)
+3. OVERALL STRATEGY (your general approach for this specific table"""
+
+    if hero_stats:
+        prompt += f""", tailored to {hero_stats['player_name']}'s strengths and weaknesses"""
+
+    prompt += """)
+4. FOCUS AREAS (3-5 bullet points of key things to focus on"""
+
+    if hero_stats:
+        prompt += f""", considering {hero_stats['player_name']}'s style"""
+
+    prompt += """)
+5. QUICK TIPS (3-5 actionable tips for this session"""
+
+    if hero_stats:
+        prompt += f""", personalized for {hero_stats['player_name']}"""
+
+    prompt += """)
 
 Format as JSON with keys: session_summary, table_dynamics, overall_strategy, focus_areas (array), quick_tips (array)
 """

@@ -23,6 +23,7 @@ interface StrategyResponse {
 
 const PreGameStrategy = () => {
   const [opponentNames, setOpponentNames] = useState('');
+  const [heroName, setHeroName] = useState('');
   const [stakes, setStakes] = useState('');
   const [gameType, setGameType] = useState('6-max Cash');
 
@@ -39,6 +40,7 @@ const PreGameStrategy = () => {
 
       return api.generatePreGameStrategy({
         opponent_names: names,
+        hero_name: heroName || undefined,
         stakes: stakes || undefined,
         game_type: gameType
       });
@@ -91,6 +93,22 @@ const PreGameStrategy = () => {
             />
             <p className="text-xs text-gray-500 mt-1">
               Enter the names of opponents you expect to face
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Your Player Name (optional)
+            </label>
+            <input
+              type="text"
+              value={heroName}
+              onChange={(e) => setHeroName(e.target.value)}
+              placeholder="e.g., snajd"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Personalize the strategy based on your playing style and stats
             </p>
           </div>
 
