@@ -5,6 +5,10 @@ import { api } from '../services/api';
 import PlayerBadge from '../components/PlayerBadge';
 import StatCard from '../components/StatCard';
 import MetricChart from '../components/MetricChart';
+import PositionalVPIPChart from '../components/PositionalVPIPChart';
+import PreflopAggressionChart from '../components/PreflopAggressionChart';
+import CBetStreetsChart from '../components/CBetStreetsChart';
+import ShowdownChart from '../components/ShowdownChart';
 
 const PlayerProfile = () => {
   const { playerName } = useParams<{ playerName: string }>();
@@ -143,6 +147,43 @@ const PlayerProfile = () => {
             value={player.wsd_pct !== null && player.wsd_pct !== undefined ? `${player.wsd_pct.toFixed(1)}%` : 'N/A'}
             subtitle="Won $ at Showdown"
             color="gray"
+          />
+        </div>
+      </div>
+
+      {/* Visual Analytics Section */}
+      <div>
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">Visual Analytics</h2>
+
+        {/* Row 1: Preflop and Positional */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          <PreflopAggressionChart
+            vpip_pct={player.vpip_pct}
+            pfr_pct={player.pfr_pct}
+            three_bet_pct={player.three_bet_pct}
+            limp_pct={player.limp_pct}
+          />
+          <PositionalVPIPChart
+            vpip_utg={player.vpip_utg}
+            vpip_hj={player.vpip_hj}
+            vpip_mp={player.vpip_mp}
+            vpip_co={player.vpip_co}
+            vpip_btn={player.vpip_btn}
+            vpip_sb={player.vpip_sb}
+            vpip_bb={player.vpip_bb}
+          />
+        </div>
+
+        {/* Row 2: C-Bet and Showdown */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <CBetStreetsChart
+            cbet_flop_pct={player.cbet_flop_pct}
+            cbet_turn_pct={player.cbet_turn_pct}
+            cbet_river_pct={player.cbet_river_pct}
+          />
+          <ShowdownChart
+            wtsd_pct={player.wtsd_pct}
+            wsd_pct={player.wsd_pct}
           />
         </div>
       </div>
