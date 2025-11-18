@@ -8,6 +8,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Check } from 'lucide-react';
 import { api } from '../services/api';
+import type { PlayerListItem } from '../types';
 
 interface PlayerAutocompleteInputProps {
   value: string;
@@ -42,13 +43,13 @@ const PlayerAutocompleteInput: React.FC<PlayerAutocompleteInputProps> = ({
   }, [value]);
 
   // Filter players based on current input
-  const filteredPlayers = players?.players
-    ?.filter(p => {
+  const filteredPlayers = players
+    ?.filter((p: PlayerListItem) => {
       if (!currentInput) return false;
       const alreadyAdded = value
         .split(',')
-        .map(n => n.trim().toLowerCase())
-        .filter(n => n.length > 0);
+        .map((n: string) => n.trim().toLowerCase())
+        .filter((n: string) => n.length > 0);
       const isAlreadyAdded = alreadyAdded.includes(p.player_name.toLowerCase());
       return (
         !isAlreadyAdded &&
@@ -150,7 +151,7 @@ const PlayerAutocompleteInput: React.FC<PlayerAutocompleteInputProps> = ({
           ref={dropdownRef}
           className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-64 overflow-y-auto"
         >
-          {filteredPlayers.map((player, idx) => (
+          {filteredPlayers.map((player: PlayerListItem, idx: number) => (
             <button
               key={player.player_name}
               onClick={() => handleSelectPlayer(player.player_name)}
