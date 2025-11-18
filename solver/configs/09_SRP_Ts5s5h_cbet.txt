@@ -3,15 +3,15 @@ set_effective_stack 97.5
 set_board Ts,5s,5h
 set_range_ip AA,KK,QQ,JJ,TT:0.5,99,88,77,66,55:0.5,AK:0.75,AQs,AQo:0.75,AJs,AJo:0.75,ATs,ATo:0.5,A9s,A8s,A7s,A6s,A5s:0.5,A4s:0.5,KQs,KQo:0.5,KJs,KTs,K9s:0.5,QJs,QTs,Q9s:0.5,JTs,J9s:0.5,T9s,T8s,98s,87s,76s:0.5,65s:0.5
 set_range_oop AA,KK,QQ,JJ,TT:0.75,99,88,77,66,55,44,33,22,AK:0.25,AQs,AQo:0.5,AJs,AJo:0.5,ATs,ATo:0.75,A9s,A8s,A7s,A6s,A5s,A4s,KQs,KQ:0.5,KJs,KJo:0.75,KTs,KTo:0.75,K9s,K8s,K7s,K6s,K5s:0.75,QJs,QTs,Q9s,Q8s,Q5s:0.5,JTs,J9s,J8s,J5s:0.25,T9s,T8s,T7s,T5s:0.5,98s,97s,95s:0.25,87s,86s,85s:0.25,76s,75s,65s,64s,54s:0.5
-set_bet_sizes oop,flop,bet,33,50,75
-set_bet_sizes oop,flop,raise,66,100
+set_bet_sizes oop,flop,bet,50,100
+set_bet_sizes oop,flop,raise,100
 set_bet_sizes oop,flop,allin
-set_bet_sizes ip,flop,bet,33,50,75
-set_bet_sizes ip,flop,raise,66,100
+set_bet_sizes ip,flop,bet,50,100
+set_bet_sizes ip,flop,raise,100
 set_bet_sizes ip,flop,allin
 set_allin_threshold 0.67
 build_tree
-set_thread_num 4
+set_thread_num 8
 set_accuracy 0.5
 set_max_iteration 1000
 set_print_interval 100
