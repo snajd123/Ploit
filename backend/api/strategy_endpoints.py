@@ -10,9 +10,9 @@ from typing import List, Optional
 from pydantic import BaseModel
 
 from backend.services.gto_service import GTOService
+from backend.services.claude_service import ClaudeService
 from backend.database import get_db
 from backend.models.database_models import PlayerStats
-from backend.services.claude_service import query_claude
 
 router = APIRouter(prefix="/api/strategy", tags=["Strategy"])
 
@@ -145,8 +145,9 @@ Format as JSON with keys: session_summary, table_dynamics, overall_strategy, foc
 
     try:
         # Query Claude for strategy
-        claude_response = query_claude(
-            query=prompt,
+        claude_service = ClaudeService(db)
+        claude_response = claude_service.query(
+            user_query=prompt,
             conversation_history=[]
         )
 
