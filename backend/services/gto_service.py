@@ -146,7 +146,7 @@ class GTOService:
             deviation = player_fold - gto_fold
 
             deviations.append({
-                'stat': 'fold_to_3bet',
+                'stat': 'FOLD_TO_3BET',
                 'player': player_fold,
                 'gto': gto_fold,
                 'deviation': round(deviation, 2),
@@ -162,7 +162,7 @@ class GTOService:
             deviation = player_cbet - gto_cbet
 
             deviations.append({
-                'stat': 'cbet_flop',
+                'stat': 'CBET_FLOP',
                 'player': player_cbet,
                 'gto': gto_cbet,
                 'deviation': round(deviation, 2),
@@ -178,7 +178,7 @@ class GTOService:
             deviation = player_fold_cbet - gto_fold_cbet
 
             deviations.append({
-                'stat': 'fold_to_cbet',
+                'stat': 'FOLD_TO_CBET_FLOP',
                 'player': player_fold_cbet,
                 'gto': gto_fold_cbet,
                 'deviation': round(deviation, 2),
