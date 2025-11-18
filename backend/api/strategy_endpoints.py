@@ -238,19 +238,28 @@ Format as JSON with keys: session_summary, table_dynamics, overall_strategy, foc
 """
 
     try:
-        # Query Claude for strategy
-        claude_service = ClaudeService(db)
-        claude_response = claude_service.query(
-            user_query=prompt,
-            conversation_history=[]
+        # Query Claude API directly (without database tools) for cleaner JSON response
+        from anthropic import Anthropic
+        from backend.config import get_settings
+        import json
+
+        settings = get_settings()
+        client = Anthropic(api_key=settings.anthropic_api_key)
+
+        response = client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=4096,
+            messages=[{
+                "role": "user",
+                "content": prompt
+            }]
         )
 
-        if not claude_response.get('success'):
-            raise HTTPException(status_code=500, detail="Failed to generate strategy")
-
-        # Parse Claude response
-        import json
-        strategy_text = claude_response['response']
+        # Extract text from response
+        strategy_text = ""
+        for block in response.content:
+            if block.type == "text":
+                strategy_text += block.text
 
         # Try to extract JSON from response
         if '```json' in strategy_text:
