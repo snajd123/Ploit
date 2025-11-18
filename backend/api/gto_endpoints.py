@@ -69,6 +69,11 @@ class ScenarioListItem(BaseModel):
     description: Optional[str] = None
 
 
+class AnalyzePlayerRequest(BaseModel):
+    """Request body for player analysis"""
+    scenarios: Optional[List[str]] = None
+
+
 # Endpoints
 @router.get("/scenarios", response_model=List[ScenarioListItem])
 async def list_scenarios(
@@ -181,7 +186,7 @@ async def get_gto_stats(db: Session = Depends(get_db)):
 @router.post("/analyze/{player_name}")
 async def analyze_player_exploits(
     player_name: str,
-    scenarios: Optional[List[str]] = Body(None),
+    request_body: AnalyzePlayerRequest = Body(default=AnalyzePlayerRequest()),
     db: Session = Depends(get_db)
 ):
     """
@@ -208,6 +213,7 @@ async def analyze_player_exploits(
         )
 
     # Default scenarios if none provided
+    scenarios = request_body.scenarios
     if not scenarios:
         scenarios = [
             'BTN_steal_vs_BB',
