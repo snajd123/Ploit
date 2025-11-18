@@ -166,6 +166,7 @@ export interface Deviation {
 }
 
 export interface BaselineComparisonResponse {
+  comparison_type?: 'baseline' | 'gto';
   scenario: string;
   baseline_type?: string;
   baseline_source?: string;
