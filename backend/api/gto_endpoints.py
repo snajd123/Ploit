@@ -11,8 +11,11 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 from backend.services.gto_service import GTOService
+from backend.services.poker_baselines import BaselineProvider
 from backend.database import get_db
 from backend.models.database_models import PlayerStats
+
+baseline_provider = BaselineProvider()
 
 router = APIRouter(prefix="/api/gto", tags=["GTO Analysis"])
 
