@@ -5,6 +5,7 @@ import Upload from './pages/Upload';
 import PlayersList from './pages/PlayersList';
 import PlayerProfile from './pages/PlayerProfile';
 import ClaudeChat from './pages/ClaudeChat';
+import PreGameStrategy from './pages/PreGameStrategy';
 import Settings from './pages/Settings';
 
 function App() {
@@ -18,6 +19,7 @@ function App() {
           <Route path="players" element={<PlayersList />} />
           <Route path="players/:playerName" element={<PlayerProfile />} />
           <Route path="claude" element={<ClaudeChat />} />
+          <Route path="strategy" element={<PreGameStrategy />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>

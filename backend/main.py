@@ -25,6 +25,7 @@ from backend.parser import PokerStarsParser
 from backend.config import get_settings
 from backend.verification_endpoint import router as verification_router
 from backend.api.gto_endpoints import router as gto_router
+from backend.api.strategy_endpoints import router as strategy_router
 
 # Configure logging
 logging.basicConfig(
@@ -59,6 +60,9 @@ app.include_router(verification_router)
 
 # Include GTO router
 app.include_router(gto_router)
+
+# Include Strategy router
+app.include_router(strategy_router)
 
 # ========================================
 # Pydantic Models

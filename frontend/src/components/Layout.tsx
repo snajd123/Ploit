@@ -1,11 +1,16 @@
+import { useState } from 'react';
 import { Outlet, NavLink } from 'react-router-dom';
-import { LayoutDashboard, Upload, Users, MessageSquare, Settings } from 'lucide-react';
+import { LayoutDashboard, Upload, Users, MessageSquare, Target, Settings, Search } from 'lucide-react';
+import QuickLookupModal from './QuickLookupModal';
 
 const Layout = () => {
+  const [isQuickLookupOpen, setIsQuickLookupOpen] = useState(false);
+
   const navItems = [
     { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/upload', icon: Upload, label: 'Upload' },
     { to: '/players', icon: Users, label: 'Players' },
+    { to: '/strategy', icon: Target, label: 'Strategy' },
     { to: '/claude', icon: MessageSquare, label: 'Claude AI' },
     { to: '/settings', icon: Settings, label: 'Settings' },
   ];
@@ -25,6 +30,13 @@ const Layout = () => {
                 <p className="text-xs text-gray-500">AI-Powered Strategic Insights</p>
               </div>
             </div>
+            <button
+              onClick={() => setIsQuickLookupOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <Search className="w-4 h-4" />
+              <span className="hidden sm:inline">Quick Lookup</span>
+            </button>
           </div>
         </div>
       </header>
@@ -68,6 +80,12 @@ const Layout = () => {
           </p>
         </div>
       </footer>
+
+      {/* Quick Lookup Modal */}
+      <QuickLookupModal
+        isOpen={isQuickLookupOpen}
+        onClose={() => setIsQuickLookupOpen(false)}
+      />
     </div>
   );
 };

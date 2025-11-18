@@ -145,6 +145,22 @@ class ApiClient {
     );
     return response.data;
   }
+
+  // Generate pre-game strategy
+  async generatePreGameStrategy(request: {
+    opponent_names: string[];
+    stakes?: string;
+    game_type?: string;
+  }): Promise<any> {
+    const response = await this.client.post('/api/strategy/pre-game', request);
+    return response.data;
+  }
+
+  // Quick opponent lookup
+  async quickLookup(playerName: string): Promise<any> {
+    const response = await this.client.get(`/api/strategy/quick-lookup/${encodeURIComponent(playerName)}`);
+    return response.data;
+  }
 }
 
 // Export singleton instance
