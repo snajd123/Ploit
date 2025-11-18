@@ -353,10 +353,15 @@ class GTOService:
         # Compare fold to 3bet
         if 'fold_to_three_bet_pct' in player_stats:
             player_fold = float(player_stats['fold_to_three_bet_pct'] or 0)
-            baseline_fold = baseline_provider.get_fold_to_3bet(position)
+
+            # Use overall baseline when position is unknown
+            if position:
+                baseline_fold = baseline_provider.get_fold_to_3bet(position)
+            else:
+                baseline_fold = 60.0  # Overall average fold to 3bet
 
             dev = baseline_provider.calculate_deviation(player_fold, baseline_fold)
-            dev['stat'] = 'Fold to 3Bet'
+            dev['stat'] = 'FOLD_TO_3BET'
             dev['exploit_direction'] = 'over-folding' if dev['deviation'] > 0 else 'under-folding'
             deviations.append(dev)
 
@@ -366,7 +371,7 @@ class GTOService:
             baseline_cbet = baseline_provider.get_cbet_frequency('IP', 'flop')
 
             dev = baseline_provider.calculate_deviation(player_cbet, baseline_cbet)
-            dev['stat'] = 'Flop CBet'
+            dev['stat'] = 'CBET_FLOP'
             dev['exploit_direction'] = 'over-betting' if dev['deviation'] > 0 else 'under-betting'
             deviations.append(dev)
 
@@ -376,7 +381,7 @@ class GTOService:
             baseline_fold_cbet = baseline_provider.get_fold_to_cbet('OOP', 'flop')
 
             dev = baseline_provider.calculate_deviation(player_fold_cbet, baseline_fold_cbet)
-            dev['stat'] = 'Fold to CBet'
+            dev['stat'] = 'FOLD_TO_CBET_FLOP'
             dev['exploit_direction'] = 'over-folding' if dev['deviation'] > 0 else 'under-folding'
             deviations.append(dev)
 
