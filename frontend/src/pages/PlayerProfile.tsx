@@ -213,7 +213,11 @@ const PlayerProfile = () => {
           {/* Exploit Dashboard Summary */}
           <div className="mb-6">
             <ExploitDashboard
-              deviations={exploitAnalysis.analyses.flatMap(a => a.deviations)}
+              deviations={
+                exploitAnalysis.analyses
+                  .filter(a => a.comparison_type === 'baseline' || a.scenario === 'Poker Theory Baselines')
+                  .flatMap(a => a.deviations)
+              }
               playerName={player.player_name}
               onViewDetails={scrollToBaselineTable}
             />
