@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { Target, Users, TrendingUp, Lightbulb, Focus, AlertCircle } from 'lucide-react';
 import { api } from '../services/api';
+import PlayerAutocompleteInput from '../components/PlayerAutocompleteInput';
 
 interface OpponentSummary {
   player_name: string;
@@ -84,15 +85,14 @@ const PreGameStrategy = () => {
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Opponent Names (comma-separated)
             </label>
-            <input
-              type="text"
+            <PlayerAutocompleteInput
               value={opponentNames}
-              onChange={(e) => setOpponentNames(e.target.value)}
-              placeholder="e.g., player1, player2, player3"
+              onChange={setOpponentNames}
+              placeholder="Start typing player names..."
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
             <p className="text-xs text-gray-500 mt-1">
-              Enter the names of opponents you expect to face
+              Start typing to see autocomplete suggestions from your database
             </p>
           </div>
 
