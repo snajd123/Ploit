@@ -159,12 +159,22 @@ async def generate_pre_game_strategy(
         prompt += f"""YOUR PROFILE ({hero_stats['player_name']}):
 - Player Type: {hero_stats['player_type'] or 'Unknown'}
 - Total Hands: {hero_stats['total_hands']}
-- VPIP: {hero_stats['vpip_pct']:.1f}% | PFR: {hero_stats['pfr_pct']:.1f}% | 3Bet: {hero_stats['three_bet_pct']:.1f}%
-- CBet: {hero_stats['cbet_flop_pct']:.1f}% | WTSD: {hero_stats['wtsd_pct']:.1f}%
-- Exploitability Index: {hero_stats['exploitability_index']:.1f}/100
-
-YOUR TENDENCIES:
 """
+        # Format stats safely, handling None values
+        vpip = f"{hero_stats['vpip_pct']:.1f}%" if hero_stats['vpip_pct'] is not None else "N/A"
+        pfr = f"{hero_stats['pfr_pct']:.1f}%" if hero_stats['pfr_pct'] is not None else "N/A"
+        three_bet = f"{hero_stats['three_bet_pct']:.1f}%" if hero_stats['three_bet_pct'] is not None else "N/A"
+        cbet = f"{hero_stats['cbet_flop_pct']:.1f}%" if hero_stats['cbet_flop_pct'] is not None else "N/A"
+        wtsd = f"{hero_stats['wtsd_pct']:.1f}%" if hero_stats['wtsd_pct'] is not None else "N/A"
+
+        prompt += f"- VPIP: {vpip} | PFR: {pfr} | 3Bet: {three_bet}\n"
+        prompt += f"- CBet: {cbet} | WTSD: {wtsd}\n"
+
+        if hero_stats['exploitability_index'] is not None:
+            prompt += f"- Exploitability Index: {hero_stats['exploitability_index']:.1f}/100\n"
+
+        prompt += "\nYOUR TENDENCIES:\n"
+
         if hero_analysis:
             hero_devs = [d for d in hero_analysis['deviations'] if d.get('exploitable', False)]
             hero_devs.sort(key=lambda x: x['abs_deviation'], reverse=True)
@@ -271,6 +281,13 @@ Format as JSON with keys: session_summary, table_dynamics, overall_strategy, foc
         )
 
     except Exception as e:
+        # Log the error for debugging
+        import logging
+        import traceback
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error generating strategy: {str(e)}")
+        logger.error(traceback.format_exc())
+
         # Fallback strategy if Claude fails
         return PreGameStrategyResponse(
             session_summary=f"Table with {len(opponent_summaries)} tracked opponents",
