@@ -248,7 +248,8 @@ Format as JSON with keys: session_summary, table_dynamics, overall_strategy, foc
 
         response = client.messages.create(
             model="claude-3-5-sonnet-20241022",
-            max_tokens=4096,
+            max_tokens=8000,
+            system="You are a professional poker strategy advisor. You MUST respond with ONLY valid JSON - no explanatory text, no markdown formatting, just the JSON object itself. Do not include ```json``` code blocks.",
             messages=[{
                 "role": "user",
                 "content": prompt
@@ -261,24 +262,26 @@ Format as JSON with keys: session_summary, table_dynamics, overall_strategy, foc
             if block.type == "text":
                 strategy_text += block.text
 
-        # Try to extract JSON from response
-        if '```json' in strategy_text:
-            json_start = strategy_text.find('```json') + 7
-            json_end = strategy_text.find('```', json_start)
-            strategy_json = json.loads(strategy_text[json_start:json_end])
-        elif '{' in strategy_text:
-            json_start = strategy_text.find('{')
-            json_end = strategy_text.rfind('}') + 1
-            strategy_json = json.loads(strategy_text[json_start:json_end])
-        else:
-            # Fallback if Claude doesn't return JSON
-            strategy_json = {
-                'session_summary': 'Mixed table with exploitable opponents',
-                'table_dynamics': strategy_text[:200],
-                'overall_strategy': 'Play exploitative poker while maintaining solid fundamentals',
-                'focus_areas': ['Exploit opponent tendencies', 'Position awareness', 'Aggression control'],
-                'quick_tips': ['3-bet light against over-folders', 'Value bet thinner vs calling stations']
-            }
+        # Parse JSON from response
+        # First try direct JSON parsing (since we asked for pure JSON)
+        strategy_json = None
+        try:
+            strategy_json = json.loads(strategy_text.strip())
+        except json.JSONDecodeError:
+            # If that fails, try extracting from markdown code block
+            if '```json' in strategy_text:
+                json_start = strategy_text.find('```json') + 7
+                json_end = strategy_text.find('```', json_start)
+                strategy_json = json.loads(strategy_text[json_start:json_end].strip())
+            elif '{' in strategy_text:
+                # Extract the JSON object from the text
+                json_start = strategy_text.find('{')
+                json_end = strategy_text.rfind('}') + 1
+                strategy_json = json.loads(strategy_text[json_start:json_end])
+
+        if not strategy_json:
+            # Fallback if all parsing attempts fail
+            raise ValueError("Failed to parse JSON from Claude response")
 
         return PreGameStrategyResponse(
             session_summary=strategy_json['session_summary'],
