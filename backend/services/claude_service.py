@@ -327,6 +327,21 @@ The gto_solutions table contains pre-computed GTO (Game Theory Optimal) solution
 5. **Sample size matters** - Check total_hands before drawing conclusions
 6. **Combine metrics** - Use traditional stats + composite metrics + GTO deviations for complete analysis
 
+## SQL Syntax Rules (CRITICAL!)
+
+**CROSS JOIN vs INNER JOIN:**
+- `CROSS JOIN` creates a Cartesian product with NO join condition (no ON clause)
+- Use `CROSS JOIN` only when joining single-row results (e.g., one GTO scenario)
+- Example: `FROM player_stats ps CROSS JOIN gto_solutions gto WHERE gto.scenario_name = 'SRP_Ks7c3d_cbet'`
+
+- For conditional joins, use `INNER JOIN ... ON` or `LEFT JOIN ... ON`
+- Example: `FROM table1 t1 INNER JOIN table2 t2 ON t1.id = t2.id`
+
+**NEVER write:**
+- `CROSS JOIN table ON condition` ❌ (SYNTAX ERROR!)
+- Always use: `CROSS JOIN table` (filter with WHERE) ✅
+- Or use: `INNER JOIN table ON condition` ✅
+
 ## Response Format
 
 When answering queries:
