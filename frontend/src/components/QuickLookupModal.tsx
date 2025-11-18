@@ -32,12 +32,6 @@ const QuickLookupModal: React.FC<QuickLookupModalProps> = ({
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleSearch();
-    }
-  };
-
   const handleViewProfile = () => {
     if (searchName) {
       navigate(`/players/${encodeURIComponent(searchName)}`);
