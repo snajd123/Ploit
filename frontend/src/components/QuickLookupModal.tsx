@@ -66,21 +66,21 @@ const QuickLookupModal: React.FC<QuickLookupModalProps> = ({
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Target className="w-6 h-6 text-blue-600" />
-            <h2 className="text-xl font-bold text-gray-900">Quick Opponent Lookup</h2>
+        <div className="sticky top-0 bg-white border-b border-gray-200 px-4 sm:px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <Target className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600 flex-shrink-0" />
+            <h2 className="text-lg sm:text-xl font-bold text-gray-900">Quick Opponent Lookup</h2>
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
+            className="text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0"
           >
-            <X className="w-6 h-6" />
+            <X className="w-5 h-5 sm:w-6 sm:h-6" />
           </button>
         </div>
 
         {/* Search Input */}
-        <div className="px-6 py-4 border-b border-gray-200">
+        <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
           <div className="flex gap-2">
             <SinglePlayerAutocomplete
               value={playerName}
@@ -108,7 +108,7 @@ const QuickLookupModal: React.FC<QuickLookupModalProps> = ({
         </div>
 
         {/* Content */}
-        <div className="px-6 py-4">
+        <div className="px-4 sm:px-6 py-4">
           {error && (
             <div className="p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
@@ -165,7 +165,7 @@ const QuickLookupModal: React.FC<QuickLookupModalProps> = ({
               {/* Key Stats */}
               <div className="bg-gray-50 rounded-lg p-4">
                 <h4 className="font-semibold text-gray-900 mb-3">Key Statistics</h4>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {Object.entries(playerData.key_stats).map(([stat, value]) => (
                     <div key={stat} className="text-center p-2 bg-white rounded">
                       <div className="text-xs text-gray-600">{stat}</div>
