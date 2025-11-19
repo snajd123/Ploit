@@ -22,6 +22,7 @@ from backend.models.database_models import (
 from backend.parser.data_structures import Hand, Action, PlayerHandSummaryFlags
 from backend.database import get_db
 from backend.services.stats_calculator import StatsCalculator
+from backend.services.board_categorizer import BoardCategorizer
 
 logger = logging.getLogger(__name__)
 
@@ -42,10 +43,61 @@ class DatabaseService:
             session: SQLAlchemy database session
         """
         self.session = session
+        self.board_categorizer = BoardCategorizer()
 
     # ========================================
     # Hand Insertion
     # ========================================
+
+    def _extract_and_categorize_board(self, hand: Hand) -> Dict[str, Any]:
+        """
+        Extract flop cards and categorize the board.
+
+        Args:
+            hand: Hand object with board_cards dict
+
+        Returns:
+            Dictionary with:
+            - flop_card_1, flop_card_2, flop_card_3: Individual flop cards
+            - turn_card, river_card: Turn and river cards
+            - board_analysis: BoardAnalysis object (or None if no flop)
+        """
+        result = {
+            'flop_card_1': None,
+            'flop_card_2': None,
+            'flop_card_3': None,
+            'turn_card': None,
+            'river_card': None,
+            'board_analysis': None
+        }
+
+        if not hand.board_cards or 'flop' not in hand.board_cards:
+            return result
+
+        # Extract flop cards (format: "Ah 7c 3d" or "Ah7c3d")
+        flop_str = hand.board_cards['flop']
+        flop_cards = flop_str.replace(' ', '')  # Remove spaces
+
+        # Parse individual cards (each is 2 characters: rank + suit)
+        if len(flop_cards) >= 6:
+            result['flop_card_1'] = flop_cards[0:2]
+            result['flop_card_2'] = flop_cards[2:4]
+            result['flop_card_3'] = flop_cards[4:6]
+
+            # Categorize board using BoardCategorizer
+            board_string = result['flop_card_1'] + result['flop_card_2'] + result['flop_card_3']
+            try:
+                result['board_analysis'] = self.board_categorizer.analyze(board_string)
+            except Exception as e:
+                logger.warning(f"Failed to categorize board {board_string}: {e}")
+
+        # Extract turn and river if present
+        if 'turn' in hand.board_cards:
+            result['turn_card'] = hand.board_cards['turn'].replace(' ', '')
+        if 'river' in hand.board_cards:
+            result['river_card'] = hand.board_cards['river'].replace(' ', '')
+
+        return result
 
     def insert_hand(self, hand: Hand) -> bool:
         """
@@ -67,14 +119,22 @@ class DatabaseService:
             SQLAlchemyError: For other database errors
         """
         try:
-            # Insert raw hand
+            # Extract and categorize board
+            board_data = self._extract_and_categorize_board(hand)
+
+            # Insert raw hand with board cards
             raw_hand = RawHand(
                 hand_id=hand.hand_id,
                 timestamp=hand.timestamp,
                 table_name=hand.table_name,
                 stake_level=hand.stake_level,
                 game_type=hand.game_type,
-                raw_hand_text=hand.raw_text
+                raw_hand_text=hand.raw_text,
+                flop_card_1=board_data['flop_card_1'],
+                flop_card_2=board_data['flop_card_2'],
+                flop_card_3=board_data['flop_card_3'],
+                turn_card=board_data['turn_card'],
+                river_card=board_data['river_card']
             )
             self.session.add(raw_hand)
             # Flush to catch duplicate hand_id errors before inserting actions
@@ -97,9 +157,9 @@ class DatabaseService:
                 )
                 self.session.add(hand_action)
 
-            # Insert player hand summaries
+            # Insert player hand summaries with board categorization
             for player_name, flags in hand.player_flags.items():
-                summary = self._flags_to_summary(hand.hand_id, flags)
+                summary = self._flags_to_summary(hand.hand_id, flags, board_data['board_analysis'])
                 self.session.add(summary)
 
             self.session.commit()
@@ -152,17 +212,39 @@ class DatabaseService:
         logger.info(f"Batch insert complete: {result['hands_inserted']} inserted, {result['hands_failed']} failed")
         return result
 
-    def _flags_to_summary(self, hand_id: int, flags: PlayerHandSummaryFlags) -> PlayerHandSummary:
+    def _flags_to_summary(self, hand_id: int, flags: PlayerHandSummaryFlags, board_analysis=None) -> PlayerHandSummary:
         """
         Convert PlayerHandSummaryFlags to PlayerHandSummary database model.
 
         Args:
             hand_id: Hand ID
             flags: PlayerHandSummaryFlags object
+            board_analysis: Optional BoardAnalysis object for board categorization
 
         Returns:
             PlayerHandSummary ORM object
         """
+        # Extract board categorization if available
+        board_cat = {}
+        if board_analysis:
+            board_cat = {
+                'board_category_l1': board_analysis.category_l1,
+                'board_category_l2': board_analysis.category_l2,
+                'board_category_l3': board_analysis.category_l3,
+                'is_paired': board_analysis.is_paired,
+                'is_rainbow': board_analysis.is_rainbow,
+                'is_two_tone': board_analysis.is_two_tone,
+                'is_monotone': board_analysis.is_monotone,
+                'is_connected': board_analysis.is_connected,
+                'is_highly_connected': board_analysis.is_highly_connected,
+                'has_broadway': board_analysis.has_broadway,
+                'is_dry': board_analysis.is_dry,
+                'is_wet': board_analysis.is_wet,
+                'high_card_rank': board_analysis.high_card_rank,
+                'middle_card_rank': board_analysis.middle_card_rank,
+                'low_card_rank': board_analysis.low_card_rank
+            }
+
         return PlayerHandSummary(
             hand_id=hand_id,
             player_name=flags.player_name,
@@ -228,7 +310,9 @@ class DatabaseService:
             showed_bluff=flags.showed_bluff,
             # Result
             won_hand=flags.won_hand,
-            profit_loss=flags.profit_loss
+            profit_loss=flags.profit_loss,
+            # Board categorization
+            **board_cat
         )
 
     # ========================================
