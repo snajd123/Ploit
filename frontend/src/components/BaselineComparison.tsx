@@ -123,15 +123,15 @@ const BaselineComparison: React.FC<BaselineComparisonProps> = ({
                   </span>
                 </td>
 
-                {/* Exploit Direction */}
+                {/* Exploit Strategy */}
                 <td className="py-3 px-4">
                   {dev.exploitable ? (
                     <div className="text-sm">
-                      <div className="font-medium text-gray-900">
-                        {dev.exploit_direction}
+                      <div className="text-gray-900">
+                        {dev.exploit || dev.exploit_direction}
                       </div>
                       {dev.estimated_ev && dev.estimated_ev > 0 && (
-                        <div className="text-green-600 text-xs">
+                        <div className="text-green-600 text-xs mt-1">
                           +{dev.estimated_ev.toFixed(2)} BB/100
                         </div>
                       )}

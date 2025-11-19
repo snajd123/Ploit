@@ -260,6 +260,64 @@ class GTOService:
         else:
             return 'extreme'
 
+    def _get_detailed_exploit(self, dev: Dict) -> str:
+        """
+        Generate detailed exploitation strategy for a deviation.
+
+        Args:
+            dev: Deviation dictionary with 'stat', 'deviation', 'exploit_direction'
+
+        Returns:
+            Detailed exploitation strategy string
+        """
+        stat = dev['stat']
+        deviation = dev['deviation']
+
+        # Map stat names to explicit strategies
+        exploit_strategies = {
+            'VPIP': {
+                'positive': "→ They play too many hands. 3-bet them more aggressively, especially from position. Value bet thinner post-flop.",
+                'negative': "→ They play too tight. Steal their blinds frequently and avoid paying them off with marginal hands."
+            },
+            'PFR': {
+                'positive': "→ They raise too often. Call more in position to see flops and outplay them post-flop. Trap with strong hands.",
+                'negative': "→ They're too passive preflop. Attack their limps with raises. When they do raise, respect it more."
+            },
+            '3Bet': {
+                'positive': "→ They 3-bet too much. 4-bet your value hands and call more with speculative hands in position.",
+                'negative': "→ They 3-bet too rarely. Open wider and fold less when they do 3-bet (it's always strong)."
+            },
+            'FOLD_TO_3BET': {
+                'positive': "→ They fold too much to 3-bets. 3-bet them with a polarized range, adding more bluffs. Print money.",
+                'negative': "→ They don't fold to 3-bets. Only 3-bet for value and be prepared to see flops. Tighten up your 3-betting range."
+            },
+            'CBET_FLOP': {
+                'positive': "→ They c-bet too much. Float the flop more often and attack on later streets when they check.",
+                'negative': "→ They give up too easily. Bet when they check and continue barreling on multiple streets."
+            },
+            'FOLD_TO_CBET_FLOP': {
+                'positive': "→ They fold too much to c-bets. Continuation bet aggressively with your entire range, especially on dry boards.",
+                'negative': "→ They're a calling station. Only c-bet for value and give up with pure air. Avoid bluffing them."
+            },
+            'WTSD': {
+                'positive': "→ They go to showdown too often. Don't bluff them - they won't fold. Value bet thin instead.",
+                'negative': "→ They fold before showdown too much. Increase your bluffing frequency, especially on later streets."
+            },
+            'W$SD': {
+                'positive': "→ When they reach showdown, they usually win. Don't pay them off light. Fold marginal hands.",
+                'negative': "→ They reach showdown with weak hands. Call them down lighter and value bet more thinly."
+            }
+        }
+
+        is_positive = deviation > 0
+        exploit_key = 'positive' if is_positive else 'negative'
+
+        # Get the detailed strategy or fall back to the exploit_direction
+        if stat in exploit_strategies:
+            return exploit_strategies[stat].get(exploit_key, dev.get('exploit_direction', ''))
+        else:
+            return dev.get('exploit_direction', '')
+
     def _generate_exploit_summary(self, deviations: List[Dict]) -> str:
         """Generate human-readable exploit summary"""
         exploitable = [d for d in deviations if d['exploitable']]
@@ -323,6 +381,7 @@ class GTOService:
             dev = baseline_provider.calculate_deviation(player_vpip, baseline_vpip)
             dev['stat'] = 'VPIP'
             dev['exploit_direction'] = 'too loose' if dev['deviation'] > 0 else 'too tight'
+            dev['exploit'] = self._get_detailed_exploit(dev)
             deviations.append(dev)
 
         # Compare PFR
@@ -338,6 +397,7 @@ class GTOService:
             dev = baseline_provider.calculate_deviation(player_pfr, baseline_rfi)
             dev['stat'] = 'PFR'
             dev['exploit_direction'] = 'too aggressive' if dev['deviation'] > 0 else 'too passive'
+            dev['exploit'] = self._get_detailed_exploit(dev)
             deviations.append(dev)
 
         # Compare 3bet frequency
@@ -349,6 +409,7 @@ class GTOService:
             dev = baseline_provider.calculate_deviation(player_3bet, baseline_3bet)
             dev['stat'] = '3Bet'
             dev['exploit_direction'] = 'over-3betting' if dev['deviation'] > 0 else 'under-3betting'
+            dev['exploit'] = self._get_detailed_exploit(dev)
             deviations.append(dev)
 
         # Compare fold to 3bet
@@ -364,6 +425,7 @@ class GTOService:
             dev = baseline_provider.calculate_deviation(player_fold, baseline_fold)
             dev['stat'] = 'FOLD_TO_3BET'
             dev['exploit_direction'] = 'over-folding' if dev['deviation'] > 0 else 'under-folding'
+            dev['exploit'] = self._get_detailed_exploit(dev)
             deviations.append(dev)
 
         # Compare cbet flop
@@ -374,6 +436,7 @@ class GTOService:
             dev = baseline_provider.calculate_deviation(player_cbet, baseline_cbet)
             dev['stat'] = 'CBET_FLOP'
             dev['exploit_direction'] = 'over-betting' if dev['deviation'] > 0 else 'under-betting'
+            dev['exploit'] = self._get_detailed_exploit(dev)
             deviations.append(dev)
 
         # Compare fold to cbet
@@ -384,6 +447,7 @@ class GTOService:
             dev = baseline_provider.calculate_deviation(player_fold_cbet, baseline_fold_cbet)
             dev['stat'] = 'FOLD_TO_CBET_FLOP'
             dev['exploit_direction'] = 'over-folding' if dev['deviation'] > 0 else 'under-folding'
+            dev['exploit'] = self._get_detailed_exploit(dev)
             deviations.append(dev)
 
         # Compare WTSD
@@ -395,6 +459,7 @@ class GTOService:
             dev = baseline_provider.calculate_deviation(player_wtsd, baseline_wtsd)
             dev['stat'] = 'WTSD'
             dev['exploit_direction'] = 'too sticky' if dev['deviation'] > 0 else 'too nitty'
+            dev['exploit'] = self._get_detailed_exploit(dev)
             deviations.append(dev)
 
         # Compare W$SD
@@ -406,6 +471,7 @@ class GTOService:
             dev = baseline_provider.calculate_deviation(player_wsd, baseline_wsd)
             dev['stat'] = 'W$SD'
             dev['exploit_direction'] = 'value-heavy' if dev['deviation'] > 0 else 'bluff-heavy'
+            dev['exploit'] = self._get_detailed_exploit(dev)
             deviations.append(dev)
 
         # Calculate exploit value
