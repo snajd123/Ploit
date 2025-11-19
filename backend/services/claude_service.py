@@ -389,6 +389,12 @@ Every GTO solution is categorized using a 3-level hierarchical system:
 
 ## SQL Syntax Rules (CRITICAL!)
 
+**Transaction Control:**
+- **NEVER use COMMIT, BEGIN, ROLLBACK, or any transaction control statements** ❌
+- Only use SELECT queries for reading data ✅
+- The database connection handles transactions automatically
+- Example: `SELECT ... FROM ...` (NO COMMIT at the end!)
+
 **CROSS JOIN vs INNER JOIN:**
 - `CROSS JOIN` creates a Cartesian product with NO join condition (no ON clause)
 - Use `CROSS JOIN` only when joining single-row results (e.g., one GTO scenario)
@@ -399,8 +405,10 @@ Every GTO solution is categorized using a 3-level hierarchical system:
 
 **NEVER write:**
 - `CROSS JOIN table ON condition` ❌ (SYNTAX ERROR!)
+- `SELECT ... ; COMMIT;` ❌ (NO TRANSACTION CONTROL!)
 - Always use: `CROSS JOIN table` (filter with WHERE) ✅
 - Or use: `INNER JOIN table ON condition` ✅
+- Just: `SELECT ...` (no COMMIT/BEGIN/ROLLBACK) ✅
 
 ## Response Format
 
@@ -522,16 +530,22 @@ Remember: You're helping players make MORE MONEY by exploiting opponent weakness
             Dictionary with query results or error
         """
         try:
+            # Clean the query: remove transaction control statements
+            import re
+            # Remove COMMIT, BEGIN, ROLLBACK statements (case-insensitive)
+            cleaned_query = re.sub(r';\s*(COMMIT|BEGIN|ROLLBACK|START\s+TRANSACTION)\s*;?\s*$', '', query, flags=re.IGNORECASE)
+            cleaned_query = cleaned_query.strip()
+
             # Security: Only allow SELECT statements
-            query_upper = query.strip().upper()
+            query_upper = cleaned_query.upper()
             if not query_upper.startswith("SELECT"):
                 return {
                     "success": False,
-                    "error": "Only SELECT queries are allowed for security reasons"
+                    "error": "Only SELECT queries are allowed for security reasons. Do not use COMMIT, BEGIN, ROLLBACK, or other transaction control statements."
                 }
 
             # Execute query
-            result = self.db.execute(text(query))
+            result = self.db.execute(text(cleaned_query))
 
             # Fetch results
             rows = result.fetchall()
