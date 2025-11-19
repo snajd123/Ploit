@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { Target, Users, TrendingUp, Lightbulb, Focus, AlertCircle } from 'lucide-react';
 import { api } from '../services/api';
@@ -27,6 +27,21 @@ const PreGameStrategy = () => {
   const [heroName, setHeroName] = useState('');
   const [stakes, setStakes] = useState('');
   const [gameType, setGameType] = useState('6-max Cash');
+
+  // Load saved hero name from localStorage on mount
+  useEffect(() => {
+    const savedHeroName = localStorage.getItem('poker-hero-name');
+    if (savedHeroName) {
+      setHeroName(savedHeroName);
+    }
+  }, []);
+
+  // Save hero name to localStorage when it changes
+  useEffect(() => {
+    if (heroName) {
+      localStorage.setItem('poker-hero-name', heroName);
+    }
+  }, [heroName]);
 
   const generateStrategy = useMutation({
     mutationFn: async () => {
