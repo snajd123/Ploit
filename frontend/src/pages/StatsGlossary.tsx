@@ -126,22 +126,33 @@ const StatsGlossary = () => {
                   const mainDesc = sections[0];
                   const otherSections = sections.slice(1);
 
+                  // Find variables section
+                  const variablesSection = otherSections.find(s => s.startsWith('Variables:'));
+                  const nonVariableSections = otherSections.filter(s => !s.startsWith('Variables:'));
+
                   return (
                     <>
                       <p className="text-gray-700 mb-3 whitespace-pre-line">{mainDesc}</p>
 
-                      {otherSections.map((section, idx) => {
-                        // Check what type of section this is
-                        if (section.startsWith('Variables:')) {
-                          return (
-                            <div key={idx} className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3">
-                              <p className="text-xs font-medium text-amber-900 mb-1">Variables:</p>
-                              <div className="text-sm text-gray-900 whitespace-pre-line">
-                                {section.replace('Variables:', '').trim()}
-                              </div>
-                            </div>
-                          );
-                        } else if (section.startsWith('Example:')) {
+                      {/* Formula */}
+                      <div className="bg-gray-50 border border-gray-300 rounded-lg p-3 mb-3">
+                        <p className="text-xs font-medium text-gray-700 mb-1">Formula:</p>
+                        <code className="text-sm text-gray-900 font-mono whitespace-pre-line">{stat.formula}</code>
+                      </div>
+
+                      {/* Variables (if exists) */}
+                      {variablesSection && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3">
+                          <p className="text-xs font-medium text-amber-900 mb-1">Variables:</p>
+                          <div className="text-sm text-gray-900 whitespace-pre-line">
+                            {variablesSection.replace('Variables:', '').trim()}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Other sections */}
+                      {nonVariableSections.map((section, idx) => {
+                        if (section.startsWith('Example:')) {
                           return (
                             <div key={idx} className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
                               <p className="text-xs font-medium text-blue-900 mb-1">Example:</p>
@@ -185,12 +196,6 @@ const StatsGlossary = () => {
                     </>
                   );
                 })()}
-
-                {/* Formula */}
-                <div className="bg-gray-50 border border-gray-300 rounded-lg p-3 mb-3">
-                  <p className="text-xs font-medium text-gray-700 mb-1">Formula:</p>
-                  <code className="text-sm text-gray-900 font-mono whitespace-pre-line">{stat.formula}</code>
-                </div>
 
                 {/* Tooltip/Quick Reference */}
                 <div className="bg-blue-50 border-l-4 border-blue-600 p-3 rounded">
