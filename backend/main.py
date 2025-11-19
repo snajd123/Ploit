@@ -1037,6 +1037,56 @@ async def query_claude(
             error=str(e)
         )
 
+@app.post(
+    "/api/admin/run-migration",
+    tags=["Admin"],
+    summary="Run pending database migrations",
+    description="Runs the conversation tables migration. Safe to call multiple times."
+)
+async def run_migration(db: Session = Depends(get_db)):
+    """
+    Run database migrations for conversation tables.
+
+    This endpoint is safe to call multiple times - it will only create tables if they don't exist.
+    """
+    try:
+        from pathlib import Path
+        from sqlalchemy import text
+
+        migration_file = Path(__file__).parent / "migrations" / "005_add_claude_conversations.sql"
+
+        if not migration_file.exists():
+            raise HTTPException(status_code=500, detail="Migration file not found")
+
+        with open(migration_file, 'r') as f:
+            migration_sql = f.read()
+
+        # Execute migration
+        db.execute(text(migration_sql))
+        db.commit()
+
+        # Verify tables exist
+        result = db.execute(text("""
+            SELECT COUNT(*)
+            FROM information_schema.tables
+            WHERE table_name IN ('claude_conversations', 'claude_messages')
+        """))
+        table_count = result.scalar()
+
+        return {
+            "success": True,
+            "message": "Migration completed successfully",
+            "tables_created": table_count
+        }
+
+    except Exception as e:
+        logger.error(f"Migration failed: {str(e)}", exc_info=True)
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Migration failed: {str(e)}"
+        )
+
 
 # ========================================
 # Error Handlers
