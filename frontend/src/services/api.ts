@@ -14,6 +14,8 @@ import type {
   ClaudeQueryResponse,
   HealthResponse,
   PlayerExploitAnalysisResponse,
+  ConversationListItem,
+  ConversationDetail,
 } from '../types';
 
 class ApiClient {
@@ -161,6 +163,25 @@ class ApiClient {
   async quickLookup(playerName: string): Promise<any> {
     const response = await this.client.get(`/api/strategy/quick-lookup/${encodeURIComponent(playerName)}`);
     return response.data;
+  }
+
+  // Get all conversations
+  async getConversations(limit: number = 50): Promise<ConversationListItem[]> {
+    const response = await this.client.get<ConversationListItem[]>('/api/conversations/', {
+      params: { limit }
+    });
+    return response.data;
+  }
+
+  // Get specific conversation
+  async getConversation(conversationId: number): Promise<ConversationDetail> {
+    const response = await this.client.get<ConversationDetail>(`/api/conversations/${conversationId}`);
+    return response.data;
+  }
+
+  // Delete conversation
+  async deleteConversation(conversationId: number): Promise<void> {
+    await this.client.delete(`/api/conversations/${conversationId}`);
   }
 }
 

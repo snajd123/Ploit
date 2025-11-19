@@ -125,6 +125,7 @@ export interface ClaudeQueryRequest {
     role: string;
     content: string;
   }>;
+  conversation_id?: number;
 }
 
 export interface ClaudeToolCall {
@@ -142,6 +143,32 @@ export interface ClaudeQueryResponse {
     output_tokens: number;
   };
   error?: string;
+  conversation_id?: number;
+}
+
+export interface ConversationMessage {
+  message_id: number;
+  role: 'user' | 'assistant';
+  content: string;
+  tool_calls?: Record<string, any> | null;
+  usage?: Record<string, any> | null;
+  created_at: string;
+}
+
+export interface ConversationListItem {
+  conversation_id: number;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
+}
+
+export interface ConversationDetail {
+  conversation_id: number;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  messages: ConversationMessage[];
 }
 
 export interface HealthResponse {

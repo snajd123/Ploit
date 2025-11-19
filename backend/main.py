@@ -26,6 +26,8 @@ from backend.config import get_settings
 from backend.verification_endpoint import router as verification_router
 from backend.api.gto_endpoints import router as gto_router
 from backend.api.strategy_endpoints import router as strategy_router
+from backend.api.conversation_endpoints import router as conversation_router
+from backend.models.conversation_models import ClaudeConversation, ClaudeMessage
 
 # Configure logging
 logging.basicConfig(
@@ -63,6 +65,9 @@ app.include_router(gto_router)
 
 # Include Strategy router
 app.include_router(strategy_router)
+
+# Include Conversation router
+app.include_router(conversation_router)
 
 # ========================================
 # Pydantic Models
@@ -140,6 +145,7 @@ class ClaudeQueryRequest(BaseModel):
     """Request model for Claude AI query"""
     query: str = Field(..., description="Natural language question about poker data", min_length=1)
     conversation_history: Optional[List[Dict[str, str]]] = Field(None, description="Optional conversation history for context")
+    conversation_id: Optional[int] = Field(None, description="Optional conversation ID to continue existing conversation")
 
 
 class ClaudeToolCall(BaseModel):
@@ -156,6 +162,7 @@ class ClaudeQueryResponse(BaseModel):
     tool_calls: Optional[List[ClaudeToolCall]] = None
     usage: Optional[Dict[str, int]] = None
     error: Optional[str] = None
+    conversation_id: Optional[int] = None
 
 
 # ========================================
@@ -955,6 +962,33 @@ async def query_claude(
     try:
         logger.info(f"Processing Claude query: {request.query[:100]}...")
 
+        # Get or create conversation
+        conversation_id = request.conversation_id
+        if conversation_id:
+            # Load existing conversation
+            conversation = db.query(ClaudeConversation).filter(
+                ClaudeConversation.conversation_id == conversation_id
+            ).first()
+            if not conversation:
+                raise HTTPException(status_code=404, detail="Conversation not found")
+        else:
+            # Create new conversation with auto-generated title from first query
+            title = request.query[:100] + ("..." if len(request.query) > 100 else "")
+            conversation = ClaudeConversation(title=title)
+            db.add(conversation)
+            db.commit()
+            db.refresh(conversation)
+            conversation_id = conversation.conversation_id
+
+        # Save user message
+        user_message = ClaudeMessage(
+            conversation_id=conversation_id,
+            role="user",
+            content=request.query
+        )
+        db.add(user_message)
+        db.commit()
+
         # Initialize Claude service
         claude_service = ClaudeService(db)
 
@@ -966,19 +1000,35 @@ async def query_claude(
 
         # Convert tool calls to Pydantic models if present
         tool_calls = None
+        tool_calls_json = None
         if result.get("tool_calls"):
             tool_calls = [
                 ClaudeToolCall(**tc) for tc in result["tool_calls"]
             ]
+            tool_calls_json = result.get("tool_calls")
+
+        # Save assistant message
+        assistant_message = ClaudeMessage(
+            conversation_id=conversation_id,
+            role="assistant",
+            content=result.get("response", ""),
+            tool_calls=tool_calls_json,
+            usage=result.get("usage")
+        )
+        db.add(assistant_message)
+        db.commit()
 
         return ClaudeQueryResponse(
             success=result["success"],
             response=result.get("response", ""),
             tool_calls=tool_calls,
             usage=result.get("usage"),
-            error=result.get("error")
+            error=result.get("error"),
+            conversation_id=conversation_id
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error processing Claude query: {str(e)}", exc_info=True)
         return ClaudeQueryResponse(
