@@ -1,0 +1,21 @@
+set_pot 5.5
+set_effective_stack 97.5
+set_board Ad,9s,4h
+set_range_ip AA,KK:0.5,QQ,JJ,TT,99,88,77,66,55,AK,AQs,AQo:0.75,AJs,AJo:0.75,ATs,A9s:0.5,A8s:0.5,A7s:0.5,A6s:0.5,A5s:0.75,A4s:0.75,A3s:0.5,A2s:0.5,KQs,KQo:0.75,KJs,KJo:0.5,KTs,K9s:0.5,QJs,QTs,Q9s:0.5,JTs,J9s:0.5,T9s,98s,87s,76s:0.5,65s:0.5
+set_range_oop KK:0.75,QQ,JJ,TT,99,88,77:0.75,66,55,44,33:0.5,22:0.5,AK:0.25,AQs,AQo:0.5,AJs,AJo:0.5,ATs,ATo:0.75,A9s,A8s,A7s,A6s,A5s,A4s,A3s,A2s,KQ:0.75,KJs,KJo:0.75,KTs,KTo:0.75,K9s,K8s,K7s:0.75,K6s:0.5,K5s:0.5,K4s:0.5,K3s:0.5,K2s:0.5,QJs,QTs,Q9s,Q8s,JTs,J9s,J8s,T9s,T8s,98s,97s,87s,86s,76s,75s,65s,64s,54s
+set_bet_sizes oop,flop,bet,33,50,75,100
+set_bet_sizes oop,flop,raise,100
+set_bet_sizes oop,flop,allin
+set_bet_sizes ip,flop,bet,33,50,75,100
+set_bet_sizes ip,flop,raise,100
+set_bet_sizes ip,flop,allin
+set_allin_threshold 0.67
+build_tree
+set_thread_num 4
+set_accuracy 0.5
+set_max_iteration 1000
+set_print_interval 100
+set_use_isomorphism 1
+start_solve
+set_dump_rounds 2
+dump_result /root/Documents/Ploit/solver/outputs_comprehensive/021_SRP_A94r_check.json

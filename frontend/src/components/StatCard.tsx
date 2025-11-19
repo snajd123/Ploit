@@ -1,4 +1,5 @@
 import React from 'react';
+import { Tooltip } from './Tooltip';
 
 interface StatCardProps {
   title: string;
@@ -6,6 +7,7 @@ interface StatCardProps {
   subtitle?: string;
   icon?: React.ReactNode;
   color?: 'blue' | 'green' | 'red' | 'yellow' | 'gray';
+  tooltip?: React.ReactNode;
 }
 
 const colorClasses = {
@@ -22,12 +24,18 @@ const StatCard: React.FC<StatCardProps> = ({
   subtitle,
   icon,
   color = 'gray',
+  tooltip,
 }) => {
   return (
     <div className="card">
       <div className="flex items-start justify-between">
         <div className="flex-1">
-          <p className="text-sm font-medium text-gray-600">{title}</p>
+          <div className="flex items-center gap-1">
+            <p className="text-sm font-medium text-gray-600">{title}</p>
+            {tooltip && (
+              <Tooltip content={tooltip} position="top" iconSize={14} />
+            )}
+          </div>
           <p className="mt-2 text-3xl font-semibold text-gray-900">{value}</p>
           {subtitle && (
             <p className="mt-1 text-sm text-gray-500">{subtitle}</p>

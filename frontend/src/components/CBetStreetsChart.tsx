@@ -1,4 +1,5 @@
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { Tooltip as CustomTooltip } from './Tooltip';
 
 interface CBetStreetsChartProps {
   cbet_flop_pct?: number | null;
@@ -39,7 +40,33 @@ const CBetStreetsChart: React.FC<CBetStreetsChartProps> = ({
 
   return (
     <div className="card">
-      <h3 className="text-lg font-semibold text-gray-900 mb-2">Continuation Bet Frequency</h3>
+      <div className="flex items-center gap-2 mb-2">
+        <h3 className="text-lg font-semibold text-gray-900">Continuation Bet Frequency</h3>
+        <CustomTooltip
+          content={
+            <div className="space-y-2 max-w-xs">
+              <div className="font-semibold text-blue-300">C-Bet Consistency</div>
+              <div className="text-xs text-gray-300">
+                A continuation bet (c-bet) is when the preflop aggressor bets again on the flop. This chart
+                shows how often they continue betting across streets (flop, turn, river).
+              </div>
+              <div className="text-xs border-t border-gray-700 pt-2">
+                <div className="text-gray-400">Optimal Frequencies:</div>
+                <ul className="text-gray-200 mt-1 space-y-1">
+                  <li>• Flop: ~65% (high frequency)</li>
+                  <li>• Turn: ~50% (moderate)</li>
+                  <li>• River: ~40% (selective)</li>
+                </ul>
+              </div>
+              <div className="text-xs border-t border-gray-700 pt-2 text-gray-300">
+                Large decline = gives up easily (exploitable with floats)
+              </div>
+            </div>
+          }
+          position="top"
+          iconSize={16}
+        />
+      </div>
       <p className="text-sm text-gray-600 mb-4">
         Aggression consistency across streets. Decline per street: <span className="font-semibold text-blue-600">{avgDecline.toFixed(1)}%</span>
       </p>

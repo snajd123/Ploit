@@ -480,7 +480,44 @@ class DatabaseService:
         # Profit/loss
         total_profit_loss = sum(s.profit_loss or Decimal("0") for s in summaries)
 
-        # Get hand dates
+        # Aggression metrics (AF and AFQ) - query hand_actions table
+        player_name = summaries[0].player_name if summaries else None
+        af_value = None
+        afq_value = None
+
+        if player_name:
+            from sqlalchemy import func
+            from ..models.database_models import HandAction
+
+            # Get action counts for this player (postflop only - exclude preflop)
+            action_counts = self.session.query(
+                HandAction.action_type,
+                func.count(HandAction.action_id).label('count')
+            ).filter(
+                HandAction.player_name == player_name,
+                HandAction.street.in_(['flop', 'turn', 'river'])  # Postflop only
+            ).group_by(HandAction.action_type).all()
+
+            action_dict = {action_type: count for action_type, count in action_counts}
+
+            # Count aggressive actions (bet, raise) and passive actions (call, check, fold)
+            bets = action_dict.get('bet', 0) + action_dict.get('BET', 0)
+            raises = action_dict.get('raise', 0) + action_dict.get('RAISE', 0) + action_dict.get('raises', 0)
+            calls = action_dict.get('call', 0) + action_dict.get('CALL', 0) + action_dict.get('calls', 0)
+            checks = action_dict.get('check', 0) + action_dict.get('CHECK', 0) + action_dict.get('checks', 0)
+
+            aggressive_actions = bets + raises
+
+            # Calculate AF = (bets + raises) / calls
+            if calls > 0:
+                af_value = Decimal(str(round(aggressive_actions / calls, 2)))
+
+            # Calculate AFQ = (bets + raises) / (bets + raises + calls + checks)
+            total_voluntary_actions = aggressive_actions + calls + checks
+            if total_voluntary_actions > 0:
+                afq_value = Decimal(str(round((aggressive_actions / total_voluntary_actions) * 100, 2)))
+
+        # Get hand dates and stake levels
         hands_with_timestamps = self.session.query(PlayerHandSummary, RawHand).join(
             RawHand, PlayerHandSummary.hand_id == RawHand.hand_id
         ).filter(PlayerHandSummary.player_name == summaries[0].player_name).all()
@@ -488,6 +525,39 @@ class DatabaseService:
         timestamps = [raw_hand.timestamp for _, raw_hand in hands_with_timestamps if raw_hand.timestamp]
         first_hand_date = min(timestamps) if timestamps else None
         last_hand_date = max(timestamps) if timestamps else None
+
+        # Calculate bb/100 hands
+        bb_per_100_value = None
+        if hands_with_timestamps and total_hands > 0:
+            # Get the most common stake level for this player
+            stake_levels = [raw_hand.stake_level for _, raw_hand in hands_with_timestamps if raw_hand.stake_level]
+            if stake_levels:
+                # Use the most common stake level
+                from collections import Counter
+                most_common_stake = Counter(stake_levels).most_common(1)[0][0]
+
+                # Extract big blind from stake level (e.g., "$0.25/$0.50" -> 0.50, "NL100" -> 1.00)
+                big_blind = None
+                if '/' in most_common_stake:
+                    # Format: "$0.25/$0.50" or "0.25/0.50"
+                    parts = most_common_stake.replace('$', '').split('/')
+                    if len(parts) == 2:
+                        try:
+                            big_blind = Decimal(parts[1].strip())
+                        except:
+                            pass
+                elif 'NL' in most_common_stake.upper():
+                    # Format: "NL100" means $100 buy-in, typically 1/2 game (BB=$2)
+                    # Or "NL50" means $50 buy-in, typically 0.25/0.50 game (BB=$0.50)
+                    try:
+                        buyin = Decimal(most_common_stake.upper().replace('NL', '').replace('$', ''))
+                        big_blind = buyin / 50  # Standard 100bb buy-in
+                    except:
+                        pass
+
+                if big_blind and big_blind > 0:
+                    # bb/100 = (total_profit_loss / (total_hands * big_blind)) * 100
+                    bb_per_100_value = Decimal(str(round((total_profit_loss / (Decimal(total_hands) * big_blind)) * 100, 2)))
 
         # Build stats dictionary
         stats = {
@@ -531,15 +601,15 @@ class DatabaseService:
             'donk_bet_river_pct': calc_pct(donk_river, saw_flop_count) if saw_flop_count > 0 else None,
             # Float
             'float_flop_pct': calc_pct(float_flop, saw_flop_count) if saw_flop_count > 0 else None,
-            # Aggression (simplified for now - would need action data for full AF/AFQ)
-            'af': None,
-            'afq': None,
+            # Aggression metrics
+            'af': af_value,
+            'afq': afq_value,
             # Showdown
             'wtsd_pct': calc_pct(went_to_showdown, saw_flop_count) if saw_flop_count > 0 else None,
             'wsd_pct': calc_pct(won_at_showdown, went_to_showdown) if went_to_showdown > 0 else None,
             # Win rate
             'total_profit_loss': total_profit_loss,
-            'bb_per_100': None,  # TODO: Calculate from stake level
+            'bb_per_100': bb_per_100_value,
             # Dates
             'first_hand_date': first_hand_date,
             'last_hand_date': last_hand_date

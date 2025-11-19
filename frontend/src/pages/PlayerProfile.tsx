@@ -5,6 +5,7 @@ import { ArrowLeft, TrendingUp, Target, Shield } from 'lucide-react';
 import { api } from '../services/api';
 import PlayerBadge from '../components/PlayerBadge';
 import StatCard from '../components/StatCard';
+import { Tooltip } from '../components/Tooltip';
 import MetricChart from '../components/MetricChart';
 import PositionalVPIPChart from '../components/PositionalVPIPChart';
 import PreflopAggressionChart from '../components/PreflopAggressionChart';
@@ -13,6 +14,54 @@ import ShowdownChart from '../components/ShowdownChart';
 import ExploitDashboard from '../components/ExploitDashboard';
 import BaselineComparison from '../components/BaselineComparison';
 import DeviationHeatmap from '../components/DeviationHeatmap';
+import { STAT_DEFINITIONS } from '../config/statDefinitions';
+
+// Helper function to generate tooltip content for a statistic
+const getStatTooltip = (statKey: string, value?: number) => {
+  const def = STAT_DEFINITIONS[statKey];
+  if (!def) return null;
+
+  return (
+    <div className="space-y-2 max-w-xs">
+      <div>
+        <div className="font-semibold text-blue-300">{def.name}</div>
+        <div className="text-xs text-gray-300 mt-1">{def.description}</div>
+      </div>
+
+      {def.formula && (
+        <div className="text-xs border-t border-gray-700 pt-2">
+          <div className="text-gray-400">Formula:</div>
+          <code className="text-gray-200 font-mono text-xs">{def.formula}</code>
+        </div>
+      )}
+
+      {def.optimalRange && (
+        <div className="text-xs border-t border-gray-700 pt-2">
+          <div className="text-gray-400">Optimal Range:</div>
+          <div className="text-green-300 font-medium">
+            {def.optimalRange[0]}{def.unit} - {def.optimalRange[1]}{def.unit}
+          </div>
+        </div>
+      )}
+
+      {value !== undefined && def.optimalRange && (
+        <div className="text-xs border-t border-gray-700 pt-2">
+          <div className="text-gray-400">Current Value:</div>
+          <div className={`font-medium ${
+            value < def.optimalRange[0] ? 'text-yellow-300' :
+            value > def.optimalRange[1] ? 'text-yellow-300' :
+            'text-green-300'
+          }`}>
+            {value.toFixed(1)}{def.unit}
+            {value < def.optimalRange[0] && ' (below optimal)'}
+            {value > def.optimalRange[1] && ' (above optimal)'}
+            {value >= def.optimalRange[0] && value <= def.optimalRange[1] && ' (optimal)'}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 const PlayerProfile = () => {
   const { playerName } = useParams<{ playerName: string }>();
@@ -91,7 +140,10 @@ const PlayerProfile = () => {
           </div>
           {player.exploitability_index !== null && player.exploitability_index !== undefined && (
             <div className="text-right">
-              <p className="text-sm text-gray-600">Exploitability Index</p>
+              <div className="flex items-center justify-end gap-1">
+                <p className="text-sm text-gray-600">Exploitability Index</p>
+                <Tooltip content={getStatTooltip('exploitability_index', player.exploitability_index)} position="bottom" iconSize={14} />
+              </div>
               <p className="text-4xl font-bold text-gray-900 mt-1">
                 {player.exploitability_index.toFixed(1)}
               </p>
@@ -122,48 +174,56 @@ const PlayerProfile = () => {
             value={player.vpip_pct !== null && player.vpip_pct !== undefined ? `${player.vpip_pct.toFixed(1)}%` : 'N/A'}
             subtitle="Voluntarily Put $ In Pot"
             color="blue"
+            tooltip={getStatTooltip('vpip_pct', player.vpip_pct ?? undefined)}
           />
           <StatCard
             title="PFR%"
             value={player.pfr_pct !== null && player.pfr_pct !== undefined ? `${player.pfr_pct.toFixed(1)}%` : 'N/A'}
             subtitle="Pre-Flop Raise"
             color="green"
+            tooltip={getStatTooltip('pfr_pct', player.pfr_pct ?? undefined)}
           />
           <StatCard
             title="3-Bet%"
             value={player.three_bet_pct !== null && player.three_bet_pct !== undefined ? `${player.three_bet_pct.toFixed(1)}%` : 'N/A'}
             subtitle="3-Bet Percentage"
             color="yellow"
+            tooltip={getStatTooltip('three_bet_pct', player.three_bet_pct ?? undefined)}
           />
           <StatCard
             title="Fold to 3-Bet%"
             value={player.fold_to_three_bet_pct !== null && player.fold_to_three_bet_pct !== undefined ? `${player.fold_to_three_bet_pct.toFixed(1)}%` : 'N/A'}
             subtitle="Fold to 3-Bet"
             color="red"
+            tooltip={getStatTooltip('fold_to_three_bet_pct', player.fold_to_three_bet_pct ?? undefined)}
           />
           <StatCard
             title="C-Bet Flop%"
             value={player.cbet_flop_pct !== null && player.cbet_flop_pct !== undefined ? `${player.cbet_flop_pct.toFixed(1)}%` : 'N/A'}
             subtitle="Continuation Bet"
             color="blue"
+            tooltip={getStatTooltip('cbet_flop_pct', player.cbet_flop_pct ?? undefined)}
           />
           <StatCard
             title="Fold to C-Bet%"
             value={player.fold_to_cbet_flop_pct !== null && player.fold_to_cbet_flop_pct !== undefined ? `${player.fold_to_cbet_flop_pct.toFixed(1)}%` : 'N/A'}
             subtitle="Fold to C-Bet"
             color="green"
+            tooltip={getStatTooltip('fold_to_cbet_flop_pct', player.fold_to_cbet_flop_pct ?? undefined)}
           />
           <StatCard
             title="WTSD%"
             value={player.wtsd_pct !== null && player.wtsd_pct !== undefined ? `${player.wtsd_pct.toFixed(1)}%` : 'N/A'}
             subtitle="Went To Showdown"
             color="yellow"
+            tooltip={getStatTooltip('wtsd_pct', player.wtsd_pct ?? undefined)}
           />
           <StatCard
             title="W$SD%"
             value={player.wsd_pct !== null && player.wsd_pct !== undefined ? `${player.wsd_pct.toFixed(1)}%` : 'N/A'}
             subtitle="Won $ at Showdown"
             color="gray"
+            tooltip={getStatTooltip('wsd_pct', player.wsd_pct ?? undefined)}
           />
         </div>
       </div>
@@ -265,6 +325,7 @@ const PlayerProfile = () => {
             subtitle="Fold frequency under pressure"
             icon={<Shield size={24} />}
             color="blue"
+            tooltip={getStatTooltip('pressure_vulnerability_score', player.pressure_vulnerability_score ?? undefined)}
           />
           <StatCard
             title="Aggression Consistency Ratio"
@@ -272,6 +333,7 @@ const PlayerProfile = () => {
             subtitle="Give-up tendency across streets"
             icon={<TrendingUp size={24} />}
             color="green"
+            tooltip={getStatTooltip('aggression_consistency_ratio', player.aggression_consistency_ratio ?? undefined)}
           />
           <StatCard
             title="Positional Awareness Index"
@@ -279,24 +341,28 @@ const PlayerProfile = () => {
             subtitle="Position-specific play quality"
             icon={<Target size={24} />}
             color="yellow"
+            tooltip={getStatTooltip('positional_awareness_index', player.positional_awareness_index ?? undefined)}
           />
           <StatCard
             title="Blind Defense Efficiency"
             value={player.blind_defense_efficiency !== null && player.blind_defense_efficiency !== undefined ? player.blind_defense_efficiency.toFixed(1) : 'N/A'}
             subtitle="Quality of blind defense"
             color="red"
+            tooltip={getStatTooltip('blind_defense_efficiency', player.blind_defense_efficiency ?? undefined)}
           />
           <StatCard
             title="Multi-Street Persistence"
             value={player.multi_street_persistence_score !== null && player.multi_street_persistence_score !== undefined ? player.multi_street_persistence_score.toFixed(1) : 'N/A'}
             subtitle="Commitment across streets"
             color="blue"
+            tooltip={getStatTooltip('multi_street_persistence_score', player.multi_street_persistence_score ?? undefined)}
           />
           <StatCard
             title="Delayed Aggression Coefficient"
             value={player.delayed_aggression_coefficient !== null && player.delayed_aggression_coefficient !== undefined ? player.delayed_aggression_coefficient.toFixed(1) : 'N/A'}
             subtitle="Check-raise and trap frequency"
             color="green"
+            tooltip={getStatTooltip('delayed_aggression_coefficient', player.delayed_aggression_coefficient ?? undefined)}
           />
         </div>
       </div>

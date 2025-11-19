@@ -1,4 +1,5 @@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts';
+import { Tooltip as CustomTooltip } from './Tooltip';
 
 interface PositionalVPIPChartProps {
   vpip_utg?: number | null;
@@ -42,7 +43,32 @@ const PositionalVPIPChart: React.FC<PositionalVPIPChartProps> = (props) => {
 
   return (
     <div className="card">
-      <h3 className="text-lg font-semibold text-gray-900 mb-2">Positional VPIP Analysis</h3>
+      <div className="flex items-center gap-2 mb-2">
+        <h3 className="text-lg font-semibold text-gray-900">Positional VPIP Analysis</h3>
+        <CustomTooltip
+          content={
+            <div className="space-y-2 max-w-xs">
+              <div className="font-semibold text-blue-300">Positional Awareness</div>
+              <div className="text-xs text-gray-300">
+                Good players adjust their VPIP by position - playing tighter from early positions (UTG, HJ)
+                and looser from late positions (CO, BTN).
+              </div>
+              <div className="text-xs border-t border-gray-700 pt-2">
+                <div className="text-gray-400">Optimal VPIP by Position:</div>
+                <ul className="text-gray-200 mt-1 space-y-1">
+                  <li>• UTG: ~15% (tightest)</li>
+                  <li>• HJ/MP: ~19%</li>
+                  <li>• CO: ~27%</li>
+                  <li>• BTN: ~47% (widest)</li>
+                  <li>• SB: ~33% | BB: ~38%</li>
+                </ul>
+              </div>
+            </div>
+          }
+          position="top"
+          iconSize={16}
+        />
+      </div>
       <p className="text-sm text-gray-600 mb-4">
         How tight/loose player is by position. Colors show deviation from optimal ranges.
       </p>

@@ -1,4 +1,5 @@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { Tooltip as CustomTooltip } from './Tooltip';
 
 interface PreflopAggressionChartProps {
   vpip_pct?: number | null;
@@ -40,7 +41,30 @@ const PreflopAggressionChart: React.FC<PreflopAggressionChartProps> = ({
 
   return (
     <div className="card">
-      <h3 className="text-lg font-semibold text-gray-900 mb-2">Preflop Aggression Profile</h3>
+      <div className="flex items-center gap-2 mb-2">
+        <h3 className="text-lg font-semibold text-gray-900">Preflop Aggression Profile</h3>
+        <CustomTooltip
+          content={
+            <div className="space-y-2 max-w-xs">
+              <div className="font-semibold text-blue-300">Preflop Aggression Analysis</div>
+              <div className="text-xs text-gray-300">
+                This chart shows how aggressively the player plays preflop. The VPIP/PFR gap reveals their style.
+              </div>
+              <div className="text-xs border-t border-gray-700 pt-2">
+                <div className="text-gray-400">VPIP/PFR Gap Interpretation:</div>
+                <ul className="text-gray-200 mt-1 space-y-1">
+                  <li>• &lt;5%: Aggressive (mostly raising, rarely calling)</li>
+                  <li>• 5-10%: Balanced (healthy mix)</li>
+                  <li>• 10-15%: Passive (calling more than raising)</li>
+                  <li>• &gt;15%: Very Passive (calling station)</li>
+                </ul>
+              </div>
+            </div>
+          }
+          position="top"
+          iconSize={16}
+        />
+      </div>
       <p className="text-sm text-gray-600 mb-4">
         VPIP/PFR gap: <span className={`font-semibold ${
           gap < 5 ? 'text-green-600' : gap < 10 ? 'text-yellow-600' : 'text-red-600'

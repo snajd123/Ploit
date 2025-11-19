@@ -1,3 +1,4 @@
+import { Tooltip } from './Tooltip';
 
 interface ShowdownChartProps {
   wtsd_pct?: number | null;
@@ -18,7 +19,30 @@ const ShowdownChart: React.FC<ShowdownChartProps> = ({ wtsd_pct, wsd_pct }) => {
 
   return (
     <div className="card">
-      <h3 className="text-lg font-semibold text-gray-900 mb-2">Showdown Performance</h3>
+      <div className="flex items-center gap-2 mb-2">
+        <h3 className="text-lg font-semibold text-gray-900">Showdown Performance</h3>
+        <Tooltip
+          content={
+            <div className="space-y-2 max-w-xs">
+              <div className="font-semibold text-blue-300">Showdown Analysis</div>
+              <div className="text-xs text-gray-300">
+                WTSD (Went to Showdown) shows how often they see showdown after seeing the flop.
+                W$SD shows their win rate at showdown.
+              </div>
+              <div className="text-xs border-t border-gray-700 pt-2">
+                <div className="text-gray-400">Key Combinations:</div>
+                <ul className="text-gray-200 mt-1 space-y-1">
+                  <li>• High WTSD + Low W$SD = Calling Station</li>
+                  <li>• Low WTSD + High W$SD = Tight/Nitty</li>
+                  <li>• 20-28% WTSD + 48-54% W$SD = Balanced</li>
+                </ul>
+              </div>
+            </div>
+          }
+          position="top"
+          iconSize={16}
+        />
+      </div>
       <p className="text-sm text-gray-600 mb-4">
         Showdown frequency and win rate when hands go to showdown
       </p>

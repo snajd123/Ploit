@@ -7,6 +7,7 @@ import PlayerProfile from './pages/PlayerProfile';
 import ClaudeChat from './pages/ClaudeChat';
 import PreGameStrategy from './pages/PreGameStrategy';
 import Settings from './pages/Settings';
+import StatsGlossary from './pages/StatsGlossary';
 
 function App() {
   return (
@@ -20,6 +21,7 @@ function App() {
           <Route path="players/:playerName" element={<PlayerProfile />} />
           <Route path="claude" element={<ClaudeChat />} />
           <Route path="strategy" element={<PreGameStrategy />} />
+          <Route path="glossary" element={<StatsGlossary />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>
