@@ -34,6 +34,13 @@ class RawHand(Base):
     raw_hand_text = Column(Text)
     created_at = Column(TIMESTAMP, default=func.current_timestamp())
 
+    # Board cards
+    flop_card_1 = Column(String(2))
+    flop_card_2 = Column(String(2))
+    flop_card_3 = Column(String(2))
+    turn_card = Column(String(2))
+    river_card = Column(String(2))
+
     def __repr__(self) -> str:
         return f"<RawHand(hand_id={self.hand_id}, stake={self.stake_level}, timestamp={self.timestamp})>"
 
@@ -150,6 +157,23 @@ class PlayerHandSummary(Base):
     # Hand result
     won_hand = Column(Boolean, default=False)
     profit_loss = Column(DECIMAL(10, 2))
+
+    # Board categorization
+    board_category_l1 = Column(String(30))
+    board_category_l2 = Column(String(50))
+    board_category_l3 = Column(String(100))
+    is_paired = Column(Boolean, default=False)
+    is_rainbow = Column(Boolean, default=False)
+    is_two_tone = Column(Boolean, default=False)
+    is_monotone = Column(Boolean, default=False)
+    is_connected = Column(Boolean, default=False)
+    is_highly_connected = Column(Boolean, default=False)
+    has_broadway = Column(Boolean, default=False)
+    is_dry = Column(Boolean, default=False)
+    is_wet = Column(Boolean, default=False)
+    high_card_rank = Column(String(2))
+    middle_card_rank = Column(String(2))
+    low_card_rank = Column(String(2))
 
     created_at = Column(TIMESTAMP, default=func.current_timestamp())
 
