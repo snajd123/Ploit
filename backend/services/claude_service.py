@@ -273,54 +273,108 @@ These are advanced metrics calculated from traditional statistics:
 
 ## GTO Deviation Analysis (POWERFUL NEW FEATURE!)
 
-The gto_solutions table contains pre-computed GTO (Game Theory Optimal) solutions for 15 critical poker scenarios. Use this to provide QUANTIFIED exploit recommendations with expected value calculations.
+The gto_solutions table contains 40+ pre-computed GTO (Game Theory Optimal) solutions with **multi-level board categorization** for finding relevant scenarios. Use this to provide QUANTIFIED exploit recommendations with expected value calculations.
 
-**Available GTO Scenarios:**
-- SRP_Ks7c3d_cbet (K-high dry board)
-- SRP_Ah9s3h_cbet (A-high monotone)
-- SRP_9s8h7d_cbet (connected middle board)
-- SRP_Qc7h2s_cbet (Q-high dry)
-- SRP_Tc9c5h_cbet (T-high two-tone)
-- SRP_6h5h4s_cbet (low connected)
-- SRP_AhKd3s_cbet (AK-high)
-- 3BET_AhKs9d_cbet (3-bet pot)
-- Plus 7 more covering paired boards, low boards, etc.
+**Board Categorization System:**
+
+Every GTO solution is categorized using a 3-level hierarchical system:
+
+1. **Level 1 (board_category_l1)** - Broad categories (7 types):
+   - "Ace-high", "King-high", "Queen-high", "Jack-or-Ten-high", "Nine-or-lower", "Paired", "Broadway"
+
+2. **Level 2 (board_category_l2)** - Medium specificity (~20 types):
+   - Adds texture: "Ace-high-rainbow", "Ace-high-two-tone", "King-high-connected", etc.
+
+3. **Level 3 (board_category_l3)** - Fine-grained (~100 types):
+   - Adds wetness: "Ace-high-rainbow-dry", "King-high-two-tone-wet", etc.
+
+**Board Texture Properties (Boolean columns):**
+- `is_paired` - Board has a pair (e.g., 77x, KK3)
+- `is_rainbow` - Three different suits
+- `is_two_tone` - Two cards same suit
+- `is_monotone` - All same suit
+- `is_connected` - At least one gap ≤1 rank
+- `is_highly_connected` - Max gap ≤2 ranks
+- `has_broadway` - Contains T, J, Q, K, or A
+- `is_dry` - Low connectivity (max gap ≥3)
+- `is_wet` - High connectivity (gaps ≤1)
+- `high_card_rank`, `middle_card_rank`, `low_card_rank` - Individual card ranks
+
+**Available GTO Scenarios (40+ solutions):**
+- SRP (Single Raised Pot): K-high, A-high, Q-high, connected, dry, wet boards
+- 3BP (3-Bet Pot): Various textures
+- Multiple position contexts (IP/OOP)
+- Various action sequences (cbet, check, raise)
 
 **How to Use GTO Analysis:**
 
-1. **Compare Player to GTO:**
-   - Get player's cbet_flop_pct from player_stats
-   - Get GTO's gto_bet_frequency for the scenario
-   - Calculate deviation: player_freq - gto_freq
+1. **Find Relevant GTO Solutions by Board Type:**
+
+   Use the categorization system to find similar boards:
+   ```sql
+   -- Find all Ace-high rainbow solutions
+   SELECT scenario_name, board, gto_bet_frequency, board_category_l3
+   FROM gto_solutions
+   WHERE board_category_l1 = 'Ace-high' AND is_rainbow = true
+   ```
+
+   ```sql
+   -- Find dry boards for player who struggles on dry textures
+   SELECT scenario_name, board, gto_bet_frequency
+   FROM gto_solutions
+   WHERE is_dry = true AND board_category_l1 = 'King-high'
+   ```
+
+   ```sql
+   -- Find all connected boards to analyze player's tendency on draws
+   SELECT scenario_name, board, gto_bet_frequency, is_highly_connected
+   FROM gto_solutions
+   WHERE is_connected = true OR is_highly_connected = true
+   ```
+
+2. **Compare Player to GTO on Specific Board Types:**
+   ```sql
+   -- Player's deviation on ALL Ace-high boards
+   SELECT
+     gto.board_category_l3,
+     COUNT(*) as scenarios,
+     AVG(ps.cbet_flop_pct) as player_avg_cbet,
+     AVG(gto.gto_bet_frequency) as gto_avg_cbet,
+     AVG(ps.cbet_flop_pct - gto.gto_bet_frequency) as avg_deviation
+   FROM player_stats ps
+   CROSS JOIN gto_solutions gto
+   WHERE ps.player_name = 'opponent' AND gto.board_category_l1 = 'Ace-high'
+   GROUP BY gto.board_category_l3
+   ```
+
+3. **Quantify Exploit Value:**
    - Deviation > +10% = over-betting (exploitable by calling/raising)
    - Deviation < -10% = under-betting (exploitable by bluffing when checked to)
-
-2. **Quantify Exploit Value:**
-   - Larger deviation = more exploitable
    - Deviations > 15% are SEVERE and highly profitable
    - Deviations > 25% are EXTREME exploits
 
-3. **Example GTO Query:**
+4. **Board-Specific Exploits:**
    ```sql
+   -- Find which board textures player over-c-bets the most
    SELECT
-     ps.player_name,
-     ps.cbet_flop_pct as player_cbet,
-     gto.gto_bet_frequency as gto_cbet,
-     (ps.cbet_flop_pct - gto.gto_bet_frequency) as deviation,
+     gto.board_category_l2,
      gto.board,
-     gto.scenario_type
+     ps.cbet_flop_pct,
+     gto.gto_bet_frequency,
+     (ps.cbet_flop_pct - gto.gto_bet_frequency) as deviation
    FROM player_stats ps
    CROSS JOIN gto_solutions gto
-   WHERE gto.scenario_name = 'SRP_Ks7c3d_cbet'
-     AND ps.player_name = 'opponent_name'
+   WHERE ps.player_name = 'opponent'
+   ORDER BY deviation DESC
+   LIMIT 5
    ```
 
-4. **Interpret Results:**
-   - Over-betting (deviation > +10%): "This player c-bets 15% MORE than GTO. Exploit by calling/raising more."
-   - Under-betting (deviation < -10%): "This player c-bets 15% LESS than GTO. Exploit by betting when they check."
-
-5. **Multi-Scenario Analysis:**
-   Query multiple scenarios to find consistent patterns across board textures.
+5. **Multi-Texture Pattern Analysis:**
+   Use categorization to identify if player struggles with specific textures:
+   - Paired vs Unpaired boards
+   - Wet vs Dry boards
+   - Rainbow vs Monotone boards
+   - High-card vs Low-card boards
 
 **IMPORTANT:** When asked about specific players or exploits, ALWAYS check gto_solutions table to provide GTO-based deviation analysis. This transforms vague advice into precise, quantified exploit recommendations.
 
@@ -415,10 +469,11 @@ When answering queries:
 - "Find TAGs who fold too much to pressure" → SELECT player_name, vpip_pct, pfr_pct, pressure_vulnerability_score FROM player_stats WHERE player_type = 'TAG' AND pressure_vulnerability_score > 60
 - "Who gives up on later streets?" → SELECT player_name, aggression_consistency_ratio, multi_street_persistence_score FROM player_stats WHERE aggression_consistency_ratio < 40
 
-**GTO Deviation Analysis (USE THIS!):**
-- "How does player X deviate from GTO on K-high boards?" → SELECT ps.cbet_flop_pct, gto.gto_bet_frequency, (ps.cbet_flop_pct - gto.gto_bet_frequency) as deviation FROM player_stats ps, gto_solutions gto WHERE ps.player_name = 'X' AND gto.scenario_name = 'SRP_Ks7c3d_cbet'
-- "Find all GTO scenarios where player folds too much" → SELECT gto.scenario_name, gto.board, ps.fold_to_cbet_flop_pct, gto.gto_fold_frequency, (ps.fold_to_cbet_flop_pct - gto.gto_fold_frequency) as deviation FROM player_stats ps CROSS JOIN gto_solutions gto WHERE ps.player_name = 'X' AND (ps.fold_to_cbet_flop_pct - gto.gto_fold_frequency) > 15
-- "Show me all available GTO scenarios" → SELECT scenario_name, board, scenario_type, gto_bet_frequency FROM gto_solutions ORDER BY scenario_type
+**GTO Deviation Analysis with Board Categorization (USE THIS!):**
+- "How does player X play on Ace-high boards?" → SELECT gto.board, gto.board_category_l3, ps.cbet_flop_pct, gto.gto_bet_frequency, (ps.cbet_flop_pct - gto.gto_bet_frequency) as deviation FROM player_stats ps CROSS JOIN gto_solutions gto WHERE ps.player_name = 'X' AND gto.board_category_l1 = 'Ace-high'
+- "Find board textures where player over-c-bets" → SELECT gto.board_category_l2, gto.is_wet, gto.is_paired, AVG(ps.cbet_flop_pct - gto.gto_bet_frequency) as avg_deviation FROM player_stats ps CROSS JOIN gto_solutions gto WHERE ps.player_name = 'X' GROUP BY gto.board_category_l2, gto.is_wet, gto.is_paired HAVING AVG(ps.cbet_flop_pct - gto.gto_bet_frequency) > 10
+- "Does player struggle more on wet or dry boards?" → SELECT CASE WHEN is_wet THEN 'Wet' WHEN is_dry THEN 'Dry' ELSE 'Medium' END as texture, AVG(ps.cbet_flop_pct - gto.gto_bet_frequency) as avg_deviation FROM player_stats ps CROSS JOIN gto_solutions gto WHERE ps.player_name = 'X' GROUP BY is_wet, is_dry
+- "Show all GTO scenarios by board category" → SELECT board_category_l1, board_category_l2, COUNT(*) as count FROM gto_solutions GROUP BY board_category_l1, board_category_l2 ORDER BY board_category_l1
 
 ## Strategic Framework
 
