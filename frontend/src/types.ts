@@ -162,6 +162,7 @@ export interface Deviation {
   exploitable: boolean;
   direction: 'over' | 'under';
   exploit_direction?: string;
+  exploit?: string;  // Detailed exploitation strategy
   estimated_ev?: number;
 }
 
