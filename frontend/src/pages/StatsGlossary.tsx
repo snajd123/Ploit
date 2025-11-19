@@ -12,7 +12,7 @@ const StatsGlossary = () => {
   const categories = ['all', ...new Set(Object.values(STAT_DEFINITIONS).map(stat => stat.category))];
 
   // Filter stats based on search and category
-  const filteredStats = Object.entries(STAT_DEFINITIONS).filter(([key, stat]) => {
+  const filteredStats = Object.entries(STAT_DEFINITIONS).filter(([_key, stat]) => {
     const matchesSearch = searchQuery === '' ||
       stat.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       stat.abbreviation.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -31,12 +31,6 @@ const StatsGlossary = () => {
     acc[stat.category].push({ key, ...stat });
     return acc;
   }, {} as Record<string, Array<StatDefinition & { key: string }>>);
-
-  const getOptimalRangeColor = (value: number, optimal?: [number, number]) => {
-    if (!optimal) return 'text-gray-600';
-    if (value < optimal[0] || value > optimal[1]) return 'text-yellow-600';
-    return 'text-green-600';
-  };
 
   return (
     <div className="space-y-6">
