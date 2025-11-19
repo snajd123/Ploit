@@ -120,11 +120,75 @@ const StatsGlossary = () => {
                   )}
                 </div>
 
-                <p className="text-gray-700 mb-3 whitespace-pre-line">{stat.description}</p>
+                {/* Parse description into sections */}
+                {(() => {
+                  const sections = stat.description.split(/\n\n(?=Variables:|Example:|Interpretation:|Requirements:|Context:|Note:|Calculation:|Weighting:|Positions and Optimal VPIP:)/);
+                  const mainDesc = sections[0];
+                  const otherSections = sections.slice(1);
+
+                  return (
+                    <>
+                      <p className="text-gray-700 mb-3 whitespace-pre-line">{mainDesc}</p>
+
+                      {otherSections.map((section, idx) => {
+                        // Check what type of section this is
+                        if (section.startsWith('Variables:')) {
+                          return (
+                            <div key={idx} className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3">
+                              <p className="text-xs font-medium text-amber-900 mb-1">Variables:</p>
+                              <div className="text-sm text-gray-900 whitespace-pre-line">
+                                {section.replace('Variables:', '').trim()}
+                              </div>
+                            </div>
+                          );
+                        } else if (section.startsWith('Example:')) {
+                          return (
+                            <div key={idx} className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
+                              <p className="text-xs font-medium text-blue-900 mb-1">Example:</p>
+                              <div className="text-sm text-gray-900 whitespace-pre-line">
+                                {section.replace('Example:', '').trim()}
+                              </div>
+                            </div>
+                          );
+                        } else if (section.startsWith('Interpretation:')) {
+                          return (
+                            <div key={idx} className="bg-purple-50 border border-purple-200 rounded-lg p-3 mb-3">
+                              <p className="text-xs font-medium text-purple-900 mb-1">Interpretation:</p>
+                              <div className="text-sm text-gray-900 whitespace-pre-line">
+                                {section.replace('Interpretation:', '').trim()}
+                              </div>
+                            </div>
+                          );
+                        } else if (section.startsWith('Requirements:') || section.startsWith('Context:') || section.startsWith('Note:')) {
+                          const label = section.split(':')[0] + ':';
+                          return (
+                            <div key={idx} className="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-3">
+                              <p className="text-xs font-medium text-gray-900 mb-1">{label}</p>
+                              <div className="text-sm text-gray-700 whitespace-pre-line">
+                                {section.replace(label, '').trim()}
+                              </div>
+                            </div>
+                          );
+                        } else if (section.startsWith('Calculation:') || section.startsWith('Weighting:') || section.startsWith('Positions and Optimal VPIP:')) {
+                          const label = section.split(':')[0] + ':';
+                          return (
+                            <div key={idx} className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 mb-3">
+                              <p className="text-xs font-medium text-indigo-900 mb-1">{label}</p>
+                              <div className="text-sm text-gray-900 whitespace-pre-line">
+                                {section.replace(label, '').trim()}
+                              </div>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })}
+                    </>
+                  );
+                })()}
 
                 {/* Formula */}
-                <div className="bg-gray-50 rounded-lg p-3 mb-3">
-                  <p className="text-xs font-medium text-gray-500 mb-1">Formula:</p>
+                <div className="bg-gray-50 border border-gray-300 rounded-lg p-3 mb-3">
+                  <p className="text-xs font-medium text-gray-700 mb-1">Formula:</p>
                   <code className="text-sm text-gray-900 font-mono whitespace-pre-line">{stat.formula}</code>
                 </div>
 
