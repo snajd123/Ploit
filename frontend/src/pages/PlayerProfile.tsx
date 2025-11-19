@@ -225,6 +225,27 @@ const PlayerProfile = () => {
             color="gray"
             tooltip={getStatTooltip('wsd_pct', player.wsd_pct ?? undefined)}
           />
+          <StatCard
+            title="AF"
+            value={player.af !== null && player.af !== undefined ? player.af.toFixed(2) : 'N/A'}
+            subtitle="Aggression Factor"
+            color="purple"
+            tooltip={getStatTooltip('af', player.af ?? undefined)}
+          />
+          <StatCard
+            title="AFQ%"
+            value={player.afq !== null && player.afq !== undefined ? `${player.afq.toFixed(1)}%` : 'N/A'}
+            subtitle="Aggression Frequency"
+            color="indigo"
+            tooltip={getStatTooltip('afq', player.afq ?? undefined)}
+          />
+          <StatCard
+            title="BB/100"
+            value={player.bb_per_100 !== null && player.bb_per_100 !== undefined ? `${player.bb_per_100.toFixed(1)}` : 'N/A'}
+            subtitle="Big Blinds per 100 Hands"
+            color={player.bb_per_100 !== null && player.bb_per_100 !== undefined && player.bb_per_100 > 0 ? 'green' : player.bb_per_100 !== null && player.bb_per_100 !== undefined && player.bb_per_100 < 0 ? 'red' : 'gray'}
+            tooltip={getStatTooltip('bb_per_100', player.bb_per_100 ?? undefined)}
+          />
         </div>
       </div>
 
