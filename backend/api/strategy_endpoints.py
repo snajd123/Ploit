@@ -145,6 +145,10 @@ async def generate_pre_game_strategy(
                 'VPIP': f"{player.vpip_pct:.1f}%" if player.vpip_pct else "N/A",
                 'PFR': f"{player.pfr_pct:.1f}%" if player.pfr_pct else "N/A",
                 '3Bet': f"{player.three_bet_pct:.1f}%" if player.three_bet_pct else "N/A",
+                'AF': f"{player.af:.2f}" if player.af else "N/A",
+                'AFQ': f"{player.afq:.1f}%" if player.afq else "N/A",
+                'BB/100': f"{player.bb_per_100:+.1f}" if player.bb_per_100 is not None else "N/A",
+                'C-Bet': f"{player.cbet_flop_pct:.1f}%" if player.cbet_flop_pct else "N/A",
                 'WTSD': f"{player.wtsd_pct:.1f}%" if player.wtsd_pct else "N/A"
             }
         ))
@@ -413,6 +417,10 @@ async def quick_lookup(
             'VPIP': f"{player.vpip_pct:.1f}%" if player.vpip_pct else "N/A",
             'PFR': f"{player.pfr_pct:.1f}%" if player.pfr_pct else "N/A",
             '3Bet': f"{player.three_bet_pct:.1f}%" if player.three_bet_pct else "N/A",
+            'AF': f"{player.af:.2f}" if player.af else "N/A",
+            'AFQ': f"{player.afq:.1f}%" if player.afq else "N/A",
+            'BB/100': f"{player.bb_per_100:+.1f}" if player.bb_per_100 is not None else "N/A",
+            'C-Bet': f"{player.cbet_flop_pct:.1f}%" if player.cbet_flop_pct else "N/A",
             'Fold to 3Bet': f"{player.fold_to_three_bet_pct:.1f}%" if player.fold_to_three_bet_pct else "N/A",
             'WTSD': f"{player.wtsd_pct:.1f}%" if player.wtsd_pct else "N/A"
         },
