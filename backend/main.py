@@ -430,10 +430,10 @@ async def upload_hand_history_batch(
     description="Retrieve list of all players with optional filtering"
 )
 async def get_all_players(
-    min_hands: int = 100,
+    min_hands: int = 0,
     stake_level: Optional[str] = None,
-    sort_by: str = 'total_hands',
-    limit: int = 100,
+    sort_by: str = 'player_name',
+    limit: int = 10000,
     db: Session = Depends(get_db)
 ):
     """
