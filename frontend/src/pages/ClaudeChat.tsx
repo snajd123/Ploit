@@ -20,7 +20,7 @@ const ClaudeChat = () => {
   const [error, setError] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<number | null>(null);
   const [conversations, setConversations] = useState<ConversationListItem[]>([]);
-  const [showSidebar, setShowSidebar] = useState(true);
+  const [showSidebar, setShowSidebar] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Load conversations on mount
@@ -156,11 +156,19 @@ const ClaudeChat = () => {
   ];
 
   return (
-    <div className="flex gap-6 h-full">
-      {/* Sidebar */}
+    <div className="flex flex-col lg:flex-row gap-6 h-full relative">
+      {/* Sidebar - overlay on mobile, sidebar on desktop */}
       {showSidebar && (
-        <div className="w-80 flex-shrink-0">
-          <div className="card h-[calc(100vh-12rem)] flex flex-col p-0">
+        <>
+          {/* Backdrop for mobile */}
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+            onClick={() => setShowSidebar(false)}
+          />
+
+          {/* Sidebar content */}
+          <div className="fixed lg:relative inset-y-0 left-0 z-50 w-80 lg:flex-shrink-0 lg:z-auto">
+            <div className="card h-full lg:h-[calc(100vh-12rem)] flex flex-col p-0 m-0 lg:m-0 rounded-none lg:rounded-xl">
             <div className="p-4 border-b border-gray-200">
               <button
                 onClick={startNewConversation}
@@ -213,36 +221,38 @@ const ClaudeChat = () => {
             </div>
           </div>
         </div>
+        </>
       )}
 
       {/* Main chat area */}
       <div className="flex-1 space-y-6">
         {/* Page header */}
         <div>
-          <div className="flex items-center space-x-3">
-            <div className="w-12 h-12 bg-gradient-to-br from-purple-600 to-indigo-600 rounded-lg flex items-center justify-center">
-              <Sparkles className="text-white" size={24} />
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-purple-600 to-indigo-600 rounded-lg flex items-center justify-center">
+              <Sparkles className="text-white" size={20} />
             </div>
-            <div className="flex-1">
-              <h1 className="text-3xl font-bold text-gray-900">Claude AI</h1>
-              <p className="text-gray-600">
+            <div className="flex-1 min-w-0">
+              <h1 className="text-xl sm:text-3xl font-bold text-gray-900">Claude AI</h1>
+              <p className="text-sm sm:text-base text-gray-600 hidden sm:block">
                 Ask natural language questions about your poker data
               </p>
             </div>
             <button
               onClick={() => setShowSidebar(!showSidebar)}
-              className="btn-secondary flex items-center gap-2"
+              className="btn-secondary flex items-center gap-2 flex-shrink-0"
             >
               <MessageSquare size={18} />
-              {showSidebar ? 'Hide' : 'Show'} History
+              <span className="hidden sm:inline">{showSidebar ? 'Hide' : 'Show'} History</span>
+              <span className="sm:hidden">History</span>
             </button>
           </div>
         </div>
 
         {/* Chat container */}
-        <div className="card h-[calc(100vh-16rem)] flex flex-col p-0">
+        <div className="card h-[calc(100vh-20rem)] sm:h-[calc(100vh-16rem)] flex flex-col p-0">
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-4">
           {messages.length === 0 && (
             <div className="text-center py-12">
               <Bot size={48} className="mx-auto text-gray-400 mb-4" />
@@ -277,28 +287,28 @@ const ClaudeChat = () => {
               className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <div
-                className={`flex space-x-3 max-w-3xl ${
+                className={`flex space-x-2 sm:space-x-3 max-w-full sm:max-w-3xl ${
                   message.role === 'user' ? 'flex-row-reverse space-x-reverse' : ''
                 }`}
               >
                 {/* Avatar */}
                 <div
-                  className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
+                  className={`flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center ${
                     message.role === 'user'
                       ? 'bg-blue-600'
                       : 'bg-gradient-to-br from-purple-600 to-indigo-600'
                   }`}
                 >
                   {message.role === 'user' ? (
-                    <User size={18} className="text-white" />
+                    <User size={16} className="text-white sm:w-[18px] sm:h-[18px]" />
                   ) : (
-                    <Bot size={18} className="text-white" />
+                    <Bot size={16} className="text-white sm:w-[18px] sm:h-[18px]" />
                   )}
                 </div>
 
                 {/* Message content */}
                 <div
-                  className={`flex-1 px-4 py-3 rounded-lg ${
+                  className={`flex-1 px-3 py-2 sm:px-4 sm:py-3 rounded-lg text-sm sm:text-base ${
                     message.role === 'user'
                       ? 'bg-blue-600 text-white'
                       : 'bg-gray-100 text-gray-900'
@@ -349,22 +359,22 @@ const ClaudeChat = () => {
         </div>
 
         {/* Input form */}
-        <div className="border-t border-gray-200 p-4">
-          <form onSubmit={handleSubmit} className="flex space-x-3">
+        <div className="border-t border-gray-200 p-3 sm:p-4">
+          <form onSubmit={handleSubmit} className="flex space-x-2 sm:space-x-3">
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask Claude about your poker data..."
-              className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Ask Claude..."
+              className="flex-1 px-3 py-2 sm:px-4 sm:py-3 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               disabled={loading}
             />
             <button
               type="submit"
               disabled={!input.trim() || loading}
-              className="btn-primary flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="btn-primary flex items-center space-x-2 px-4 sm:px-6 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <span>Send</span>
+              <span className="hidden sm:inline">Send</span>
               <Send size={18} />
             </button>
           </form>
@@ -372,7 +382,7 @@ const ClaudeChat = () => {
         </div>
 
         {/* Info */}
-        <div className="card bg-gradient-to-br from-purple-50 to-indigo-50 border border-purple-200">
+        <div className="card bg-gradient-to-br from-purple-50 to-indigo-50 border border-purple-200 hidden lg:block">
           <h3 className="text-lg font-semibold text-gray-900 mb-3">How Claude Works</h3>
           <ul className="space-y-2 text-sm text-gray-700">
             <li className="flex items-start">
