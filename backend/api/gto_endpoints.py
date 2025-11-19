@@ -14,10 +14,20 @@ from backend.services.gto_service import GTOService
 from backend.services.poker_baselines import BaselineProvider
 from backend.database import get_db
 from backend.models.database_models import PlayerStats
+import psycopg2
+import os
 
 baseline_provider = BaselineProvider()
 
 router = APIRouter(prefix="/api/gto", tags=["GTO Analysis"])
+
+
+def get_db_connection():
+    """Get database connection for GTO matcher."""
+    db_url = os.environ.get('DATABASE_URL')
+    if db_url:
+        return psycopg2.connect(db_url)
+    return None
 
 
 # Response models
@@ -288,7 +298,7 @@ async def get_baselines():
 async def get_position_baselines(position: str):
     """
     Get position-specific baselines.
-    
+
     Returns RFI frequencies, VPIP ranges, and opening ranges for a position.
     """
     return {
@@ -298,3 +308,113 @@ async def get_position_baselines(position: str):
         "opening_range": baseline_provider.get_opening_range(position),
         "fold_to_3bet_average": baseline_provider.get_fold_to_3bet(position)
     }
+
+
+# New board-based GTO matching endpoints
+class GTOMatchResponse(BaseModel):
+    """Single GTO match response"""
+    solution_id: int
+    scenario_name: str
+    board: str
+    match_type: str
+    confidence: float
+    similarity_score: float
+    category_l1: str
+    category_l2: str
+    category_l3: str
+
+
+class BoardMatchResponse(BaseModel):
+    """Board-based GTO matching response"""
+    target_board: str
+    board_category_l1: str
+    board_category_l2: str
+    board_category_l3: str
+    matches: List[GTOMatchResponse]
+    total_matches: int
+    best_match: Optional[GTOMatchResponse] = None
+
+
+@router.get("/match", response_model=BoardMatchResponse)
+async def find_gto_matches(
+    board: str = Query(..., description="Board string (e.g., 'As8h3c')"),
+    scenario_type: Optional[str] = Query(None, description="Scenario type filter (SRP, 3BP, 4BP)"),
+    position: Optional[str] = Query(None, description="Position filter (IP, OOP)"),
+    action: Optional[str] = Query(None, description="Action sequence filter (cbet, check, etc.)"),
+    top_n: int = Query(3, ge=1, le=10, description="Number of matches to return")
+):
+    """
+    Find best matching GTO solutions for a given board.
+
+    Uses multi-level categorization with adaptive matching:
+    - Tries exact board match first (100% confidence)
+    - Falls back to L3 category (80-90% confidence)
+    - Falls back to L2 category (60-75% confidence)
+    - Falls back to L1 category (40-55% confidence)
+
+    Example: /api/gto/match?board=As8h3c&scenario_type=SRP&top_n=3
+
+    Returns ranked list of matching GTO solutions with confidence scores.
+    """
+    try:
+        # Import here to avoid circular imports
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).parent.parent / "services"))
+        from gto_matcher import GTOMatcher
+
+        # Get database connection
+        db_conn = get_db_connection()
+        if not db_conn:
+            raise HTTPException(
+                status_code=500,
+                detail="Database connection not available"
+            )
+
+        # Create matcher and find matches
+        matcher = GTOMatcher(db_conn=db_conn)
+        matches = matcher.find_matches(
+            board=board,
+            scenario_type=scenario_type,
+            position_context=position,
+            action_sequence=action,
+            top_n=top_n
+        )
+
+        # Categorize the target board
+        analysis = matcher.categorizer.analyze(board)
+
+        # Convert matches to response format
+        match_responses = [
+            GTOMatchResponse(
+                solution_id=m.solution_id,
+                scenario_name=m.scenario_name,
+                board=m.board,
+                match_type=m.match_type,
+                confidence=round(m.confidence, 1),
+                similarity_score=round(m.similarity_score, 1),
+                category_l1=m.category_l1,
+                category_l2=m.category_l2,
+                category_l3=m.category_l3
+            )
+            for m in matches
+        ]
+
+        # Close connection
+        db_conn.close()
+
+        return BoardMatchResponse(
+            target_board=board,
+            board_category_l1=analysis.category_l1,
+            board_category_l2=analysis.category_l2,
+            board_category_l3=analysis.category_l3,
+            matches=match_responses,
+            total_matches=len(match_responses),
+            best_match=match_responses[0] if match_responses else None
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error finding GTO matches: {str(e)}"
+        )

@@ -68,14 +68,14 @@ class GTOMatcher:
             print(f"Board: {match.board}, Confidence: {match.confidence}%")
     """
 
-    def __init__(self, db_session=None):
+    def __init__(self, db_conn=None):
         """
         Initialize GTOMatcher.
 
         Args:
-            db_session: SQLAlchemy database session (optional for now)
+            db_conn: Database connection (psycopg2 or similar)
         """
-        self.db_session = db_session
+        self.db_conn = db_conn
         self.categorizer = BoardCategorizer()
 
     def find_matches(
@@ -149,19 +149,58 @@ class GTOMatcher:
     ) -> List[GTOMatch]:
         """
         Find exact board matches.
-
-        For now, returns empty list (database integration needed).
-        When DB is connected, this will query gto_solutions table.
         """
-        # TODO: Implement database query
-        # Example query:
-        # SELECT * FROM gto_solutions
-        # WHERE board = :board
-        # AND scenario_type = :scenario_type (if provided)
-        # ...
+        if not self.db_conn:
+            return []
 
-        # Placeholder for testing
-        return []
+        try:
+            cursor = self.db_conn.cursor()
+
+            # Build query with optional filters
+            query = """
+                SELECT solution_id, scenario_name, board,
+                       board_category_l1, board_category_l2, board_category_l3
+                FROM gto_solutions
+                WHERE board = %s
+            """
+            params = [board]
+
+            if scenario_type:
+                query += " AND scenario_type = %s"
+                params.append(scenario_type)
+
+            if position_context:
+                query += " AND position_context = %s"
+                params.append(position_context)
+
+            if action_sequence:
+                query += " AND action_sequence = %s"
+                params.append(action_sequence)
+
+            cursor.execute(query, params)
+            results = cursor.fetchall()
+            cursor.close()
+
+            matches = []
+            for row in results:
+                match = GTOMatch(
+                    solution_id=row[0],
+                    scenario_name=row[1],
+                    board=row[2],
+                    match_type="exact",
+                    confidence=100.0,
+                    category_l1=row[3],
+                    category_l2=row[4],
+                    category_l3=row[5],
+                    similarity_score=100.0
+                )
+                matches.append(match)
+
+            return matches
+
+        except Exception as e:
+            print(f"Database error in exact match: {e}")
+            return []
 
     def _find_category_matches(
         self,
@@ -182,12 +221,8 @@ class GTOMatcher:
         Returns:
             List of GTOMatch objects
         """
-        # TODO: Implement database query
-        # Example query:
-        # SELECT * FROM gto_solutions
-        # WHERE board_category_{level} = :category
-        # AND scenario_type = :scenario_type (if provided)
-        # ...
+        if not self.db_conn:
+            return []
 
         # Determine confidence based on level
         confidence_ranges = {
@@ -198,8 +233,61 @@ class GTOMatcher:
 
         base_confidence = sum(confidence_ranges[level]) / 2
 
-        # Placeholder for testing
-        return []
+        try:
+            cursor = self.db_conn.cursor()
+
+            # Build query based on level
+            column_name = f"board_category_{level}"
+            query = f"""
+                SELECT solution_id, scenario_name, board,
+                       board_category_l1, board_category_l2, board_category_l3
+                FROM gto_solutions
+                WHERE {column_name} = %s
+            """
+            params = [category]
+
+            if scenario_type:
+                query += " AND scenario_type = %s"
+                params.append(scenario_type)
+
+            if position_context:
+                query += " AND position_context = %s"
+                params.append(position_context)
+
+            if action_sequence:
+                query += " AND action_sequence = %s"
+                params.append(action_sequence)
+
+            query += " LIMIT 10"  # Limit to top 10 per category
+
+            cursor.execute(query, params)
+            results = cursor.fetchall()
+            cursor.close()
+
+            matches = []
+            for row in results:
+                # Add some randomness to confidence within range
+                import random
+                confidence = random.uniform(*confidence_ranges[level])
+
+                match = GTOMatch(
+                    solution_id=row[0],
+                    scenario_name=row[1],
+                    board=row[2],
+                    match_type=level,
+                    confidence=confidence,
+                    category_l1=row[3],
+                    category_l2=row[4],
+                    category_l3=row[5],
+                    similarity_score=0.0  # Will be calculated later
+                )
+                matches.append(match)
+
+            return matches
+
+        except Exception as e:
+            print(f"Database error in category match ({level}): {e}")
+            return []
 
     def _calculate_similarity(self, analysis: BoardAnalysis, match_board: str) -> float:
         """

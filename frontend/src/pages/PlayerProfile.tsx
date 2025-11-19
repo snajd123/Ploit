@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { ArrowLeft, TrendingUp, Target, Shield } from 'lucide-react';
 import { api } from '../services/api';
 import PlayerBadge from '../components/PlayerBadge';
@@ -14,6 +14,7 @@ import ShowdownChart from '../components/ShowdownChart';
 import ExploitDashboard from '../components/ExploitDashboard';
 import BaselineComparison from '../components/BaselineComparison';
 import DeviationHeatmap from '../components/DeviationHeatmap';
+import GTOBoardMatch from '../components/GTOBoardMatch';
 import { STAT_DEFINITIONS } from '../config/statDefinitions';
 
 // Helper function to generate tooltip content for a statistic
@@ -67,6 +68,7 @@ const PlayerProfile = () => {
   const { playerName } = useParams<{ playerName: string }>();
   const navigate = useNavigate();
   const baselineTableRef = useRef<HTMLDivElement>(null);
+  const [gtoBoard, setGtoBoard] = useState<string>('As8h3c');
 
   const { data: player, isLoading, error } = useQuery({
     queryKey: ['player', playerName],
@@ -329,6 +331,31 @@ const PlayerProfile = () => {
           </div>
         </div>
       )}
+
+      {/* GTO Board Analysis Section */}
+      <div>
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">GTO Board Analysis</h2>
+        <div className="card mb-4">
+          <p className="text-sm text-gray-600 mb-4">
+            Enter a flop board to find matching GTO solutions and analyze optimal play.
+            This helps identify the best strategy adjustments for {player.player_name} based on board texture.
+          </p>
+          <div className="flex items-center space-x-3">
+            <input
+              type="text"
+              value={gtoBoard}
+              onChange={(e) => setGtoBoard(e.target.value.toUpperCase())}
+              placeholder="Board (e.g., As8h3c)"
+              className="flex-1 max-w-xs px-4 py-2 border border-gray-300 rounded-lg font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              maxLength={6}
+            />
+            <span className="text-xs text-gray-500">
+              Format: Rank+Suit (e.g., As = Ace of spades, 8h = Eight of hearts)
+            </span>
+          </div>
+        </div>
+        <GTOBoardMatch board={gtoBoard} />
+      </div>
 
       {/* Composite metrics chart */}
       <MetricChart
