@@ -120,12 +120,12 @@ const StatsGlossary = () => {
                   )}
                 </div>
 
-                <p className="text-gray-700 mb-3">{stat.description}</p>
+                <p className="text-gray-700 mb-3 whitespace-pre-line">{stat.description}</p>
 
                 {/* Formula */}
                 <div className="bg-gray-50 rounded-lg p-3 mb-3">
                   <p className="text-xs font-medium text-gray-500 mb-1">Formula:</p>
-                  <code className="text-sm text-gray-900 font-mono">{stat.formula}</code>
+                  <code className="text-sm text-gray-900 font-mono whitespace-pre-line">{stat.formula}</code>
                 </div>
 
                 {/* Tooltip/Quick Reference */}
