@@ -29,14 +29,24 @@ from decimal import Decimal
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "services"))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from board_categorizer import BoardCategorizer
+
+# Database imports
+try:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor, execute_values
+    DB_AVAILABLE = True
+except ImportError:
+    print("Warning: psycopg2 not available. Running in dry-run mode only.")
+    DB_AVAILABLE = False
 
 
 class GTOSolutionImporter:
     """Imports GTO solutions from solver directory into database."""
 
-    def __init__(self, solver_dir: str, config_dir: str, output_dir: str):
+    def __init__(self, solver_dir: str, config_dir: str, output_dir: str, db_url: Optional[str] = None):
         """
         Initialize importer.
 
@@ -44,11 +54,14 @@ class GTOSolutionImporter:
             solver_dir: Path to solver directory
             config_dir: Path to config files directory
             output_dir: Path to output files directory
+            db_url: Database connection URL (optional)
         """
         self.solver_dir = Path(solver_dir)
         self.config_dir = Path(config_dir)
         self.output_dir = Path(output_dir)
         self.categorizer = BoardCategorizer()
+        self.db_url = db_url
+        self.db_conn = None
 
         # Statistics
         self.stats = {
@@ -56,7 +69,8 @@ class GTOSolutionImporter:
             'total_solutions': 0,
             'imported': 0,
             'skipped': 0,
-            'errors': 0
+            'errors': 0,
+            'db_inserted': 0
         }
 
         # Category tracking for aggregates
@@ -65,6 +79,102 @@ class GTOSolutionImporter:
             'l2': defaultdict(list),
             'l3': defaultdict(list)
         }
+
+    def connect_db(self):
+        """Connect to database."""
+        if not DB_AVAILABLE:
+            print("Database not available (psycopg2 not installed)")
+            return False
+
+        if not self.db_url:
+            print("No database URL provided")
+            return False
+
+        try:
+            self.db_conn = psycopg2.connect(self.db_url)
+            print(f"✓ Connected to database")
+            return True
+        except Exception as e:
+            print(f"✗ Failed to connect to database: {e}")
+            return False
+
+    def close_db(self):
+        """Close database connection."""
+        if self.db_conn:
+            self.db_conn.close()
+            print("Database connection closed")
+
+    def insert_solution(self, solution: Dict) -> bool:
+        """
+        Insert a solution into the database.
+
+        Args:
+            solution: Solution dictionary
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.db_conn:
+            return False
+
+        try:
+            cursor = self.db_conn.cursor()
+
+            # Build INSERT query
+            insert_query = """
+                INSERT INTO gto_solutions (
+                    scenario_name, config_file, output_file, board,
+                    flop_card_1, flop_card_2, flop_card_3,
+                    board_category_l1, board_category_l2, board_category_l3,
+                    is_paired, is_rainbow, is_two_tone, is_monotone,
+                    is_connected, is_highly_connected, has_broadway, is_dry, is_wet,
+                    high_card_rank, middle_card_rank, low_card_rank,
+                    scenario_type, position_context, action_sequence,
+                    pot_size, effective_stack, ip_range, oop_range,
+                    accuracy, iterations, file_size_bytes, solved_at, imported_at
+                )
+                VALUES (
+                    %(scenario_name)s, %(config_file)s, %(output_file)s, %(board)s,
+                    %(flop_card_1)s, %(flop_card_2)s, %(flop_card_3)s,
+                    %(board_category_l1)s, %(board_category_l2)s, %(board_category_l3)s,
+                    %(is_paired)s, %(is_rainbow)s, %(is_two_tone)s, %(is_monotone)s,
+                    %(is_connected)s, %(is_highly_connected)s, %(has_broadway)s, %(is_dry)s, %(is_wet)s,
+                    %(high_card_rank)s, %(middle_card_rank)s, %(low_card_rank)s,
+                    %(scenario_type)s, %(position_context)s, %(action_sequence)s,
+                    %(pot_size)s, %(effective_stack)s, %(ip_range)s, %(oop_range)s,
+                    %(accuracy)s, %(iterations)s, %(file_size_bytes)s, %(solved_at)s, %(imported_at)s
+                )
+                ON CONFLICT (scenario_name) DO UPDATE SET
+                    board_category_l1 = EXCLUDED.board_category_l1,
+                    board_category_l2 = EXCLUDED.board_category_l2,
+                    board_category_l3 = EXCLUDED.board_category_l3,
+                    is_paired = EXCLUDED.is_paired,
+                    is_rainbow = EXCLUDED.is_rainbow,
+                    is_two_tone = EXCLUDED.is_two_tone,
+                    is_monotone = EXCLUDED.is_monotone,
+                    is_connected = EXCLUDED.is_connected,
+                    is_highly_connected = EXCLUDED.is_highly_connected,
+                    has_broadway = EXCLUDED.has_broadway,
+                    is_dry = EXCLUDED.is_dry,
+                    is_wet = EXCLUDED.is_wet,
+                    high_card_rank = EXCLUDED.high_card_rank,
+                    middle_card_rank = EXCLUDED.middle_card_rank,
+                    low_card_rank = EXCLUDED.low_card_rank
+                RETURNING solution_id;
+            """
+
+            cursor.execute(insert_query, solution)
+            solution_id = cursor.fetchone()[0]
+            self.db_conn.commit()
+            cursor.close()
+
+            self.stats['db_inserted'] += 1
+            return True
+
+        except Exception as e:
+            print(f"    ✗ Database error: {e}")
+            self.db_conn.rollback()
+            return False
 
     def parse_config_file(self, config_path: Path) -> Optional[Dict]:
         """
@@ -349,6 +459,13 @@ class GTOSolutionImporter:
                 solutions.append(solution)
                 self.stats['imported'] += 1
                 print(f"  ✓ Imported: {solution['board']} -> L3: {solution['board_category_l3']}")
+
+                # Insert into database if connected
+                if self.db_conn and not dry_run:
+                    if self.insert_solution(solution):
+                        print(f"    ✓ Saved to database")
+                    else:
+                        print(f"    ✗ Failed to save to database")
             else:
                 self.stats['skipped'] += 1
                 print(f"  ✗ Skipped")
@@ -398,6 +515,17 @@ class GTOSolutionImporter:
 
 def main():
     """Main entry point."""
+    import argparse
+
+    # Parse arguments
+    parser = argparse.ArgumentParser(description='Import GTO solutions to database')
+    parser.add_argument('--dry-run', action='store_true', help='Process but do not write to database')
+    parser.add_argument('--db-url', type=str, help='Database URL (or use DATABASE_URL env var)')
+    args = parser.parse_args()
+
+    # Get database URL
+    db_url = args.db_url or os.environ.get('DATABASE_URL')
+
     # Paths
     solver_dir = Path("/root/Documents/Ploit/solver")
     config_dir = solver_dir / "configs_comprehensive"
@@ -407,11 +535,18 @@ def main():
     importer = GTOSolutionImporter(
         solver_dir=str(solver_dir),
         config_dir=str(config_dir),
-        output_dir=str(output_dir)
+        output_dir=str(output_dir),
+        db_url=db_url
     )
 
-    # Run import (dry run for now)
-    results = importer.run_import(dry_run=True)
+    # Connect to database if not dry run
+    if not args.dry_run and db_url:
+        if not importer.connect_db():
+            print("Failed to connect to database. Exiting.")
+            return
+
+    # Run import
+    results = importer.run_import(dry_run=args.dry_run)
 
     # Export results to JSON for inspection
     output_file = solver_dir / "import_results.json"
@@ -433,6 +568,9 @@ def main():
         }, f, indent=2, default=serialize_datetime)
 
     print(f"Results exported successfully!")
+
+    # Close database connection
+    importer.close_db()
 
 
 if __name__ == "__main__":
