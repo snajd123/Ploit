@@ -317,8 +317,65 @@ const ClaudeChat = () => {
                   {message.role === 'user' ? (
                     <p className="whitespace-pre-wrap">{message.content}</p>
                   ) : (
-                    <div className="prose prose-sm max-w-none">
-                      <ReactMarkdown>{message.content}</ReactMarkdown>
+                    <div className="prose prose-sm max-w-none prose-headings:text-gray-900 prose-headings:font-semibold prose-h1:text-xl prose-h2:text-lg prose-h3:text-base prose-p:text-gray-700 prose-p:leading-relaxed prose-strong:text-gray-900 prose-strong:font-semibold prose-ul:list-disc prose-ol:list-decimal prose-li:text-gray-700 prose-code:text-purple-600 prose-code:bg-purple-50 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:font-mono prose-code:text-xs prose-pre:bg-gray-900 prose-pre:text-gray-100 prose-blockquote:border-l-4 prose-blockquote:border-blue-500 prose-blockquote:bg-blue-50 prose-blockquote:text-gray-700">
+                      <ReactMarkdown
+                        components={{
+                          table: ({ node, ...props }) => (
+                            <div className="overflow-x-auto my-4">
+                              <table className="min-w-full divide-y divide-gray-300 border border-gray-300 rounded-lg" {...props} />
+                            </div>
+                          ),
+                          thead: ({ node, ...props }) => (
+                            <thead className="bg-gray-50" {...props} />
+                          ),
+                          tbody: ({ node, ...props }) => (
+                            <tbody className="divide-y divide-gray-200 bg-white" {...props} />
+                          ),
+                          tr: ({ node, ...props }) => (
+                            <tr className="hover:bg-gray-50" {...props} />
+                          ),
+                          th: ({ node, ...props }) => (
+                            <th className="px-3 py-2 text-left text-xs font-semibold text-gray-900 border-r border-gray-300 last:border-r-0" {...props} />
+                          ),
+                          td: ({ node, ...props }) => (
+                            <td className="px-3 py-2 text-sm text-gray-700 border-r border-gray-200 last:border-r-0" {...props} />
+                          ),
+                          ul: ({ node, ...props }) => (
+                            <ul className="space-y-1 my-3" {...props} />
+                          ),
+                          ol: ({ node, ...props }) => (
+                            <ol className="space-y-1 my-3" {...props} />
+                          ),
+                          li: ({ node, ...props }) => (
+                            <li className="ml-4" {...props} />
+                          ),
+                          code: ({ node, inline, ...props }: any) => {
+                            if (inline) {
+                              return <code className="text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded font-mono text-xs" {...props} />;
+                            }
+                            return (
+                              <code className="block bg-gray-900 text-gray-100 p-3 rounded-lg overflow-x-auto text-xs font-mono my-3" {...props} />
+                            );
+                          },
+                          h1: ({ node, ...props }) => (
+                            <h1 className="text-xl font-semibold text-gray-900 mt-4 mb-2 pb-2 border-b-2 border-blue-500" {...props} />
+                          ),
+                          h2: ({ node, ...props }) => (
+                            <h2 className="text-lg font-semibold text-gray-900 mt-4 mb-2 pb-1 border-b border-gray-300" {...props} />
+                          ),
+                          h3: ({ node, ...props }) => (
+                            <h3 className="text-base font-semibold text-gray-900 mt-3 mb-2" {...props} />
+                          ),
+                          blockquote: ({ node, ...props }) => (
+                            <blockquote className="border-l-4 border-blue-500 bg-blue-50 pl-4 py-2 my-3 italic text-gray-700" {...props} />
+                          ),
+                          hr: ({ node, ...props }) => (
+                            <hr className="my-4 border-t-2 border-gray-200" {...props} />
+                          ),
+                        }}
+                      >
+                        {message.content}
+                      </ReactMarkdown>
                     </div>
                   )}
 
