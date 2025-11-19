@@ -5,7 +5,7 @@ API endpoints for Claude conversation history management.
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
-from typing import List, Optional
+from typing import List, Optional, Any
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -20,8 +20,8 @@ class MessageResponse(BaseModel):
     message_id: int
     role: str
     content: str
-    tool_calls: Optional[dict] = None
-    usage: Optional[dict] = None
+    tool_calls: Optional[Any] = None
+    usage: Optional[Any] = None
     created_at: datetime
 
     class Config:
