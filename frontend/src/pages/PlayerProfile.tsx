@@ -229,14 +229,14 @@ const PlayerProfile = () => {
             title="AF"
             value={player.af !== null && player.af !== undefined ? player.af.toFixed(2) : 'N/A'}
             subtitle="Aggression Factor"
-            color="purple"
+            color="blue"
             tooltip={getStatTooltip('af', player.af ?? undefined)}
           />
           <StatCard
             title="AFQ%"
             value={player.afq !== null && player.afq !== undefined ? `${player.afq.toFixed(1)}%` : 'N/A'}
             subtitle="Aggression Frequency"
-            color="indigo"
+            color="green"
             tooltip={getStatTooltip('afq', player.afq ?? undefined)}
           />
           <StatCard
