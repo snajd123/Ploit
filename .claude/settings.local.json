@@ -32,7 +32,10 @@
       "Bash(rustc:*)",
       "Bash(git clone:*)",
       "Bash(pip3 list:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(PGPASSWORD=r7e2fQfDBrkIRYHD psql:*)",
+      "Bash(apt-get update:*)",
+      "Bash(DATABASE_URL=\"postgresql://postgres.lyvnuiuatuggtirdxiht:r7e2fQfDBrkIRYHD@aws-1-eu-west-1.pooler.supabase.com:5432/postgres\" python3:*)"
     ],
     "deny": [],
     "ask": []

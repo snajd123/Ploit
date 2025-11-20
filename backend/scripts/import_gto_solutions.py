@@ -133,7 +133,8 @@ class GTOSolutionImporter:
                     pot_size, effective_stack, ip_range, oop_range,
                     accuracy, iterations, file_size_bytes, solved_at, imported_at,
                     gto_check_frequency, gto_bet_frequency, gto_raise_frequency,
-                    gto_fold_frequency, gto_call_frequency
+                    gto_fold_frequency, gto_call_frequency,
+                    actions, node_type, player, hand_strategies
                 )
                 VALUES (
                     %(scenario_name)s, %(config_file)s, %(output_file)s, %(board)s,
@@ -146,7 +147,8 @@ class GTOSolutionImporter:
                     %(pot_size)s, %(effective_stack)s, %(ip_range)s, %(oop_range)s,
                     %(accuracy)s, %(iterations)s, %(file_size_bytes)s, %(solved_at)s, %(imported_at)s,
                     %(gto_check_frequency)s, %(gto_bet_frequency)s, %(gto_raise_frequency)s,
-                    %(gto_fold_frequency)s, %(gto_call_frequency)s
+                    %(gto_fold_frequency)s, %(gto_call_frequency)s,
+                    %(actions)s::jsonb, %(node_type)s, %(player)s, %(hand_strategies)s::jsonb
                 )
                 ON CONFLICT (scenario_name) DO UPDATE SET
                     board_category_l1 = EXCLUDED.board_category_l1,
@@ -168,7 +170,11 @@ class GTOSolutionImporter:
                     gto_bet_frequency = EXCLUDED.gto_bet_frequency,
                     gto_raise_frequency = EXCLUDED.gto_raise_frequency,
                     gto_fold_frequency = EXCLUDED.gto_fold_frequency,
-                    gto_call_frequency = EXCLUDED.gto_call_frequency
+                    gto_call_frequency = EXCLUDED.gto_call_frequency,
+                    actions = EXCLUDED.actions,
+                    node_type = EXCLUDED.node_type,
+                    player = EXCLUDED.player,
+                    hand_strategies = EXCLUDED.hand_strategies
                 RETURNING solution_id;
             """
 
@@ -285,6 +291,33 @@ class GTOSolutionImporter:
                 info['position_context'] = 'Unknown'
 
         return info
+
+    def extract_raw_json_data(self, output_path: Path) -> Dict:
+        """
+        Extract raw JSON data from solver output for storage.
+
+        Args:
+            output_path: Path to JSON solver output file
+
+        Returns:
+            Dictionary with actions, node_type, player, and hand_strategies
+        """
+        try:
+            with open(output_path, 'r') as f:
+                data = json.load(f)
+
+            strategy_node = data.get('strategy', {})
+            hand_strategies = strategy_node.get('strategy', {}) if isinstance(strategy_node, dict) else {}
+
+            return {
+                'actions': json.dumps(data.get('actions', [])),  # Convert to JSON string
+                'node_type': data.get('node_type'),
+                'player': data.get('player'),
+                'hand_strategies': json.dumps(hand_strategies)  # Convert to JSON string
+            }
+        except Exception as e:
+            print(f"    Warning: Failed to extract raw JSON from {output_path.name}: {e}")
+            return {}
 
     def extract_gto_frequencies(self, output_path: Path) -> Dict[str, float]:
         """
@@ -410,8 +443,9 @@ class GTOSolutionImporter:
                 print(f"Failed to categorize board {board}: {e}")
                 return None
 
-            # Extract GTO frequencies from solver output
+            # Extract GTO frequencies and raw JSON data from solver output
             frequencies = self.extract_gto_frequencies(output_path)
+            raw_data = self.extract_raw_json_data(output_path)
 
             # Get file metadata
             file_size = output_path.stat().st_size
@@ -454,7 +488,9 @@ class GTOSolutionImporter:
                 'solved_at': solved_at,
                 'imported_at': datetime.now(),
                 # Add GTO frequencies
-                **frequencies
+                **frequencies,
+                # Add raw JSON data
+                **raw_data
             }
 
             # Track for aggregate calculation
