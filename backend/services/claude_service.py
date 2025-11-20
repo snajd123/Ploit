@@ -306,51 +306,61 @@ Every GTO solution is categorized using a 3-level hierarchical system:
 - Multiple position contexts (IP/OOP)
 - Various action sequences (cbet, check, raise)
 
+**GTO Frequency Columns (All Solutions Have Complete Data):**
+- `gto_check_frequency` - % of range that checks
+- `gto_bet_frequency` - % of range that bets (all bet sizes combined)
+- `gto_raise_frequency` - % of range that raises
+- `gto_fold_frequency` - % of range that folds (when facing aggression)
+- `gto_call_frequency` - % of range that calls
+
 **How to Use GTO Analysis:**
 
 1. **Find Relevant GTO Solutions by Board Type:**
 
-   Use the categorization system to find similar boards:
    ```sql
-   -- Find all Ace-high rainbow solutions
-   SELECT scenario_name, board, gto_bet_frequency, board_category_l3
+   -- Find GTO frequencies for Ace-high rainbow boards
+   SELECT scenario_name, board,
+          gto_check_frequency, gto_bet_frequency,
+          board_category_l3
    FROM gto_solutions
    WHERE board_category_l1 = 'Ace-high' AND is_rainbow = true
    ```
 
-   ```sql
-   -- Find dry boards for player who struggles on dry textures
-   SELECT scenario_name, board, gto_bet_frequency
-   FROM gto_solutions
-   WHERE is_dry = true AND board_category_l1 = 'King-high'
-   ```
+   **Real Example Output:**
+   - A94r (Ace-high-rainbow-dry): check=90.80%, bet=9.20%
+   - A62r (Ace-high-rainbow-dry): check=92.31%, bet=7.69%
+   - AT3r (Ace-high-rainbow-dry): check=90.09%, bet=9.91%
+
+2. **Compare Player Stats to GTO Frequencies:**
 
    ```sql
-   -- Find all connected boards to analyze player's tendency on draws
-   SELECT scenario_name, board, gto_bet_frequency, is_highly_connected
-   FROM gto_solutions
-   WHERE is_connected = true OR is_highly_connected = true
-   ```
-
-2. **Compare Player to GTO on Specific Board Types:**
-   ```sql
-   -- Player's deviation on ALL Ace-high boards
+   -- Compare player's c-bet frequency to GTO on King-high boards
    SELECT
-     gto.board_category_l3,
-     COUNT(*) as scenarios,
-     AVG(ps.cbet_flop_pct) as player_avg_cbet,
-     AVG(gto.gto_bet_frequency) as gto_avg_cbet,
-     AVG(ps.cbet_flop_pct - gto.gto_bet_frequency) as avg_deviation
+     ps.player_name,
+     ps.cbet_flop_pct as player_cbet,
+     AVG(gto.gto_bet_frequency) as gto_avg_bet,
+     (ps.cbet_flop_pct - AVG(gto.gto_bet_frequency)) as deviation
    FROM player_stats ps
    CROSS JOIN gto_solutions gto
-   WHERE ps.player_name = 'opponent' AND gto.board_category_l1 = 'Ace-high'
-   GROUP BY gto.board_category_l3
+   WHERE ps.player_name = 'opponent'
+     AND gto.board_category_l1 = 'King-high'
+     AND gto.is_rainbow = true
+   GROUP BY ps.player_name, ps.cbet_flop_pct
    ```
 
-3. **Quantify Exploit Value:**
-   - Deviation > +10% = over-betting (exploitable by calling/raising)
-   - Deviation < -10% = under-betting (exploitable by bluffing when checked to)
-   - Deviations > 15% are SEVERE and highly profitable
+   **Example Result:**
+   - Player c-bets: 78% on K-high boards
+   - GTO average: 24% (based on K94r=26%, KT3r=22%, K62r=21%)
+   - Deviation: +54% = **SEVERE OVERBET** (massively exploitable)
+
+3. **Quantified Exploit Recommendations:**
+
+   Based on deviations from GTO frequencies:
+   - **Deviation +10 to +20%**: Moderate over-betting → Call lighter
+   - **Deviation +20 to +40%**: Heavy over-betting → Raise as bluff-catch
+   - **Deviation +40%+**: **SEVERE over-betting → Check-raise frequently**
+   - **Deviation -10 to -20%**: Moderate under-betting → Barrel when checked to
+   - **Deviation -20%+**: **SEVERE under-betting → Auto-barrel turn/river**
    - Deviations > 25% are EXTREME exploits
 
 4. **Board-Specific Exploits:**
