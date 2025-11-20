@@ -1,233 +1,261 @@
 """
-SQLAlchemy ORM models for GTO Solutions database tables.
+SQLAlchemy ORM models for new GTO architecture (GTOWizard-based).
 
-These models support multi-level board categorization and scalable GTO solution storage,
-designed to work efficiently with both 79 solutions today and 20,000+ in the future.
+These models support preflop GTO scenarios with extensibility for postflop.
 """
 
 from sqlalchemy import (
-    Column, Integer, BigInteger, String, Text, TIMESTAMP,
-    DECIMAL, Boolean, ForeignKey, UniqueConstraint
+    Column, Integer, String, Text, TIMESTAMP, DECIMAL, Boolean, ForeignKey, UniqueConstraint
 )
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
-from datetime import datetime
-from typing import Optional, Dict, List
+from typing import Dict, Optional
 from decimal import Decimal
 
 Base = declarative_base()
 
 
-class GTOSolution(Base):
+class GTOScenario(Base):
     """
-    Stores individual GTO solver solutions with multi-level board categorization.
+    Stores metadata for each GTO scenario (preflop or postflop).
 
-    Table: gto_solutions
-
-    The multi-level categorization system:
-    - Level 1: 7 broad categories (Ace-high, King-high, etc.)
-    - Level 2: ~20 medium categories (Ace-high-rainbow, King-high-2tone, etc.)
-    - Level 3: ~100+ fine categories (Ace-high-rainbow-dry, etc.)
+    Table: gto_scenarios
     """
-    __tablename__ = 'gto_solutions'
+    __tablename__ = 'gto_scenarios'
 
-    solution_id = Column(Integer, primary_key=True, autoincrement=True)
+    scenario_id = Column(Integer, primary_key=True, autoincrement=True)
 
     # Scenario identification
-    scenario_name = Column(String(100), nullable=False, unique=True)
-    config_file = Column(String(255))
-    output_file = Column(String(255))
+    scenario_name = Column(String(100), unique=True, nullable=False)
 
-    # Board information
-    board = Column(String(20), nullable=False)
-    flop_card_1 = Column(String(2))
-    flop_card_2 = Column(String(2))
-    flop_card_3 = Column(String(2))
+    # Scenario classification
+    street = Column(String(10), nullable=False)  # 'preflop', 'flop', 'turn', 'river'
+    category = Column(String(50), nullable=False)  # 'opening', 'defense', 'facing_3bet', etc.
 
-    # Multi-level board categorization
-    board_category_l1 = Column(String(30), nullable=False)
-    board_category_l2 = Column(String(50), nullable=False)
-    board_category_l3 = Column(String(100), nullable=False)
+    # Preflop specific
+    position = Column(String(10))  # 'UTG', 'BB', 'BTN', etc.
+    action = Column(String(20))  # 'open', 'call', 'fold', '3bet', '4bet', 'allin'
+    opponent_position = Column(String(10))  # 'UTG', NULL for opens
 
-    # Board texture properties
-    is_paired = Column(Boolean, default=False)
-    is_rainbow = Column(Boolean, default=False)
-    is_two_tone = Column(Boolean, default=False)
-    is_monotone = Column(Boolean, default=False)
-    is_connected = Column(Boolean, default=False)
-    is_highly_connected = Column(Boolean, default=False)
-    has_broadway = Column(Boolean, default=False)
-    is_dry = Column(Boolean, default=False)
-    is_wet = Column(Boolean, default=False)
-    high_card_rank = Column(String(2))
-    middle_card_rank = Column(String(2))
-    low_card_rank = Column(String(2))
+    # Postflop specific (for future use)
+    board = Column(String(20))  # e.g., 'AsKsQs', 'PREFLOP'
+    board_texture = Column(String(50))  # e.g., 'monotone', 'dry', 'wet'
+    position_context = Column(String(20))  # 'IP', 'OOP'
+    action_node = Column(String(50))  # 'facing_cbet', 'facing_raise'
 
-    # Scenario context
-    scenario_type = Column(String(50))
-    position_context = Column(String(50))
-    action_sequence = Column(String(100))
-    pot_size = Column(DECIMAL(8, 2))
-    effective_stack = Column(DECIMAL(8, 2))
-
-    # Range information
-    ip_range = Column(Text)
-    oop_range = Column(Text)
-
-    # Solution metadata
-    accuracy = Column(DECIMAL(5, 3))
-    iterations = Column(Integer)
-    solving_time_seconds = Column(Integer)
-    file_size_bytes = Column(BigInteger)
-
-    # Timestamps
-    solved_at = Column(TIMESTAMP)
-    imported_at = Column(TIMESTAMP, default=func.current_timestamp())
-    last_accessed = Column(TIMESTAMP)
+    # Metadata
+    data_source = Column(String(50), default='gtowizard')
+    description = Column(Text)
+    created_at = Column(TIMESTAMP, default=func.current_timestamp())
+    updated_at = Column(TIMESTAMP, default=func.current_timestamp())
 
     def __repr__(self) -> str:
-        return f"<GTOSolution(scenario={self.scenario_name}, board={self.board}, cat_l1={self.board_category_l1})>"
+        return f"<GTOScenario(id={self.scenario_id}, name={self.scenario_name}, street={self.street})>"
 
     def to_dict(self) -> Dict:
         """Convert to dictionary for API responses."""
         return {
-            'solution_id': self.solution_id,
+            'scenario_id': self.scenario_id,
             'scenario_name': self.scenario_name,
+            'street': self.street,
+            'category': self.category,
+            'position': self.position,
+            'action': self.action,
+            'opponent_position': self.opponent_position,
             'board': self.board,
-            'board_category_l1': self.board_category_l1,
-            'board_category_l2': self.board_category_l2,
-            'board_category_l3': self.board_category_l3,
-            'scenario_type': self.scenario_type,
+            'board_texture': self.board_texture,
             'position_context': self.position_context,
-            'action_sequence': self.action_sequence,
-            'pot_size': float(self.pot_size) if self.pot_size else None,
-            'effective_stack': float(self.effective_stack) if self.effective_stack else None,
-            'is_paired': self.is_paired,
-            'is_rainbow': self.is_rainbow,
-            'is_two_tone': self.is_two_tone,
-            'is_monotone': self.is_monotone,
-            'is_connected': self.is_connected,
-            'has_broadway': self.has_broadway,
-            'is_dry': self.is_dry,
-            'is_wet': self.is_wet
+            'action_node': self.action_node,
+            'data_source': self.data_source,
+            'description': self.description
         }
 
 
-class GTOCategoryAggregate(Base):
+class GTOFrequency(Base):
     """
-    Pre-computed aggregates for each board category.
+    Stores GTO frequencies for each hand in each scenario.
 
-    Table: gto_category_aggregates
-
-    Stores aggregated statistics across all solutions in a category,
-    enabling fast lookups without scanning individual solutions.
+    Table: gto_frequencies
     """
-    __tablename__ = 'gto_category_aggregates'
+    __tablename__ = 'gto_frequencies'
 
-    aggregate_id = Column(Integer, primary_key=True, autoincrement=True)
+    frequency_id = Column(Integer, primary_key=True, autoincrement=True)
+    scenario_id = Column(Integer, ForeignKey('gto_scenarios.scenario_id', ondelete='CASCADE'), nullable=False)
 
-    # Category information
-    category_level = Column(Integer, nullable=False)
-    category_name = Column(String(100), nullable=False)
+    # Hand identification
+    hand = Column(String(4), nullable=False)  # 'AKo', 'JTs', '22', 'AhKd'
 
-    # Aggregate statistics
-    solution_count = Column(Integer, default=0)
-    total_scenarios = Column(Integer)
-    coverage_pct = Column(DECIMAL(5, 2))
+    # Position (whose strategy is this?)
+    position = Column(String(10), nullable=False)  # 'BB', 'UTG', 'IP', 'OOP', etc.
 
-    # Representative solution
-    representative_board = Column(String(20))
-    representative_solution_id = Column(Integer, ForeignKey('gto_solutions.solution_id'))
-
-    # Category characteristics
-    avg_pot_size = Column(DECIMAL(8, 2))
-    avg_stack_size = Column(DECIMAL(8, 2))
-
-    # Strategy patterns (stored as JSONB for flexibility)
-    common_actions = Column(JSONB)
-
-    # Aggregated frequencies
-    avg_cbet_freq = Column(DECIMAL(5, 2))
-    avg_check_freq = Column(DECIMAL(5, 2))
-    avg_fold_to_cbet_freq = Column(DECIMAL(5, 2))
-
-    # Metadata
-    last_updated = Column(TIMESTAMP, default=func.current_timestamp())
+    # Frequency data
+    frequency = Column(DECIMAL(10, 8), nullable=False)  # 0.0 to 1.0
 
     __table_args__ = (
-        UniqueConstraint('category_level', 'category_name', name='unique_category'),
+        UniqueConstraint('scenario_id', 'hand', 'position', name='unique_scenario_hand_position'),
     )
 
     def __repr__(self) -> str:
-        return f"<GTOCategoryAggregate(level={self.category_level}, name={self.category_name}, count={self.solution_count})>"
+        return f"<GTOFrequency(scenario={self.scenario_id}, hand={self.hand}, pos={self.position}, freq={self.frequency})>"
 
     def to_dict(self) -> Dict:
         """Convert to dictionary for API responses."""
         return {
-            'aggregate_id': self.aggregate_id,
-            'category_level': self.category_level,
-            'category_name': self.category_name,
-            'solution_count': self.solution_count,
-            'coverage_pct': float(self.coverage_pct) if self.coverage_pct else None,
-            'representative_board': self.representative_board,
-            'avg_pot_size': float(self.avg_pot_size) if self.avg_pot_size else None,
-            'avg_stack_size': float(self.avg_stack_size) if self.avg_stack_size else None,
-            'common_actions': self.common_actions,
-            'avg_cbet_freq': float(self.avg_cbet_freq) if self.avg_cbet_freq else None,
-            'avg_check_freq': float(self.avg_check_freq) if self.avg_check_freq else None,
-            'avg_fold_to_cbet_freq': float(self.avg_fold_to_cbet_freq) if self.avg_fold_to_cbet_freq else None
+            'frequency_id': self.frequency_id,
+            'scenario_id': self.scenario_id,
+            'hand': self.hand,
+            'position': self.position,
+            'frequency': float(self.frequency) if self.frequency else 0.0,
+            'percentage': float(self.frequency * 100) if self.frequency else 0.0
         }
 
 
-class GTOStrategyCache(Base):
+class PlayerAction(Base):
     """
-    Cached strategy data for quick lookup of specific hands.
+    Stores actual player actions from hand histories for leak detection.
 
-    Table: gto_strategy_cache
-
-    Stores pre-computed strategy frequencies for individual hands,
-    enabling instant lookups without parsing full solution JSON.
+    Table: player_actions
     """
-    __tablename__ = 'gto_strategy_cache'
+    __tablename__ = 'player_actions'
 
-    cache_id = Column(Integer, primary_key=True, autoincrement=True)
-    solution_id = Column(Integer, ForeignKey('gto_solutions.solution_id', ondelete='CASCADE'), nullable=False)
+    action_id = Column(Integer, primary_key=True, autoincrement=True)
 
-    # Hand-specific data
-    hand = Column(String(4), nullable=False)
-    position = Column(String(10), nullable=False)
-    street = Column(String(10), default='flop')
-    action_node = Column(String(50))
+    # Player identification
+    player_name = Column(String(100), nullable=False)
+    hand_id = Column(String(100), nullable=False)
 
-    # Strategy data
-    strategy_json = Column(JSONB, nullable=False)
+    # Action context
+    timestamp = Column(TIMESTAMP, nullable=False)
+    scenario_id = Column(Integer, ForeignKey('gto_scenarios.scenario_id'), nullable=False)
 
-    # Most common action
-    primary_action = Column(String(50))
-    primary_action_freq = Column(DECIMAL(5, 2))
+    # Hole cards
+    hole_cards = Column(String(4), nullable=False)  # 'AKo', 'JTs', etc.
+
+    # Action taken
+    action_taken = Column(String(20), nullable=False)  # 'fold', 'call', 'raise', '3bet', etc.
+
+    # GTO analysis (cached)
+    gto_frequency = Column(DECIMAL(10, 8))
+    ev_loss_bb = Column(DECIMAL(10, 4))
+    is_mistake = Column(Boolean)
+    mistake_severity = Column(String(20))  # 'minor', 'moderate', 'major', 'critical'
 
     # Metadata
     created_at = Column(TIMESTAMP, default=func.current_timestamp())
 
-    __table_args__ = (
-        UniqueConstraint('solution_id', 'hand', 'position', 'street', 'action_node',
-                        name='unique_cache_entry'),
-    )
-
     def __repr__(self) -> str:
-        return f"<GTOStrategyCache(solution={self.solution_id}, hand={self.hand}, action={self.primary_action})>"
+        return f"<PlayerAction(player={self.player_name}, hand={self.hole_cards}, action={self.action_taken})>"
 
     def to_dict(self) -> Dict:
         """Convert to dictionary for API responses."""
         return {
-            'cache_id': self.cache_id,
-            'solution_id': self.solution_id,
+            'action_id': self.action_id,
+            'player_name': self.player_name,
+            'hand_id': self.hand_id,
+            'timestamp': self.timestamp.isoformat() if self.timestamp else None,
+            'scenario_id': self.scenario_id,
+            'hole_cards': self.hole_cards,
+            'action_taken': self.action_taken,
+            'gto_frequency': float(self.gto_frequency) if self.gto_frequency else None,
+            'ev_loss_bb': float(self.ev_loss_bb) if self.ev_loss_bb else None,
+            'is_mistake': self.is_mistake,
+            'mistake_severity': self.mistake_severity
+        }
+
+
+class PlayerGTOStat(Base):
+    """
+    Aggregated leak statistics per player per scenario.
+
+    Table: player_gto_stats
+    """
+    __tablename__ = 'player_gto_stats'
+
+    stat_id = Column(Integer, primary_key=True, autoincrement=True)
+
+    # Player and scenario
+    player_name = Column(String(100), nullable=False)
+    scenario_id = Column(Integer, ForeignKey('gto_scenarios.scenario_id'), nullable=False)
+
+    # Sample size
+    total_hands = Column(Integer, nullable=False, default=0)
+    last_updated = Column(TIMESTAMP, default=func.current_timestamp())
+
+    # Frequency comparison
+    player_frequency = Column(DECIMAL(10, 8))
+    gto_frequency = Column(DECIMAL(10, 8))
+    frequency_diff = Column(DECIMAL(10, 8))
+
+    # EV metrics
+    total_ev_loss_bb = Column(DECIMAL(10, 4))
+    avg_ev_loss_bb = Column(DECIMAL(10, 4))
+
+    # Leak classification
+    leak_type = Column(String(50))  # 'overfold', 'underfold', 'overcall', 'under3bet', etc.
+    leak_severity = Column(String(20))  # 'minor', 'moderate', 'major', 'critical'
+
+    # Exploit recommendation
+    exploit_description = Column(Text)
+    exploit_value_bb_100 = Column(DECIMAL(10, 4))
+    exploit_confidence = Column(DECIMAL(5, 2))
+
+    __table_args__ = (
+        UniqueConstraint('player_name', 'scenario_id', name='unique_player_scenario'),
+    )
+
+    def __repr__(self) -> str:
+        return f"<PlayerGTOStat(player={self.player_name}, scenario={self.scenario_id}, leak={self.leak_type})>"
+
+    def to_dict(self) -> Dict:
+        """Convert to dictionary for API responses."""
+        return {
+            'stat_id': self.stat_id,
+            'player_name': self.player_name,
+            'scenario_id': self.scenario_id,
+            'total_hands': self.total_hands,
+            'last_updated': self.last_updated.isoformat() if self.last_updated else None,
+            'player_frequency': float(self.player_frequency) if self.player_frequency else None,
+            'gto_frequency': float(self.gto_frequency) if self.gto_frequency else None,
+            'frequency_diff': float(self.frequency_diff) if self.frequency_diff else None,
+            'total_ev_loss_bb': float(self.total_ev_loss_bb) if self.total_ev_loss_bb else None,
+            'avg_ev_loss_bb': float(self.avg_ev_loss_bb) if self.avg_ev_loss_bb else None,
+            'leak_type': self.leak_type,
+            'leak_severity': self.leak_severity,
+            'exploit_description': self.exploit_description,
+            'exploit_value_bb_100': float(self.exploit_value_bb_100) if self.exploit_value_bb_100 else None,
+            'exploit_confidence': float(self.exploit_confidence) if self.exploit_confidence else None
+        }
+
+
+class HandType(Base):
+    """
+    Helper table mapping combos to hand types for preflop aggregation.
+
+    Table: hand_types
+    """
+    __tablename__ = 'hand_types'
+
+    combo = Column(String(4), primary_key=True)  # 'AhKd', '2c2d', etc.
+    hand = Column(String(4), nullable=False)  # 'AKo', '22', 'JTs'
+    rank1 = Column(String(1), nullable=False)
+    rank2 = Column(String(1), nullable=False)
+    suit1 = Column(String(1), nullable=False)
+    suit2 = Column(String(1), nullable=False)
+    is_pair = Column(Boolean, nullable=False)
+    is_suited = Column(Boolean, nullable=False)
+
+    def __repr__(self) -> str:
+        return f"<HandType(combo={self.combo}, hand={self.hand})>"
+
+    def to_dict(self) -> Dict:
+        """Convert to dictionary for API responses."""
+        return {
+            'combo': self.combo,
             'hand': self.hand,
-            'position': self.position,
-            'street': self.street,
-            'action_node': self.action_node,
-            'strategy_json': self.strategy_json,
-            'primary_action': self.primary_action,
-            'primary_action_freq': float(self.primary_action_freq) if self.primary_action_freq else None
+            'rank1': self.rank1,
+            'rank2': self.rank2,
+            'suit1': self.suit1,
+            'suit2': self.suit2,
+            'is_pair': self.is_pair,
+            'is_suited': self.is_suited
         }

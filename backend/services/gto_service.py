@@ -1,500 +1,649 @@
 """
-Service for querying GTO solutions and comparing to player stats.
+GTO Service - Handles all GTO frequency queries, leak detection, and exploit finding.
 
-This service provides access to pre-computed GTO solutions and calculates
-deviations between player statistics and optimal GTO frequencies.
-Falls back to poker theory baselines when GTO data is unavailable.
+Based on GTOWizard data architecture.
 """
 
-from typing import Dict, Optional, List
 from sqlalchemy.orm import Session
-from sqlalchemy import text
-import logging
-from .poker_baselines import BaselineProvider
+from sqlalchemy import func
+from typing import Dict, List, Optional, Tuple, Any
+from datetime import datetime
+from decimal import Decimal
 
-logger = logging.getLogger(__name__)
-baseline_provider = BaselineProvider()
+from backend.models.gto_models import (
+    GTOScenario, GTOFrequency, PlayerAction, PlayerGTOStat, HandType
+)
 
 
 class GTOService:
-    """Service for GTO solution queries and player comparisons"""
+    """Service for GTO frequency queries and comparisons."""
 
     def __init__(self, db: Session):
         self.db = db
 
-    def get_gto_solution(self, scenario_name: str) -> Optional[Dict]:
+    # =========================================================================
+    # PREFLOP GTO QUERIES
+    # =========================================================================
+
+    def get_gto_frequency(
+        self,
+        scenario_name: str,
+        hand: str,
+        position: Optional[str] = None
+    ) -> Optional[float]:
         """
-        Get GTO solution by scenario name.
+        Get GTO frequency for a specific hand in a scenario.
 
         Args:
-            scenario_name: Exact scenario name (e.g., 'BTN_steal_vs_BB')
+            scenario_name: e.g., 'BB_vs_UTG_call'
+            hand: e.g., 'AKo', 'JTs', '22'
+            position: Optional position filter (inferred from scenario if not provided)
 
         Returns:
-            GTO solution dict or None if not found
+            float: Frequency (0.0 to 1.0) or None if not found
+
+        Example:
+            freq = gto_service.get_gto_frequency('BB_vs_UTG_call', 'AKo')
+            # Returns 0.395 (39.5% call frequency)
         """
-        query = text("""
-            SELECT
-                scenario_name,
-                scenario_type,
-                board,
-                position_oop,
-                position_ip,
-                pot_size,
-                stack_depth,
-                gto_bet_frequency,
-                gto_check_frequency,
-                gto_fold_frequency,
-                gto_call_frequency,
-                gto_raise_frequency,
-                gto_bet_size_small,
-                gto_bet_size_medium,
-                gto_bet_size_large,
-                ev_oop,
-                ev_ip,
-                description
-            FROM gto_solutions
-            WHERE scenario_name = :scenario_name
-        """)
+        query = self.db.query(GTOFrequency).join(
+            GTOScenario
+        ).filter(
+            GTOScenario.scenario_name == scenario_name,
+            GTOFrequency.hand == hand
+        )
 
-        result = self.db.execute(query, {'scenario_name': scenario_name}).fetchone()
+        if position:
+            query = query.filter(GTOFrequency.position == position)
 
-        if not result:
-            logger.warning(f"GTO solution not found: {scenario_name}")
-            return None
+        result = query.first()
+        return float(result.frequency) if result else None
 
-        return dict(result._mapping)
-
-    def list_scenarios(
+    def get_action_breakdown(
         self,
-        scenario_type: Optional[str] = None,
-        limit: int = 100
+        position: str,
+        opponent: Optional[str],
+        hand: str
+    ) -> Dict[str, float]:
+        """
+        Get all action frequencies for a hand in a situation.
+
+        Args:
+            position: e.g., 'BB'
+            opponent: e.g., 'UTG' (None for opening ranges)
+            hand: e.g., 'AKo'
+
+        Returns:
+            {'fold': 0.0, 'call': 0.595, '3bet': 0.405, ...}
+
+        Example:
+            breakdown = gto_service.get_action_breakdown('BB', 'UTG', 'AKo')
+            # Returns {'fold': 0.0, 'call': 0.395, '3bet': 0.605}
+        """
+        query = self.db.query(
+            GTOScenario.action,
+            GTOFrequency.frequency
+        ).join(
+            GTOFrequency
+        ).filter(
+            GTOScenario.position == position,
+            GTOFrequency.hand == hand,
+            GTOFrequency.position == position
+        )
+
+        if opponent:
+            query = query.filter(GTOScenario.opponent_position == opponent)
+        else:
+            query = query.filter(GTOScenario.opponent_position.is_(None))
+
+        results = query.all()
+        return {action: float(freq) for action, freq in results}
+
+    def get_opening_range(
+        self,
+        position: str,
+        min_frequency: float = 0.0
+    ) -> Dict[str, float]:
+        """
+        Get full opening range for a position.
+
+        Args:
+            position: e.g., 'UTG', 'BTN'
+            min_frequency: Only return hands with frequency >= this value
+
+        Returns:
+            {'AA': 1.0, 'KK': 1.0, 'AKo': 1.0, '22': 0.285, ...}
+
+        Example:
+            range = gto_service.get_opening_range('UTG', min_frequency=0.5)
+            # Returns all hands opened >50% of the time
+        """
+        scenario_name = f"{position}_open"
+
+        results = self.db.query(
+            GTOFrequency.hand,
+            GTOFrequency.frequency
+        ).join(
+            GTOScenario
+        ).filter(
+            GTOScenario.scenario_name == scenario_name,
+            GTOFrequency.frequency >= min_frequency
+        ).all()
+
+        return {hand: float(freq) for hand, freq in results}
+
+    def get_scenario_by_context(
+        self,
+        position: str,
+        action: str,
+        opponent: Optional[str] = None,
+        street: str = 'preflop'
+    ) -> Optional[GTOScenario]:
+        """
+        Find scenario by context.
+
+        Args:
+            position: e.g., 'BB'
+            action: e.g., 'call', '3bet'
+            opponent: e.g., 'UTG'
+            street: 'preflop', 'flop', etc.
+
+        Returns:
+            GTOScenario or None
+        """
+        query = self.db.query(GTOScenario).filter(
+            GTOScenario.position == position,
+            GTOScenario.action == action,
+            GTOScenario.street == street
+        )
+
+        if opponent:
+            query = query.filter(GTOScenario.opponent_position == opponent)
+
+        return query.first()
+
+    # =========================================================================
+    # LEAK DETECTION
+    # =========================================================================
+
+    def record_player_action(
+        self,
+        player_name: str,
+        hand_id: str,
+        scenario_name: str,
+        hole_cards: str,
+        action_taken: str,
+        timestamp: Optional[datetime] = None
+    ) -> PlayerAction:
+        """
+        Record a player action and analyze against GTO.
+
+        Automatically:
+        - Looks up GTO frequency
+        - Calculates EV loss
+        - Flags mistakes
+        - Updates player_gto_stats
+
+        Args:
+            player_name: Player name
+            hand_id: Unique hand identifier
+            scenario_name: e.g., 'BB_vs_UTG_call'
+            hole_cards: e.g., 'AKo'
+            action_taken: e.g., 'fold', 'call', '3bet'
+            timestamp: When action occurred (defaults to now)
+
+        Returns:
+            PlayerAction object
+
+        Example:
+            action = gto_service.record_player_action(
+                player_name='Villain1',
+                hand_id='PS123456',
+                scenario_name='BB_vs_UTG_call',
+                hole_cards='AKo',
+                action_taken='fold'
+            )
+            # Automatically calculates: gto_frequency=0.395, is_mistake=True
+        """
+        # Get scenario
+        scenario = self.db.query(GTOScenario).filter(
+            GTOScenario.scenario_name == scenario_name
+        ).first()
+
+        if not scenario:
+            raise ValueError(f"Scenario not found: {scenario_name}")
+
+        # Look up GTO frequency for this hand/action
+        gto_freq = self.get_gto_frequency(scenario_name, hole_cards, scenario.position)
+
+        # Calculate EV loss and mistake severity
+        ev_loss = self._calculate_ev_loss(gto_freq, action_taken)
+        is_mistake, severity = self._classify_mistake(ev_loss)
+
+        # Create player action record
+        action = PlayerAction(
+            player_name=player_name,
+            hand_id=hand_id,
+            timestamp=timestamp or datetime.utcnow(),
+            scenario_id=scenario.scenario_id,
+            hole_cards=hole_cards,
+            action_taken=action_taken,
+            gto_frequency=gto_freq,
+            ev_loss_bb=ev_loss,
+            is_mistake=is_mistake,
+            mistake_severity=severity
+        )
+
+        self.db.add(action)
+        self.db.flush()
+
+        # Update aggregated stats
+        self._update_player_stats(player_name, scenario.scenario_id)
+
+        self.db.commit()
+        return action
+
+    def get_player_leaks(
+        self,
+        player_name: str,
+        min_hands: int = 20,
+        sort_by: str = 'ev_loss',
+        street: str = 'preflop'
     ) -> List[Dict]:
         """
-        List available GTO scenarios.
+        Get all leaks for a player, sorted by severity.
 
         Args:
-            scenario_type: Filter by type ('preflop', 'srp_flop', etc.)
-            limit: Maximum scenarios to return
+            player_name: Player to analyze
+            min_hands: Minimum sample size
+            sort_by: 'ev_loss', 'frequency_diff', 'severity'
+            street: 'preflop', 'flop', etc.
 
         Returns:
-            List of scenario summaries
+            List of leak dictionaries with scenario info
+
+        Example:
+            leaks = gto_service.get_player_leaks('Villain1', min_hands=20)
+            # Returns top leaks sorted by EV loss
         """
-        if scenario_type:
-            query = text("""
-                SELECT
-                    scenario_name,
-                    scenario_type,
-                    board,
-                    description,
-                    solved_at
-                FROM gto_solutions
-                WHERE scenario_type = :scenario_type
-                ORDER BY solved_at DESC
-                LIMIT :limit
-            """)
-            results = self.db.execute(
-                query,
-                {'scenario_type': scenario_type, 'limit': limit}
-            ).fetchall()
-        else:
-            query = text("""
-                SELECT
-                    scenario_name,
-                    scenario_type,
-                    board,
-                    description,
-                    solved_at
-                FROM gto_solutions
-                ORDER BY solved_at DESC
-                LIMIT :limit
-            """)
-            results = self.db.execute(query, {'limit': limit}).fetchall()
+        query = self.db.query(
+            PlayerGTOStat,
+            GTOScenario
+        ).join(
+            GTOScenario
+        ).filter(
+            PlayerGTOStat.player_name == player_name,
+            PlayerGTOStat.total_hands >= min_hands,
+            GTOScenario.street == street
+        )
 
-        return [dict(r._mapping) for r in results]
-
-    def compare_player_to_gto(
-        self,
-        player_stats: Dict,
-        scenario_name: Optional[str] = None
-    ) -> Dict:
-        """
-        Compare player statistics to GTO baseline or poker theory baselines.
-
-        Args:
-            player_stats: Player stats dict from player_stats table
-            scenario_name: Optional GTO scenario to compare against
-
-        Returns:
-            Comparison dict with deviations and exploits
-        """
-        # Try to get GTO solution first
-        gto = None
-        if scenario_name:
-            gto = self.get_gto_solution(scenario_name)
-
-        # If no GTO solution, use poker theory baselines
-        if not gto:
-            logger.info(f"Using poker theory baselines (GTO solution not found)")
-            return self._compare_to_baselines(player_stats)
-
-        deviations = []
-
-        # Compare fold to 3-bet
-        if 'fold_to_three_bet_pct' in player_stats and gto.get('gto_fold_frequency') is not None:
-            player_fold = float(player_stats['fold_to_three_bet_pct'] or 0)
-            gto_fold = float(gto['gto_fold_frequency'])
-            deviation = player_fold - gto_fold
-
-            deviations.append({
-                'stat': 'FOLD_TO_3BET',
-                'player': player_fold,
-                'gto': gto_fold,
-                'deviation': round(deviation, 2),
-                'severity': self._classify_deviation(abs(deviation)),
-                'exploitable': abs(deviation) > 10,
-                'exploit_direction': 'over-folding' if deviation > 0 else 'under-folding'
-            })
-
-        # Compare cbet frequency
-        if 'cbet_flop_pct' in player_stats and gto.get('gto_bet_frequency') is not None:
-            player_cbet = float(player_stats['cbet_flop_pct'] or 0)
-            gto_cbet = float(gto['gto_bet_frequency'])
-            deviation = player_cbet - gto_cbet
-
-            deviations.append({
-                'stat': 'CBET_FLOP',
-                'player': player_cbet,
-                'gto': gto_cbet,
-                'deviation': round(deviation, 2),
-                'severity': self._classify_deviation(abs(deviation)),
-                'exploitable': abs(deviation) > 10,
-                'exploit_direction': 'over-betting' if deviation > 0 else 'under-betting'
-            })
-
-        # Compare fold to cbet
-        if 'fold_to_cbet_flop_pct' in player_stats and gto.get('gto_fold_frequency') is not None:
-            player_fold_cbet = float(player_stats['fold_to_cbet_flop_pct'] or 0)
-            gto_fold_cbet = float(gto['gto_fold_frequency'])
-            deviation = player_fold_cbet - gto_fold_cbet
-
-            deviations.append({
-                'stat': 'FOLD_TO_CBET_FLOP',
-                'player': player_fold_cbet,
-                'gto': gto_fold_cbet,
-                'deviation': round(deviation, 2),
-                'severity': self._classify_deviation(abs(deviation)),
-                'exploitable': abs(deviation) > 10,
-                'exploit_direction': 'over-folding' if deviation > 0 else 'under-folding'
-            })
-
-        # Calculate exploit value
-        exploitable_devs = [d for d in deviations if d['exploitable']]
-        total_exploit_value = 0
-
-        for dev in exploitable_devs:
-            # Simplified EV calculation
-            # In reality, this would be more complex
-            ev = self.calculate_exploit_ev(
-                deviation=abs(dev['deviation']),
-                frequency=10,  # Assume 10% frequency for now
-                pot_size=float(gto.get('pot_size', 7))
-            )
-            dev['estimated_ev'] = ev
-            total_exploit_value += ev
-
-        return {
-            'comparison_type': 'gto',
-            'scenario': scenario_name,
-            'gto_baseline': {
-                'scenario_type': gto.get('scenario_type'),
-                'board': gto.get('board'),
-                'description': gto.get('description'),
-                'gto_bet_freq': gto.get('gto_bet_frequency'),
-                'gto_fold_freq': gto.get('gto_fold_frequency'),
-                'gto_raise_freq': gto.get('gto_raise_frequency')
-            },
-            'deviations': deviations,
-            'exploitable_count': len(exploitable_devs),
-            'total_estimated_ev': round(total_exploit_value, 2),
-            'summary': self._generate_exploit_summary(deviations)
-        }
-
-    def calculate_exploit_ev(
-        self,
-        deviation: float,
-        frequency: float,
-        pot_size: float = 7.0
-    ) -> float:
-        """
-        Calculate expected value of exploiting a deviation.
-
-        Args:
-            deviation: Percentage point deviation from GTO
-            frequency: How often this spot occurs (per 100 hands)
-            pot_size: Average pot size for this spot
-
-        Returns:
-            Expected value in BB per 100 hands
-        """
-        # Simplified EV calculation
-        # Real calculation would be more complex based on game theory
-
-        # Base EV per exploit
-        base_ev_per_exploit = (deviation / 100) * pot_size * 0.5
-
-        # Total EV per 100 hands
-        total_ev = base_ev_per_exploit * frequency
-
-        return round(total_ev, 2)
-
-    def _classify_deviation(self, deviation: float) -> str:
-        """Classify deviation severity"""
-        if deviation < 5:
-            return 'negligible'
-        elif deviation < 10:
-            return 'minor'
-        elif deviation < 15:
-            return 'moderate'
-        elif deviation < 25:
-            return 'severe'
-        else:
-            return 'extreme'
-
-    def _get_detailed_exploit(self, dev: Dict) -> str:
-        """
-        Generate detailed exploitation strategy for a deviation.
-
-        Args:
-            dev: Deviation dictionary with 'stat', 'deviation', 'exploit_direction'
-
-        Returns:
-            Detailed exploitation strategy string
-        """
-        stat = dev['stat']
-        deviation = dev['deviation']
-
-        # Map stat names to explicit strategies
-        exploit_strategies = {
-            'VPIP': {
-                'positive': "→ They play too many hands. 3-bet them more aggressively, especially from position. Value bet thinner post-flop.",
-                'negative': "→ They play too tight. Steal their blinds frequently and avoid paying them off with marginal hands."
-            },
-            'PFR': {
-                'positive': "→ They raise too often. Call more in position to see flops and outplay them post-flop. Trap with strong hands.",
-                'negative': "→ They're too passive preflop. Attack their limps with raises. When they do raise, respect it more."
-            },
-            '3Bet': {
-                'positive': "→ They 3-bet too much. 4-bet your value hands and call more with speculative hands in position.",
-                'negative': "→ They 3-bet too rarely. Open wider and fold less when they do 3-bet (it's always strong)."
-            },
-            'FOLD_TO_3BET': {
-                'positive': "→ They fold too much to 3-bets. 3-bet them with a polarized range, adding more bluffs. Print money.",
-                'negative': "→ They don't fold to 3-bets. Only 3-bet for value and be prepared to see flops. Tighten up your 3-betting range."
-            },
-            'CBET_FLOP': {
-                'positive': "→ They c-bet too much. Float the flop more often and attack on later streets when they check.",
-                'negative': "→ They give up too easily. Bet when they check and continue barreling on multiple streets."
-            },
-            'FOLD_TO_CBET_FLOP': {
-                'positive': "→ They fold too much to c-bets. Continuation bet aggressively with your entire range, especially on dry boards.",
-                'negative': "→ They're a calling station. Only c-bet for value and give up with pure air. Avoid bluffing them."
-            },
-            'WTSD': {
-                'positive': "→ They go to showdown too often. Don't bluff them - they won't fold. Value bet thin instead.",
-                'negative': "→ They fold before showdown too much. Increase your bluffing frequency, especially on later streets."
-            },
-            'W$SD': {
-                'positive': "→ When they reach showdown, they usually win. Don't pay them off light. Fold marginal hands.",
-                'negative': "→ They reach showdown with weak hands. Call them down lighter and value bet more thinly."
+        # Sort by requested metric
+        if sort_by == 'ev_loss':
+            query = query.order_by(PlayerGTOStat.total_ev_loss_bb.desc())
+        elif sort_by == 'frequency_diff':
+            query = query.order_by(func.abs(PlayerGTOStat.frequency_diff).desc())
+        elif sort_by == 'severity':
+            # Order by severity: critical > major > moderate > minor
+            severity_order = {
+                'critical': 0,
+                'major': 1,
+                'moderate': 2,
+                'minor': 3
             }
-        }
-
-        is_positive = deviation > 0
-        exploit_key = 'positive' if is_positive else 'negative'
-
-        # Get the detailed strategy or fall back to the exploit_direction
-        if stat in exploit_strategies:
-            return exploit_strategies[stat].get(exploit_key, dev.get('exploit_direction', ''))
-        else:
-            return dev.get('exploit_direction', '')
-
-    def _generate_exploit_summary(self, deviations: List[Dict]) -> str:
-        """Generate human-readable exploit summary"""
-        exploitable = [d for d in deviations if d['exploitable']]
-
-        if not exploitable:
-            return "No significant exploitable deviations found"
-
-        # Sort by deviation magnitude
-        exploitable.sort(key=lambda x: abs(x['deviation']), reverse=True)
-
-        summaries = []
-        for dev in exploitable[:3]:  # Top 3 exploits
-            direction = dev['exploit_direction']
-            stat = dev['stat'].replace('_', ' ').title()
-            deviation = abs(dev['deviation'])
-            summaries.append(
-                f"{stat}: {direction} by {deviation:.1f}% ({dev['severity']})"
+            query = query.order_by(
+                func.coalesce(
+                    func.nullif(PlayerGTOStat.leak_severity, ''),
+                    'minor'
+                )
             )
 
-        return "; ".join(summaries)
+        results = query.all()
 
-    def get_scenario_count(self) -> Dict:
-        """Get count of scenarios by type"""
-        query = text("""
-            SELECT
-                scenario_type,
-                COUNT(*) as count
-            FROM gto_solutions
-            GROUP BY scenario_type
-            ORDER BY count DESC
-        """)
+        leaks = []
+        for stat, scenario in results:
+            leak = stat.to_dict()
+            leak['scenario_name'] = scenario.scenario_name
+            leak['category'] = scenario.category
+            leak['position'] = scenario.position
+            leak['action'] = scenario.action
+            leaks.append(leak)
 
-        results = self.db.execute(query).fetchall()
+        return leaks
 
-        counts = {r.scenario_type: r.count for r in results}
-        counts['total'] = sum(counts.values())
+    def get_biggest_leak(self, player_name: str) -> Optional[Dict]:
+        """Get player's single biggest leak by EV loss."""
+        leaks = self.get_player_leaks(player_name, min_hands=10, sort_by='ev_loss')
+        return leaks[0] if leaks else None
 
-        return counts
+    # =========================================================================
+    # EXPLOIT FINDING
+    # =========================================================================
 
-    def _compare_to_baselines(self, player_stats: Dict) -> Dict:
+    def calculate_exploits(
+        self,
+        player_name: str,
+        min_confidence: float = 70.0
+    ) -> List[Dict]:
         """
-        Compare player stats to poker theory baselines.
+        Calculate exploitable patterns in player's game.
 
-        Uses comprehensive baseline data when GTO solutions are unavailable.
+        Args:
+            player_name: Player to analyze
+            min_confidence: Minimum confidence threshold (0-100)
+
+        Returns:
+            List of exploits with recommendations
+
+        Example:
+            exploits = gto_service.calculate_exploits('Villain1', min_confidence=70)
+            # Returns: [{scenario, leak_type, exploit, value_bb_100, confidence}, ...]
         """
-        deviations = []
-        position = player_stats.get('position', None)
+        leaks = self.get_player_leaks(player_name, min_hands=10)
 
-        # Compare VPIP
-        if 'vpip_pct' in player_stats:
-            player_vpip = float(player_stats['vpip_pct'] or 0)
+        exploits = []
+        for leak in leaks:
+            if leak.get('exploit_confidence', 0) >= min_confidence:
+                exploit = {
+                    'scenario': leak['scenario_name'],
+                    'leak_type': leak['leak_type'],
+                    'frequency_diff': leak['frequency_diff'],
+                    'exploit': leak['exploit_description'],
+                    'value_bb_100': leak['exploit_value_bb_100'],
+                    'confidence': leak['exploit_confidence'],
+                    'sample_size': leak['total_hands']
+                }
+                exploits.append(exploit)
 
-            # Use overall VPIP baseline (not position-specific) when position is unknown
-            if position:
-                vpip_range = baseline_provider.get_vpip_range(position)
-                baseline_vpip = sum(vpip_range) / 2  # midpoint
-            else:
-                # Use overall baseline from SHOWDOWN_BASELINES
-                baseline_vpip = 23.0  # Overall 6-max VPIP baseline
+        return sorted(exploits, key=lambda x: x['value_bb_100'], reverse=True)
 
-            dev = baseline_provider.calculate_deviation(player_vpip, baseline_vpip)
-            dev['stat'] = 'VPIP'
-            dev['exploit_direction'] = 'too loose' if dev['deviation'] > 0 else 'too tight'
-            dev['exploit'] = self._get_detailed_exploit(dev)
-            deviations.append(dev)
+    def get_counter_strategy(
+        self,
+        player_name: str,
+        position: str
+    ) -> Dict[str, Any]:
+        """
+        Generate counter-strategy for a player in a position.
 
-        # Compare PFR
-        if 'pfr_pct' in player_stats:
-            player_pfr = float(player_stats['pfr_pct'] or 0)
+        Args:
+            player_name: Opponent to exploit
+            position: Position we're playing from (e.g., 'UTG' when villain is in BB)
 
-            # Use overall PFR baseline when position is unknown
-            if position:
-                baseline_rfi = baseline_provider.get_rfi_frequency(position) or 20
-            else:
-                baseline_rfi = 18.0  # Overall 6-max PFR baseline
+        Returns:
+            Counter-strategy with specific adjustments
 
-            dev = baseline_provider.calculate_deviation(player_pfr, baseline_rfi)
-            dev['stat'] = 'PFR'
-            dev['exploit_direction'] = 'too aggressive' if dev['deviation'] > 0 else 'too passive'
-            dev['exploit'] = self._get_detailed_exploit(dev)
-            deviations.append(dev)
+        Example:
+            counter = gto_service.get_counter_strategy('Villain1', 'UTG')
+            # Returns adjustments to make when opening UTG vs this villain in BB
+        """
+        # Find leaks where villain is defending from BB against our position
+        leaks = self.db.query(
+            PlayerGTOStat,
+            GTOScenario
+        ).join(
+            GTOScenario
+        ).filter(
+            PlayerGTOStat.player_name == player_name,
+            GTOScenario.opponent_position == position,
+            PlayerGTOStat.total_hands >= 20
+        ).all()
 
-        # Compare 3bet frequency
-        if 'three_bet_pct' in player_stats:
-            player_3bet = float(player_stats['three_bet_pct'] or 0)
-            # Use average across positions
-            baseline_3bet = 8.0
+        adjustments = []
+        total_value = 0.0
 
-            dev = baseline_provider.calculate_deviation(player_3bet, baseline_3bet)
-            dev['stat'] = '3Bet'
-            dev['exploit_direction'] = 'over-3betting' if dev['deviation'] > 0 else 'under-3betting'
-            dev['exploit'] = self._get_detailed_exploit(dev)
-            deviations.append(dev)
-
-        # Compare fold to 3bet
-        if 'fold_to_three_bet_pct' in player_stats:
-            player_fold = float(player_stats['fold_to_three_bet_pct'] or 0)
-
-            # Use overall baseline when position is unknown
-            if position:
-                baseline_fold = baseline_provider.get_fold_to_3bet(position)
-            else:
-                baseline_fold = 60.0  # Overall average fold to 3bet
-
-            dev = baseline_provider.calculate_deviation(player_fold, baseline_fold)
-            dev['stat'] = 'FOLD_TO_3BET'
-            dev['exploit_direction'] = 'over-folding' if dev['deviation'] > 0 else 'under-folding'
-            dev['exploit'] = self._get_detailed_exploit(dev)
-            deviations.append(dev)
-
-        # Compare cbet flop
-        if 'cbet_flop_pct' in player_stats:
-            player_cbet = float(player_stats['cbet_flop_pct'] or 0)
-            baseline_cbet = baseline_provider.get_cbet_frequency('IP', 'flop')
-
-            dev = baseline_provider.calculate_deviation(player_cbet, baseline_cbet)
-            dev['stat'] = 'CBET_FLOP'
-            dev['exploit_direction'] = 'over-betting' if dev['deviation'] > 0 else 'under-betting'
-            dev['exploit'] = self._get_detailed_exploit(dev)
-            deviations.append(dev)
-
-        # Compare fold to cbet
-        if 'fold_to_cbet_flop_pct' in player_stats:
-            player_fold_cbet = float(player_stats['fold_to_cbet_flop_pct'] or 0)
-            baseline_fold_cbet = baseline_provider.get_fold_to_cbet('OOP', 'flop')
-
-            dev = baseline_provider.calculate_deviation(player_fold_cbet, baseline_fold_cbet)
-            dev['stat'] = 'FOLD_TO_CBET_FLOP'
-            dev['exploit_direction'] = 'over-folding' if dev['deviation'] > 0 else 'under-folding'
-            dev['exploit'] = self._get_detailed_exploit(dev)
-            deviations.append(dev)
-
-        # Compare WTSD
-        if 'wtsd_pct' in player_stats:
-            from .poker_baselines import SHOWDOWN_BASELINES
-            player_wtsd = float(player_stats['wtsd_pct'] or 0)
-            baseline_wtsd = SHOWDOWN_BASELINES['WTSD']
-
-            dev = baseline_provider.calculate_deviation(player_wtsd, baseline_wtsd)
-            dev['stat'] = 'WTSD'
-            dev['exploit_direction'] = 'too sticky' if dev['deviation'] > 0 else 'too nitty'
-            dev['exploit'] = self._get_detailed_exploit(dev)
-            deviations.append(dev)
-
-        # Compare W$SD
-        if 'wwsf_pct' in player_stats:  # Won When Saw Flop
-            from .poker_baselines import SHOWDOWN_BASELINES
-            player_wsd = float(player_stats['wwsf_pct'] or 0)
-            baseline_wsd = SHOWDOWN_BASELINES['W$SD']
-
-            dev = baseline_provider.calculate_deviation(player_wsd, baseline_wsd)
-            dev['stat'] = 'W$SD'
-            dev['exploit_direction'] = 'value-heavy' if dev['deviation'] > 0 else 'bluff-heavy'
-            dev['exploit'] = self._get_detailed_exploit(dev)
-            deviations.append(dev)
-
-        # Calculate exploit value
-        exploitable_devs = [d for d in deviations if d.get('exploitable', False)]
-        total_exploit_value = 0
-
-        for dev in exploitable_devs:
-            ev = self.calculate_exploit_ev(
-                deviation=dev['abs_deviation'],
-                frequency=10,
-                pot_size=7.0
-            )
-            dev['estimated_ev'] = ev
-            total_exploit_value += ev
+        for stat, scenario in leaks:
+            if stat.frequency_diff and abs(float(stat.frequency_diff)) > 0.05:
+                # Significant deviation
+                adjustment = {
+                    'scenario': scenario.scenario_name,
+                    'villain_action': scenario.action,
+                    'villain_frequency': float(stat.player_frequency) if stat.player_frequency else None,
+                    'gto_frequency': float(stat.gto_frequency) if stat.gto_frequency else None,
+                    'deviation': float(stat.frequency_diff) if stat.frequency_diff else None,
+                    'exploit': stat.exploit_description,
+                    'value_bb': float(stat.exploit_value_bb_100) if stat.exploit_value_bb_100 else None
+                }
+                adjustments.append(adjustment)
+                if stat.exploit_value_bb_100:
+                    total_value += float(stat.exploit_value_bb_100)
 
         return {
-            'comparison_type': 'baseline',
-            'scenario': 'Poker Theory Baselines',
-            'baseline_type': 'theory',
-            'baseline_source': 'Modern Poker Theory + GTO Approximations',
             'position': position,
-            'deviations': deviations,
-            'exploitable_count': len(exploitable_devs),
-            'total_estimated_ev': round(total_exploit_value, 2),
-            'summary': self._generate_exploit_summary(deviations)
+            'vs_player': player_name,
+            'adjustments': adjustments,
+            'expected_value_bb_100': total_value
         }
+
+    # =========================================================================
+    # STATISTICS
+    # =========================================================================
+
+    def get_player_gto_adherence(
+        self,
+        player_name: str,
+        street: str = 'preflop'
+    ) -> Dict[str, Any]:
+        """
+        Calculate how closely player follows GTO.
+
+        Args:
+            player_name: Player to analyze
+            street: 'preflop', 'flop', etc.
+
+        Returns:
+            Adherence metrics
+
+        Example:
+            adherence = gto_service.get_player_gto_adherence('Hero')
+            # Returns: {total_hands, avg_ev_loss, gto_adherence_score, ...}
+        """
+        stats = self.db.query(
+            PlayerGTOStat
+        ).join(
+            GTOScenario
+        ).filter(
+            PlayerGTOStat.player_name == player_name,
+            GTOScenario.street == street
+        ).all()
+
+        if not stats:
+            return {
+                'total_hands': 0,
+                'gto_adherence_score': 0.0,
+                'message': 'No data available'
+            }
+
+        total_hands = sum(s.total_hands for s in stats)
+        total_ev_loss = sum(float(s.total_ev_loss_bb or 0) for s in stats)
+        avg_ev_loss = total_ev_loss / total_hands if total_hands > 0 else 0
+
+        # Calculate adherence score (0-100)
+        # Score decreases with EV loss
+        # Perfect GTO = 100, -0.5 BB/hand = 0
+        adherence_score = max(0, 100 - (avg_ev_loss * 200))
+
+        major_leaks = sum(1 for s in stats if s.leak_severity in ['major', 'critical'])
+
+        return {
+            'player': player_name,
+            'street': street,
+            'total_hands': total_hands,
+            'gto_adherence_score': round(adherence_score, 1),
+            'avg_ev_loss_per_hand': round(avg_ev_loss, 4),
+            'total_ev_loss_bb': round(total_ev_loss, 2),
+            'major_leaks_count': major_leaks,
+            'scenarios_analyzed': len(stats)
+        }
+
+    # =========================================================================
+    # PRIVATE HELPER METHODS
+    # =========================================================================
+
+    def _calculate_ev_loss(self, gto_frequency: Optional[float], action_taken: str) -> float:
+        """
+        Estimate EV loss from deviating from GTO.
+
+        This is a simplified model. Real EV loss depends on game tree complexity.
+        """
+        if gto_frequency is None:
+            return 0.0
+
+        # Simplified EV loss model
+        # If GTO says do action X with frequency F:
+        # - If we always do X when F=0: lose ~0.5 BB
+        # - If we never do X when F=1: lose ~1.0 BB
+        # - Linear interpolation for mixed frequencies
+
+        if gto_frequency > 0.5:
+            # Should mostly take this action
+            # Not taking it costs more
+            return (1 - gto_frequency) * 0.5
+        elif gto_frequency < 0.1:
+            # Should rarely take this action
+            # Taking it costs
+            return gto_frequency * 0.5
+        else:
+            # Mixed strategy - small deviation cost
+            return abs(0.5 - gto_frequency) * 0.2
+
+    def _classify_mistake(self, ev_loss: float) -> Tuple[bool, str]:
+        """Classify mistake severity based on EV loss."""
+        if ev_loss < 0.05:
+            return False, 'minor'
+        elif ev_loss < 0.15:
+            return True, 'moderate'
+        elif ev_loss < 0.30:
+            return True, 'major'
+        else:
+            return True, 'critical'
+
+    def _update_player_stats(self, player_name: str, scenario_id: int):
+        """Update aggregated player stats after recording an action."""
+        # Get all actions for this player/scenario
+        actions = self.db.query(PlayerAction).filter(
+            PlayerAction.player_name == player_name,
+            PlayerAction.scenario_id == scenario_id
+        ).all()
+
+        if not actions:
+            return
+
+        total_hands = len(actions)
+        total_ev_loss = sum(float(a.ev_loss_bb or 0) for a in actions)
+        avg_ev_loss = total_ev_loss / total_hands
+
+        # Get GTO frequency (average across all hands)
+        gto_freq = sum(float(a.gto_frequency or 0) for a in actions) / total_hands
+
+        # Calculate player frequency (how often they took this action)
+        # This is simplified - in reality we'd need to track all possible actions
+        player_freq = 1.0  # Placeholder
+
+        # Calculate frequency difference
+        freq_diff = player_freq - gto_freq
+
+        # Determine leak type
+        scenario = self.db.query(GTOScenario).get(scenario_id)
+        leak_type = self._determine_leak_type(freq_diff, scenario.action if scenario else None)
+
+        # Determine severity
+        severity = self._determine_severity(avg_ev_loss)
+
+        # Generate exploit description
+        exploit_desc = self._generate_exploit_description(scenario, freq_diff, leak_type)
+
+        # Calculate exploit value
+        exploit_value = abs(freq_diff) * 10  # Simplified: 10 BB/100 per 0.1 frequency deviation
+
+        # Calculate confidence based on sample size
+        confidence = min(100, (total_hands / 50) * 100)
+
+        # Update or create stat
+        stat = self.db.query(PlayerGTOStat).filter(
+            PlayerGTOStat.player_name == player_name,
+            PlayerGTOStat.scenario_id == scenario_id
+        ).first()
+
+        if stat:
+            stat.total_hands = total_hands
+            stat.player_frequency = player_freq
+            stat.gto_frequency = gto_freq
+            stat.frequency_diff = freq_diff
+            stat.total_ev_loss_bb = total_ev_loss
+            stat.avg_ev_loss_bb = avg_ev_loss
+            stat.leak_type = leak_type
+            stat.leak_severity = severity
+            stat.exploit_description = exploit_desc
+            stat.exploit_value_bb_100 = exploit_value
+            stat.exploit_confidence = confidence
+            stat.last_updated = datetime.utcnow()
+        else:
+            stat = PlayerGTOStat(
+                player_name=player_name,
+                scenario_id=scenario_id,
+                total_hands=total_hands,
+                player_frequency=player_freq,
+                gto_frequency=gto_freq,
+                frequency_diff=freq_diff,
+                total_ev_loss_bb=total_ev_loss,
+                avg_ev_loss_bb=avg_ev_loss,
+                leak_type=leak_type,
+                leak_severity=severity,
+                exploit_description=exploit_desc,
+                exploit_value_bb_100=exploit_value,
+                exploit_confidence=confidence
+            )
+            self.db.add(stat)
+
+    def _determine_leak_type(self, freq_diff: float, action: Optional[str]) -> str:
+        """Determine leak type from frequency difference and action."""
+        if not action:
+            return 'unknown'
+
+        if freq_diff < -0.05:
+            return f'under{action}'
+        elif freq_diff > 0.05:
+            return f'over{action}'
+        else:
+            return 'no_leak'
+
+    def _determine_severity(self, ev_loss: float) -> str:
+        """Determine leak severity from EV loss."""
+        if ev_loss < 0.05:
+            return 'minor'
+        elif ev_loss < 0.15:
+            return 'moderate'
+        elif ev_loss < 0.30:
+            return 'major'
+        else:
+            return 'critical'
+
+    def _generate_exploit_description(
+        self,
+        scenario: Optional[GTOScenario],
+        freq_diff: float,
+        leak_type: str
+    ) -> str:
+        """Generate human-readable exploit description."""
+        if not scenario:
+            return "Unknown scenario"
+
+        position = scenario.position
+        opponent = scenario.opponent_position
+        action = scenario.action
+
+        if freq_diff < -0.05:
+            # Under-performing action
+            if action == 'call':
+                return f"Player underdefends {position} vs {opponent}. Open wider from {opponent}."
+            elif action == 'fold':
+                return f"Player doesn't fold enough in {position} vs {opponent}. Bluff more."
+            elif action == '3bet':
+                return f"Player doesn't 3bet enough. Open wider and call more vs 3bets."
+        elif freq_diff > 0.05:
+            # Over-performing action
+            if action == 'fold':
+                return f"Player overfolding in {position} vs {opponent}. Bet/raise more."
+            elif action == 'call':
+                return f"Player overcalling. Bluff more on later streets."
+
+        return f"Frequency deviation of {freq_diff*100:.1f}% in {scenario.scenario_name}"

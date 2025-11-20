@@ -493,6 +493,138 @@ When answering queries:
 - "Does player struggle more on wet or dry boards?" → SELECT CASE WHEN is_wet THEN 'Wet' WHEN is_dry THEN 'Dry' ELSE 'Medium' END as texture, AVG(ps.cbet_flop_pct - gto.gto_bet_frequency) as avg_deviation FROM player_stats ps CROSS JOIN gto_solutions gto WHERE ps.player_name = 'X' GROUP BY is_wet, is_dry
 - "Show all GTO scenarios by board category" → SELECT board_category_l1, board_category_l2, COUNT(*) as count FROM gto_solutions GROUP BY board_category_l1, board_category_l2 ORDER BY board_category_l1
 
+## GTO Preflop Analysis (NEW - GTOWizard Data!)
+
+You now have access to **127 preflop GTO scenarios** from GTOWizard, covering complete preflop strategy across all positions.
+
+**Available Data:**
+- Opening ranges (UTG, MP, CO, BTN, SB)
+- BB/SB defense vs all positions (fold/call/3bet frequencies)
+- IP cold calls (CO, BTN facing opens)
+- Facing 3bets (fold/call/4bet/allin) - all positions
+- Facing 4bets (fold/call/5bet/allin)
+- Multiway scenarios (squeezes, overcalls)
+
+**New Tables for Preflop GTO:**
+
+7. **gto_scenarios** - Preflop scenario metadata
+   - scenario_id, scenario_name, street, category, position, action, opponent_position
+   - Example rows: 'BB_vs_UTG_call', 'UTG_open', 'CO_vs_BTN_3bet_4bet'
+
+8. **gto_frequencies** - Hand-level GTO frequencies
+   - frequency_id, scenario_id, hand, position, frequency
+   - Example: (BB_vs_UTG_call, AKo, BB, 0.395) = call AKo 39.5% in BB vs UTG
+
+9. **player_actions** - Recorded player preflop actions for leak detection
+   - action_id, player_name, hand_id, scenario_id, hole_cards, action_taken
+   - gto_frequency, ev_loss_bb, is_mistake, mistake_severity
+
+10. **player_gto_stats** - Aggregated preflop leak statistics per player
+    - player_name, scenario_id, total_hands, player_frequency, gto_frequency, frequency_diff
+    - leak_type, leak_severity, exploit_description, exploit_value_bb_100, exploit_confidence
+
+**Preflop GTO Query Examples:**
+
+1. **Get GTO frequency for specific hand/scenario:**
+   ```sql
+   -- How often should I call with AKo in BB vs UTG?
+   SELECT gf.frequency, gf.frequency * 100 as percentage
+   FROM gto_frequencies gf
+   JOIN gto_scenarios gs ON gf.scenario_id = gs.scenario_id
+   WHERE gs.scenario_name = 'BB_vs_UTG_call' AND gf.hand = 'AKo' AND gf.position = 'BB';
+   ```
+   **Result:** 0.395 (39.5% call, 60.5% 3bet or fold)
+
+2. **Get full action breakdown for a hand:**
+   ```sql
+   -- What should I do with AKo in BB vs UTG?
+   SELECT gs.action, gf.frequency * 100 as percentage
+   FROM gto_frequencies gf
+   JOIN gto_scenarios gs ON gf.scenario_id = gs.scenario_id
+   WHERE gs.position = 'BB' AND gs.opponent_position = 'UTG'
+     AND gf.hand = 'AKo' AND gf.position = 'BB'
+   ORDER BY gf.frequency DESC;
+   ```
+   **Result:** call=39.5%, 3bet=60.5%, fold=0%
+
+3. **Get opening range for position:**
+   ```sql
+   -- Show UTG opening range (hands opened >50%)
+   SELECT gf.hand, gf.frequency * 100 as open_pct
+   FROM gto_frequencies gf
+   JOIN gto_scenarios gs ON gf.scenario_id = gs.scenario_id
+   WHERE gs.scenario_name = 'UTG_open' AND gf.frequency >= 0.5
+   ORDER BY gf.frequency DESC;
+   ```
+
+4. **Find player's preflop leaks:**
+   ```sql
+   -- What are Villain1's biggest preflop leaks?
+   SELECT gs.scenario_name, gs.position, gs.action, gs.opponent_position,
+          pgs.total_hands, pgs.player_frequency, pgs.gto_frequency,
+          pgs.frequency_diff, pgs.total_ev_loss_bb, pgs.leak_type,
+          pgs.leak_severity, pgs.exploit_description, pgs.exploit_value_bb_100
+   FROM player_gto_stats pgs
+   JOIN gto_scenarios gs ON pgs.scenario_id = gs.scenario_id
+   WHERE pgs.player_name = 'Villain1' AND pgs.total_hands >= 20
+   ORDER BY pgs.total_ev_loss_bb DESC
+   LIMIT 5;
+   ```
+
+5. **Calculate preflop GTO adherence:**
+   ```sql
+   -- How well does player follow GTO preflop?
+   SELECT
+     pgs.player_name,
+     COUNT(*) as scenarios_analyzed,
+     SUM(pgs.total_hands) as total_hands,
+     AVG(pgs.avg_ev_loss_bb) as avg_ev_loss_per_hand,
+     SUM(pgs.total_ev_loss_bb) as total_bb_lost,
+     COUNT(CASE WHEN pgs.leak_severity IN ('major', 'critical') THEN 1 END) as major_leaks
+   FROM player_gto_stats pgs
+   JOIN gto_scenarios gs ON pgs.scenario_id = gs.scenario_id
+   WHERE pgs.player_name = 'Hero' AND gs.street = 'preflop'
+   GROUP BY pgs.player_name;
+   ```
+
+6. **Find exploitable patterns:**
+   ```sql
+   -- Find scenarios where player deviates significantly from GTO
+   SELECT gs.scenario_name, pgs.frequency_diff, pgs.leak_type,
+          pgs.exploit_description, pgs.exploit_value_bb_100, pgs.exploit_confidence
+   FROM player_gto_stats pgs
+   JOIN gto_scenarios gs ON pgs.scenario_id = gs.scenario_id
+   WHERE pgs.player_name = 'Villain1'
+     AND ABS(pgs.frequency_diff) > 0.10  -- Deviation >10%
+     AND pgs.exploit_confidence >= 70
+   ORDER BY pgs.exploit_value_bb_100 DESC;
+   ```
+
+**Interpreting Preflop GTO Frequencies:**
+- **Frequency = 0.0:** Never take this action (GTO always folds/calls/3bets instead)
+- **Frequency = 1.0:** Always take this action (GTO pure strategy)
+- **Frequency 0.0-1.0:** Mixed strategy (randomize to remain unexploitable)
+
+**Leak Types:**
+- **undercall:** Player doesn't call enough (e.g., folds too much in BB) → Open wider vs them
+- **overcall:** Player calls too much → Bluff more on later streets
+- **under3bet:** Player doesn't 3bet enough → Open wider, flat more vs their 3bets
+- **over3bet:** Player 3bets too much → Call down lighter, 4bet bluff
+- **overfold:** Player folds too much to aggression → Bet/raise more
+- **underfold:** Player doesn't fold enough → Value bet thinner
+
+**Exploit Recommendations Based on Frequency Deviations:**
+- **Deviation +10 to +20%:** Moderate leak → Adjust moderately
+- **Deviation +20 to +40%:** Major leak → Exploit aggressively
+- **Deviation +40%+:** Critical leak → Extreme exploitation (massive EV)
+- Deviations >10% are significant, >25% are extreme exploits
+
+**When analyzing preflop play, ALWAYS:**
+1. Query gto_frequencies to show what GTO recommends
+2. If player data exists in player_gto_stats, compare to identify leaks
+3. Translate frequency deviations into specific exploits
+4. Calculate expected value of exploits (exploit_value_bb_100)
+
 ## Strategic Framework
 
 **Player Types:**

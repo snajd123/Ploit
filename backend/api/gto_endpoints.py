@@ -1,420 +1,495 @@
 """
-API endpoints for GTO solution queries.
+API endpoints for GTO analysis (GTOWizard-based).
 
-Provides RESTful access to pre-computed GTO solutions and
-player deviation analysis.
+Provides RESTful access to GTO frequencies, leak detection, and exploit finding.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
+from datetime import datetime
 
 from backend.services.gto_service import GTOService
-from backend.services.poker_baselines import BaselineProvider
 from backend.database import get_db
-from backend.models.database_models import PlayerStats
-import psycopg2
-import os
-
-baseline_provider = BaselineProvider()
 
 router = APIRouter(prefix="/api/gto", tags=["GTO Analysis"])
 
 
-def get_db_connection():
-    """Get database connection for GTO matcher."""
-    db_url = os.environ.get('DATABASE_URL')
-    if db_url:
-        return psycopg2.connect(db_url)
-    return None
+# ============================================================================
+# REQUEST/RESPONSE MODELS
+# ============================================================================
 
-
-# Response models
-class GTOSolutionResponse(BaseModel):
-    """GTO solution response model"""
-    scenario_name: str
-    scenario_type: str
-    board: Optional[str] = None
-    position_oop: Optional[str] = None
-    position_ip: Optional[str] = None
-    pot_size: float
-    stack_depth: float
-    gto_bet_frequency: Optional[float] = None
-    gto_fold_frequency: Optional[float] = None
-    gto_raise_frequency: Optional[float] = None
-    description: Optional[str] = None
+class GTOFrequencyResponse(BaseModel):
+    """GTO frequency response"""
+    scenario: str
+    hand: str
+    position: str
+    frequency: float
+    percentage: float
 
     class Config:
         from_attributes = True
 
 
-class DeviationDetail(BaseModel):
-    """Individual deviation detail"""
-    stat: str
-    player: float
-    gto: float
-    deviation: float
-    severity: str
-    exploitable: bool
-    exploit_direction: str
-    estimated_ev: Optional[float] = None
+class ActionBreakdownResponse(BaseModel):
+    """Action breakdown response"""
+    position: str
+    opponent: Optional[str]
+    hand: str
+    actions: Dict[str, float]
+
+    class Config:
+        from_attributes = True
 
 
-class DeviationAnalysisResponse(BaseModel):
-    """Player vs GTO deviation analysis"""
-    scenario: str
-    gto_baseline: dict
-    deviations: List[DeviationDetail]
-    exploitable_count: int
-    total_estimated_ev: float
-    summary: str
+class OpeningRangeResponse(BaseModel):
+    """Opening range response"""
+    position: str
+    hands: Dict[str, float]
+    total_hands: int
+    vpip_percentage: float
+
+    class Config:
+        from_attributes = True
 
 
-class ScenarioListItem(BaseModel):
-    """Scenario list item"""
+class RecordActionRequest(BaseModel):
+    """Request to record a player action"""
+    player_name: str = Field(..., description="Player name")
+    hand_id: str = Field(..., description="Unique hand identifier")
+    scenario_name: str = Field(..., description="Scenario name (e.g., 'BB_vs_UTG_call')")
+    hole_cards: str = Field(..., description="Hand type (e.g., 'AKo', 'JTs')")
+    action_taken: str = Field(..., description="Action taken (e.g., 'fold', 'call', '3bet')")
+    timestamp: Optional[datetime] = Field(None, description="When action occurred")
+
+
+class PlayerActionResponse(BaseModel):
+    """Response after recording action"""
+    action_id: int
+    player_name: str
+    hole_cards: str
+    action_taken: str
+    gto_frequency: Optional[float]
+    ev_loss_bb: Optional[float]
+    is_mistake: bool
+    mistake_severity: str
+
+    class Config:
+        from_attributes = True
+
+
+class LeakResponse(BaseModel):
+    """Player leak response"""
     scenario_name: str
-    scenario_type: str
-    board: Optional[str] = None
-    description: Optional[str] = None
+    category: str
+    position: str
+    action: str
+    total_hands: int
+    player_frequency: Optional[float]
+    gto_frequency: Optional[float]
+    frequency_diff: Optional[float]
+    total_ev_loss_bb: Optional[float]
+    avg_ev_loss_bb: Optional[float]
+    leak_type: Optional[str]
+    leak_severity: Optional[str]
+    exploit_description: Optional[str]
+    exploit_value_bb_100: Optional[float]
+    exploit_confidence: Optional[float]
 
 
-class AnalyzePlayerRequest(BaseModel):
-    """Request body for player analysis"""
-    scenarios: Optional[List[str]] = None
+class ExploitResponse(BaseModel):
+    """Exploit recommendation response"""
+    scenario: str
+    leak_type: str
+    frequency_diff: Optional[float]
+    exploit: str
+    value_bb_100: Optional[float]
+    confidence: float
+    sample_size: int
 
 
-# Endpoints
-@router.get("/scenarios", response_model=List[ScenarioListItem])
+class GTOAdherenceResponse(BaseModel):
+    """GTO adherence response"""
+    player: str
+    street: str
+    total_hands: int
+    gto_adherence_score: float
+    avg_ev_loss_per_hand: float
+    total_ev_loss_bb: float
+    major_leaks_count: int
+    scenarios_analyzed: int
+
+
+class CounterStrategyResponse(BaseModel):
+    """Counter-strategy response"""
+    position: str
+    vs_player: str
+    adjustments: List[Dict[str, Any]]
+    expected_value_bb_100: float
+
+
+# ============================================================================
+# DEPENDENCY INJECTION
+# ============================================================================
+
+def get_gto_service(db: Session = Depends(get_db)) -> GTOService:
+    """Get GTO service instance"""
+    return GTOService(db)
+
+
+# ============================================================================
+# GTO QUERY ENDPOINTS
+# ============================================================================
+
+@router.get("/frequency", response_model=GTOFrequencyResponse)
+async def get_gto_frequency(
+    scenario: str = Query(..., description="Scenario name (e.g., 'BB_vs_UTG_call')"),
+    hand: str = Query(..., description="Hand type (e.g., 'AKo', 'JTs', '22')"),
+    position: Optional[str] = Query(None, description="Position filter"),
+    gto_service: GTOService = Depends(get_gto_service)
+):
+    """
+    Get GTO frequency for a specific hand in a scenario.
+
+    Example: GET /api/gto/frequency?scenario=BB_vs_UTG_call&hand=AKo
+
+    Returns the GTO frequency (0.0 to 1.0) for how often to take this action.
+    """
+    frequency = gto_service.get_gto_frequency(scenario, hand, position)
+
+    if frequency is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No GTO data found for {hand} in scenario {scenario}"
+        )
+
+    return GTOFrequencyResponse(
+        scenario=scenario,
+        hand=hand,
+        position=position or scenario.split('_')[0],  # Extract from scenario name
+        frequency=frequency,
+        percentage=frequency * 100
+    )
+
+
+@router.get("/breakdown", response_model=ActionBreakdownResponse)
+async def get_action_breakdown(
+    position: str = Query(..., description="Position (e.g., 'BB', 'UTG')"),
+    opponent: Optional[str] = Query(None, description="Opponent position (None for opens)"),
+    hand: str = Query(..., description="Hand type (e.g., 'AKo')"),
+    gto_service: GTOService = Depends(get_gto_service)
+):
+    """
+    Get all action frequencies for a hand in a situation.
+
+    Example: GET /api/gto/breakdown?position=BB&opponent=UTG&hand=AKo
+
+    Returns all possible actions (fold/call/3bet) with their GTO frequencies.
+    """
+    actions = gto_service.get_action_breakdown(position, opponent, hand)
+
+    if not actions:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No GTO data found for {hand} in {position} vs {opponent}"
+        )
+
+    return ActionBreakdownResponse(
+        position=position,
+        opponent=opponent,
+        hand=hand,
+        actions=actions
+    )
+
+
+@router.get("/range/{position}", response_model=OpeningRangeResponse)
+async def get_opening_range(
+    position: str,
+    min_frequency: float = Query(0.0, ge=0.0, le=1.0, description="Minimum frequency filter"),
+    gto_service: GTOService = Depends(get_gto_service)
+):
+    """
+    Get full opening range for a position.
+
+    Example: GET /api/gto/range/UTG?min_frequency=0.5
+
+    Returns all hands opened with frequency >= min_frequency.
+    """
+    hands = gto_service.get_opening_range(position, min_frequency)
+
+    if not hands:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No opening range found for position {position}"
+        )
+
+    # Calculate VPIP (sum of all frequencies)
+    vpip = sum(hands.values())
+
+    return OpeningRangeResponse(
+        position=position,
+        hands=hands,
+        total_hands=len(hands),
+        vpip_percentage=vpip * 100
+    )
+
+
+# ============================================================================
+# LEAK DETECTION ENDPOINTS
+# ============================================================================
+
+@router.post("/action", response_model=PlayerActionResponse)
+async def record_player_action(
+    request: RecordActionRequest,
+    gto_service: GTOService = Depends(get_gto_service)
+):
+    """
+    Record a player action and analyze against GTO.
+
+    Example:
+    ```json
+    POST /api/gto/action
+    {
+        "player_name": "Villain1",
+        "hand_id": "PS123456",
+        "scenario_name": "BB_vs_UTG_call",
+        "hole_cards": "AKo",
+        "action_taken": "fold"
+    }
+    ```
+
+    Automatically:
+    - Looks up GTO frequency
+    - Calculates EV loss
+    - Flags mistakes
+    - Updates player_gto_stats
+    """
+    try:
+        action = gto_service.record_player_action(
+            player_name=request.player_name,
+            hand_id=request.hand_id,
+            scenario_name=request.scenario_name,
+            hole_cards=request.hole_cards,
+            action_taken=request.action_taken,
+            timestamp=request.timestamp
+        )
+
+        return PlayerActionResponse(
+            action_id=action.action_id,
+            player_name=action.player_name,
+            hole_cards=action.hole_cards,
+            action_taken=action.action_taken,
+            gto_frequency=float(action.gto_frequency) if action.gto_frequency else None,
+            ev_loss_bb=float(action.ev_loss_bb) if action.ev_loss_bb else None,
+            is_mistake=action.is_mistake or False,
+            mistake_severity=action.mistake_severity or 'minor'
+        )
+
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to record action: {str(e)}")
+
+
+@router.get("/leaks/{player}", response_model=List[LeakResponse])
+async def get_player_leaks(
+    player: str,
+    min_hands: int = Query(20, ge=1, description="Minimum sample size"),
+    sort_by: str = Query('ev_loss', regex='^(ev_loss|frequency_diff|severity)$'),
+    street: str = Query('preflop', description="Street filter"),
+    gto_service: GTOService = Depends(get_gto_service)
+):
+    """
+    Get all leaks for a player, sorted by severity.
+
+    Example: GET /api/gto/leaks/Villain1?min_hands=20&sort_by=ev_loss
+
+    Returns list of leaks with:
+    - Scenario details
+    - Frequency deviations
+    - EV loss
+    - Exploit recommendations
+    """
+    leaks = gto_service.get_player_leaks(
+        player_name=player,
+        min_hands=min_hands,
+        sort_by=sort_by,
+        street=street
+    )
+
+    return [LeakResponse(**leak) for leak in leaks]
+
+
+@router.get("/leaks/{player}/biggest", response_model=Optional[LeakResponse])
+async def get_biggest_leak(
+    player: str,
+    gto_service: GTOService = Depends(get_gto_service)
+):
+    """
+    Get player's single biggest leak by EV loss.
+
+    Example: GET /api/gto/leaks/Villain1/biggest
+
+    Returns the most costly leak for quick analysis.
+    """
+    leak = gto_service.get_biggest_leak(player)
+
+    if not leak:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No leaks found for player {player} (insufficient data)"
+        )
+
+    return LeakResponse(**leak)
+
+
+@router.get("/adherence/{player}", response_model=GTOAdherenceResponse)
+async def get_gto_adherence(
+    player: str,
+    street: str = Query('preflop', description="Street filter"),
+    gto_service: GTOService = Depends(get_gto_service)
+):
+    """
+    Calculate how closely player follows GTO.
+
+    Example: GET /api/gto/adherence/Hero?street=preflop
+
+    Returns:
+    - GTO adherence score (0-100)
+    - Average EV loss per hand
+    - Total EV loss
+    - Count of major leaks
+    """
+    adherence = gto_service.get_player_gto_adherence(
+        player_name=player,
+        street=street
+    )
+
+    if adherence.get('total_hands', 0) == 0:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No data available for player {player}"
+        )
+
+    return GTOAdherenceResponse(**adherence)
+
+
+# ============================================================================
+# EXPLOIT FINDING ENDPOINTS
+# ============================================================================
+
+@router.get("/exploits/{player}", response_model=List[ExploitResponse])
+async def get_exploits(
+    player: str,
+    min_confidence: float = Query(70.0, ge=0.0, le=100.0, description="Minimum confidence %"),
+    gto_service: GTOService = Depends(get_gto_service)
+):
+    """
+    Calculate exploitable patterns in player's game.
+
+    Example: GET /api/gto/exploits/Villain1?min_confidence=70
+
+    Returns list of exploits with:
+    - Leak type
+    - Exploit recommendation
+    - Expected value (BB/100)
+    - Confidence level
+    """
+    exploits = gto_service.calculate_exploits(
+        player_name=player,
+        min_confidence=min_confidence
+    )
+
+    return [ExploitResponse(**exploit) for exploit in exploits]
+
+
+@router.get("/counter/{player}/{position}", response_model=CounterStrategyResponse)
+async def get_counter_strategy(
+    player: str,
+    position: str,
+    gto_service: GTOService = Depends(get_gto_service)
+):
+    """
+    Generate counter-strategy for a player in a position.
+
+    Example: GET /api/gto/counter/Villain1/UTG
+
+    Returns specific adjustments to make when playing from this position
+    against the villain, including:
+    - Which scenarios to exploit
+    - Frequency adjustments
+    - Expected value of adjustments
+    """
+    counter = gto_service.get_counter_strategy(
+        player_name=player,
+        position=position
+    )
+
+    return CounterStrategyResponse(**counter)
+
+
+# ============================================================================
+# UTILITY ENDPOINTS
+# ============================================================================
+
+@router.get("/scenarios")
 async def list_scenarios(
-    scenario_type: Optional[str] = Query(
-        None,
-        description="Filter by type: preflop, srp_flop, 3bet_pot, etc."
-    ),
-    limit: int = Query(100, ge=1, le=1000, description="Max results"),
-    db: Session = Depends(get_db)
+    street: Optional[str] = Query(None, description="Filter by street"),
+    category: Optional[str] = Query(None, description="Filter by category"),
+    position: Optional[str] = Query(None, description="Filter by position"),
+    limit: int = Query(100, ge=1, le=1000),
+    gto_service: GTOService = Depends(get_gto_service)
 ):
     """
     List available GTO scenarios.
 
-    Returns list of all pre-computed GTO solutions, optionally filtered by type.
+    Example: GET /api/gto/scenarios?street=preflop&category=defense
+
+    Returns list of scenarios with metadata.
     """
-    service = GTOService(db)
-    scenarios = service.list_scenarios(scenario_type=scenario_type, limit=limit)
+    from backend.models.gto_models import GTOScenario
 
-    return scenarios
+    query = gto_service.db.query(GTOScenario)
+
+    if street:
+        query = query.filter(GTOScenario.street == street)
+    if category:
+        query = query.filter(GTOScenario.category == category)
+    if position:
+        query = query.filter(GTOScenario.position == position)
+
+    scenarios = query.limit(limit).all()
+
+    return [s.to_dict() for s in scenarios]
 
 
-@router.get("/solution/{scenario_name}", response_model=GTOSolutionResponse)
-async def get_gto_solution(
-    scenario_name: str,
-    db: Session = Depends(get_db)
-):
+@router.get("/health")
+async def health_check(gto_service: GTOService = Depends(get_gto_service)):
     """
-    Get GTO solution for a specific scenario.
+    Health check for GTO service.
 
-    Example: /api/gto/solution/BTN_steal_vs_BB
-
-    Returns the pre-computed GTO frequencies and strategy for this spot.
+    Returns:
+    - Database connectivity
+    - Number of scenarios loaded
+    - System status
     """
-    service = GTOService(db)
-    solution = service.get_gto_solution(scenario_name)
+    from backend.models.gto_models import GTOScenario, GTOFrequency
 
-    if not solution:
-        raise HTTPException(
-            status_code=404,
-            detail=f"GTO solution not found for scenario: {scenario_name}"
-        )
-
-    return solution
-
-
-@router.get("/compare/{player_name}/{scenario_name}")
-async def compare_player_to_gto(
-    player_name: str,
-    scenario_name: str,
-    db: Session = Depends(get_db)
-):
-    """
-    Compare player statistics to GTO baseline.
-
-    Example: /api/gto/compare/snajd/BTN_steal_vs_BB
-
-    Returns deviation analysis showing how the player differs from GTO
-    and identifies exploitable patterns.
-    """
-    service = GTOService(db)
-
-    # Get player stats
-    player = db.query(PlayerStats).filter(
-        PlayerStats.player_name == player_name
-    ).first()
-
-    if not player:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Player not found: {player_name}"
-        )
-
-    # Convert to dict
-    player_dict = {
-        'fold_to_three_bet_pct': player.fold_to_three_bet_pct,
-        'cbet_flop_pct': player.cbet_flop_pct,
-        'fold_to_cbet_flop_pct': player.fold_to_cbet_flop_pct,
-        'vpip_pct': player.vpip_pct,
-        'pfr_pct': player.pfr_pct
-    }
-
-    # Compare to GTO
-    comparison = service.compare_player_to_gto(player_dict, scenario_name)
-
-    if 'error' in comparison:
-        raise HTTPException(
-            status_code=404,
-            detail=comparison['error']
-        )
-
-    return comparison
-
-
-@router.get("/stats")
-async def get_gto_stats(db: Session = Depends(get_db)):
-    """
-    Get statistics about available GTO solutions.
-
-    Returns counts by scenario type and total coverage.
-    """
-    service = GTOService(db)
-    counts = service.get_scenario_count()
-
-    return {
-        "scenario_counts": counts,
-        "message": "GTO solution database statistics"
-    }
-
-
-@router.post("/analyze/{player_name}")
-async def analyze_player_exploits(
-    player_name: str,
-    request_body: AnalyzePlayerRequest = Body(default=AnalyzePlayerRequest()),
-    db: Session = Depends(get_db)
-):
-    """
-    Analyze player against multiple GTO scenarios to identify exploits.
-
-    Body (optional):
-    {
-        "scenarios": ["BTN_steal_vs_BB", "SRP_Ks7c3d_cbet", "3BET_AhKs9d_cbet"]
-    }
-
-    If no scenarios provided, uses default set of common scenarios.
-    """
-    service = GTOService(db)
-
-    # Get player
-    player = db.query(PlayerStats).filter(
-        PlayerStats.player_name == player_name
-    ).first()
-
-    if not player:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Player not found: {player_name}"
-        )
-
-    # Default scenarios if none provided
-    scenarios = request_body.scenarios
-    if not scenarios:
-        scenarios = [
-            'BTN_steal_vs_BB',
-            'SRP_Ks7c3d_cbet',
-            'SRP_Ah9s3h_cbet',
-            '3BET_AhKs9d_cbet'
-        ]
-
-    # Analyze each scenario
-    player_dict = {
-        'fold_to_three_bet_pct': player.fold_to_three_bet_pct,
-        'cbet_flop_pct': player.cbet_flop_pct,
-        'fold_to_cbet_flop_pct': player.fold_to_cbet_flop_pct,
-        'vpip_pct': player.vpip_pct,
-        'pfr_pct': player.pfr_pct
-    }
-
-    results = []
-    total_ev = 0
-    using_baselines = False
-
-    for scenario in scenarios:
-        comparison = service.compare_player_to_gto(player_dict, scenario)
-
-        if 'error' not in comparison:
-            # Check if this is a baseline comparison (no GTO solution)
-            if comparison.get('comparison_type') == 'baseline':
-                # Only add baseline comparison once
-                if not using_baselines:
-                    results.append(comparison)
-                    total_ev += comparison.get('total_estimated_ev', 0)
-                    using_baselines = True
-            else:
-                # Add GTO solution comparisons normally
-                results.append(comparison)
-                total_ev += comparison.get('total_estimated_ev', 0)
-
-    # Adjust summary based on comparison type
-    if using_baselines and len(results) == 1:
-        summary = f"Using poker theory baselines - found {results[0]['exploitable_count']} exploitable deviations"
-    else:
-        summary = f"Found {sum(r['exploitable_count'] for r in results)} exploitable deviations across {len(results)} scenarios"
-
-    return {
-        "player_name": player_name,
-        "scenarios_analyzed": len(results),
-        "total_estimated_ev": round(total_ev, 2),
-        "analyses": results,
-        "summary": summary
-    }
-
-
-@router.get("/baselines")
-async def get_baselines():
-    """
-    Get all poker theory baselines.
-    
-    Returns comprehensive baseline statistics for exploit detection.
-    """
-    baselines = baseline_provider.get_baseline_stats()
-    
-    return {
-        "baseline_type": "poker_theory",
-        "source": "Modern Poker Theory + GTO Approximations",
-        "baselines": baselines,
-        "stat_count": len(baselines),
-        "message": "Comprehensive poker theory baselines for exploit detection"
-    }
-
-
-@router.get("/baselines/position/{position}")
-async def get_position_baselines(position: str):
-    """
-    Get position-specific baselines.
-
-    Returns RFI frequencies, VPIP ranges, and opening ranges for a position.
-    """
-    return {
-        "position": position.upper(),
-        "rfi_frequency": baseline_provider.get_rfi_frequency(position),
-        "vpip_range": baseline_provider.get_vpip_range(position),
-        "opening_range": baseline_provider.get_opening_range(position),
-        "fold_to_3bet_average": baseline_provider.get_fold_to_3bet(position)
-    }
-
-
-# New board-based GTO matching endpoints
-class GTOMatchResponse(BaseModel):
-    """Single GTO match response"""
-    solution_id: int
-    scenario_name: str
-    board: str
-    match_type: str
-    confidence: float
-    similarity_score: float
-    category_l1: str
-    category_l2: str
-    category_l3: str
-
-
-class BoardMatchResponse(BaseModel):
-    """Board-based GTO matching response"""
-    target_board: str
-    board_category_l1: str
-    board_category_l2: str
-    board_category_l3: str
-    matches: List[GTOMatchResponse]
-    total_matches: int
-    best_match: Optional[GTOMatchResponse] = None
-
-
-@router.get("/match", response_model=BoardMatchResponse)
-async def find_gto_matches(
-    board: str = Query(..., description="Board string (e.g., 'As8h3c')"),
-    scenario_type: Optional[str] = Query(None, description="Scenario type filter (SRP, 3BP, 4BP)"),
-    position: Optional[str] = Query(None, description="Position filter (IP, OOP)"),
-    action: Optional[str] = Query(None, description="Action sequence filter (cbet, check, etc.)"),
-    top_n: int = Query(3, ge=1, le=10, description="Number of matches to return")
-):
-    """
-    Find best matching GTO solutions for a given board.
-
-    Uses multi-level categorization with adaptive matching:
-    - Tries exact board match first (100% confidence)
-    - Falls back to L3 category (80-90% confidence)
-    - Falls back to L2 category (60-75% confidence)
-    - Falls back to L1 category (40-55% confidence)
-
-    Example: /api/gto/match?board=As8h3c&scenario_type=SRP&top_n=3
-
-    Returns ranked list of matching GTO solutions with confidence scores.
-    """
     try:
-        # Import here to avoid circular imports
-        import sys
-        from pathlib import Path
-        sys.path.insert(0, str(Path(__file__).parent.parent / "services"))
-        from gto_matcher import GTOMatcher
+        scenario_count = gto_service.db.query(GTOScenario).count()
+        frequency_count = gto_service.db.query(GTOFrequency).count()
 
-        # Get database connection
-        db_conn = get_db_connection()
-        if not db_conn:
-            raise HTTPException(
-                status_code=500,
-                detail="Database connection not available"
-            )
-
-        # Create matcher and find matches
-        matcher = GTOMatcher(db_conn=db_conn)
-        matches = matcher.find_matches(
-            board=board,
-            scenario_type=scenario_type,
-            position_context=position,
-            action_sequence=action,
-            top_n=top_n
-        )
-
-        # Categorize the target board
-        analysis = matcher.categorizer.analyze(board)
-
-        # Convert matches to response format
-        match_responses = [
-            GTOMatchResponse(
-                solution_id=m.solution_id,
-                scenario_name=m.scenario_name,
-                board=m.board,
-                match_type=m.match_type,
-                confidence=round(m.confidence, 1),
-                similarity_score=round(m.similarity_score, 1),
-                category_l1=m.category_l1,
-                category_l2=m.category_l2,
-                category_l3=m.category_l3
-            )
-            for m in matches
-        ]
-
-        # Close connection
-        db_conn.close()
-
-        return BoardMatchResponse(
-            target_board=board,
-            board_category_l1=analysis.category_l1,
-            board_category_l2=analysis.category_l2,
-            board_category_l3=analysis.category_l3,
-            matches=match_responses,
-            total_matches=len(match_responses),
-            best_match=match_responses[0] if match_responses else None
-        )
-
+        return {
+            "status": "healthy",
+            "database": "connected",
+            "scenarios_loaded": scenario_count,
+            "frequencies_loaded": frequency_count,
+            "service": "operational"
+        }
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error finding GTO matches: {str(e)}"
-        )
+        return {
+            "status": "unhealthy",
+            "database": "disconnected",
+            "error": str(e)
+        }
