@@ -131,7 +131,9 @@ class GTOSolutionImporter:
                     high_card_rank, middle_card_rank, low_card_rank,
                     scenario_type, position_context, action_sequence,
                     pot_size, effective_stack, ip_range, oop_range,
-                    accuracy, iterations, file_size_bytes, solved_at, imported_at
+                    accuracy, iterations, file_size_bytes, solved_at, imported_at,
+                    gto_check_frequency, gto_bet_frequency, gto_raise_frequency,
+                    gto_fold_frequency, gto_call_frequency
                 )
                 VALUES (
                     %(scenario_name)s, %(config_file)s, %(output_file)s, %(board)s,
@@ -142,7 +144,9 @@ class GTOSolutionImporter:
                     %(high_card_rank)s, %(middle_card_rank)s, %(low_card_rank)s,
                     %(scenario_type)s, %(position_context)s, %(action_sequence)s,
                     %(pot_size)s, %(effective_stack)s, %(ip_range)s, %(oop_range)s,
-                    %(accuracy)s, %(iterations)s, %(file_size_bytes)s, %(solved_at)s, %(imported_at)s
+                    %(accuracy)s, %(iterations)s, %(file_size_bytes)s, %(solved_at)s, %(imported_at)s,
+                    %(gto_check_frequency)s, %(gto_bet_frequency)s, %(gto_raise_frequency)s,
+                    %(gto_fold_frequency)s, %(gto_call_frequency)s
                 )
                 ON CONFLICT (scenario_name) DO UPDATE SET
                     board_category_l1 = EXCLUDED.board_category_l1,
@@ -159,7 +163,12 @@ class GTOSolutionImporter:
                     is_wet = EXCLUDED.is_wet,
                     high_card_rank = EXCLUDED.high_card_rank,
                     middle_card_rank = EXCLUDED.middle_card_rank,
-                    low_card_rank = EXCLUDED.low_card_rank
+                    low_card_rank = EXCLUDED.low_card_rank,
+                    gto_check_frequency = EXCLUDED.gto_check_frequency,
+                    gto_bet_frequency = EXCLUDED.gto_bet_frequency,
+                    gto_raise_frequency = EXCLUDED.gto_raise_frequency,
+                    gto_fold_frequency = EXCLUDED.gto_fold_frequency,
+                    gto_call_frequency = EXCLUDED.gto_call_frequency
                 RETURNING solution_id;
             """
 
@@ -277,6 +286,87 @@ class GTOSolutionImporter:
 
         return info
 
+    def extract_gto_frequencies(self, output_path: Path) -> Dict[str, float]:
+        """
+        Extract and aggregate GTO frequencies from solver output JSON.
+
+        Args:
+            output_path: Path to JSON solver output file
+
+        Returns:
+            Dictionary with aggregated frequencies (check_freq, bet_freq, raise_freq, fold_freq)
+        """
+        try:
+            with open(output_path, 'r') as f:
+                data = json.load(f)
+
+            actions = data.get('actions', [])
+
+            # The actual hand strategies are nested under data['strategy']['strategy']
+            strategy_node = data.get('strategy', {})
+            strategy = strategy_node.get('strategy', {}) if isinstance(strategy_node, dict) else {}
+
+            if not actions or not strategy:
+                return {}
+
+            # Initialize frequency accumulators
+            freq_totals = {
+                'check': 0.0,
+                'bet': 0.0,
+                'raise': 0.0,
+                'fold': 0.0,
+                'call': 0.0
+            }
+
+            # For each hand combo, aggregate frequencies by action type
+            num_hands = 0
+            for hand_combo, frequencies in strategy.items():
+                # Skip non-list entries
+                if not isinstance(frequencies, list):
+                    continue
+
+                if len(frequencies) != len(actions):
+                    continue
+
+                # Count valid hand combos
+                num_hands += 1
+
+                for i, action in enumerate(actions):
+                    freq = frequencies[i]
+
+                    # Ensure freq is numeric
+                    if not isinstance(freq, (int, float)):
+                        continue
+
+                    action_upper = action.upper()
+
+                    if 'CHECK' in action_upper:
+                        freq_totals['check'] += freq
+                    elif 'BET' in action_upper:
+                        freq_totals['bet'] += freq
+                    elif 'RAISE' in action_upper:
+                        freq_totals['raise'] += freq
+                    elif 'FOLD' in action_upper:
+                        freq_totals['fold'] += freq
+                    elif 'CALL' in action_upper:
+                        freq_totals['call'] += freq
+
+            # Calculate averages (convert to percentage 0-100)
+            if num_hands > 0:
+                return {
+                    'gto_check_frequency': round((freq_totals['check'] / num_hands) * 100, 2),
+                    'gto_bet_frequency': round((freq_totals['bet'] / num_hands) * 100, 2),
+                    'gto_raise_frequency': round((freq_totals['raise'] / num_hands) * 100, 2),
+                    'gto_fold_frequency': round((freq_totals['fold'] / num_hands) * 100, 2),
+                    'gto_call_frequency': round((freq_totals['call'] / num_hands) * 100, 2)
+                }
+
+            return {}
+
+        except Exception as e:
+            print(f"    Warning: Failed to extract frequencies from {output_path.name}: {e}")
+            return {}
+
     def process_solution(self, config_filename: str) -> Optional[Dict]:
         """
         Process a single GTO solution.
@@ -320,6 +410,9 @@ class GTOSolutionImporter:
                 print(f"Failed to categorize board {board}: {e}")
                 return None
 
+            # Extract GTO frequencies from solver output
+            frequencies = self.extract_gto_frequencies(output_path)
+
             # Get file metadata
             file_size = output_path.stat().st_size
             solved_at = datetime.fromtimestamp(output_path.stat().st_mtime)
@@ -359,7 +452,9 @@ class GTOSolutionImporter:
                 'iterations': scenario.get('iterations'),
                 'file_size_bytes': file_size,
                 'solved_at': solved_at,
-                'imported_at': datetime.now()
+                'imported_at': datetime.now(),
+                # Add GTO frequencies
+                **frequencies
             }
 
             # Track for aggregate calculation
