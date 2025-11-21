@@ -48,7 +48,7 @@ class ClaudeService:
         """
         self.db = db_session
         self.client = Anthropic(api_key=settings.anthropic_api_key)
-        self.model = "claude-3-opus-20240229"  # Claude 3 Opus (should be universally available)
+        self.model = "claude-3-5-sonnet-20241022"  # Claude 3.5 Sonnet - 90% cheaper than Opus, better performance
 
     def _clean_response_text(self, text: str) -> str:
         """
@@ -91,10 +91,17 @@ class ClaudeService:
             })
 
             # Call Claude API with database query tool
+            # Use prompt caching to save 90% on system prompt costs
             response = self.client.messages.create(
                 model=self.model,
-                max_tokens=4096,
-                system=self._get_system_prompt(),
+                max_tokens=2048,  # Reduced from 4096 to save on output costs
+                system=[
+                    {
+                        "type": "text",
+                        "text": self._get_system_prompt(),
+                        "cache_control": {"type": "ephemeral"}
+                    }
+                ],
                 tools=[self._get_database_tool()],
                 messages=messages
             )
@@ -147,8 +154,14 @@ class ClaudeService:
                         # Get followup response after tool use
                         current_response = self.client.messages.create(
                             model=self.model,
-                            max_tokens=4096,
-                            system=self._get_system_prompt(),
+                            max_tokens=2048,
+                            system=[
+                                {
+                                    "type": "text",
+                                    "text": self._get_system_prompt(),
+                                    "cache_control": {"type": "ephemeral"}
+                                }
+                            ],
                             tools=[self._get_database_tool()],
                             messages=messages
                         )
