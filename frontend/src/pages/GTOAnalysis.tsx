@@ -258,8 +258,8 @@ const GTOAnalysis = () => {
       </div>
 
       {/* Overall Score Card */}
-      <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${getScoreGradient(adherence.gto_adherence_score)} p-8 text-white shadow-2xl`}>
-        <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -translate-y-32 translate-x-32"></div>
+      <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${getScoreGradient(adherence.gto_adherence_score)} p-8 text-white shadow-2xl border-2 border-white/20`}>
+        <div className="absolute top-0 right-0 w-64 h-64 bg-white/20 rounded-full -translate-y-32 translate-x-32"></div>
         <div className="relative z-10">
           <div className="flex items-center justify-between">
             <div>
@@ -298,8 +298,8 @@ const GTOAnalysis = () => {
       </div>
 
       {/* Opening Ranges */}
-      <div className="bg-gray-800/50 backdrop-blur rounded-xl border border-gray-700 overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-700 flex items-center justify-between">
+      <div className="bg-slate-900 rounded-xl border border-blue-500/30 overflow-hidden shadow-xl">
+        <div className="px-6 py-4 border-b border-slate-700 flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <BarChart3 className="w-6 h-6 text-blue-400" />
             <h2 className="text-xl font-bold text-white">Opening Ranges (RFI)</h2>
@@ -313,7 +313,7 @@ const GTOAnalysis = () => {
             {opening_ranges.map((range) => (
               <div
                 key={range.position}
-                className="bg-gray-900/50 rounded-lg p-4 border border-gray-700 hover:border-gray-600 transition-all"
+                className="bg-slate-800 rounded-lg p-4 border border-slate-600 hover:border-blue-400 transition-all shadow-lg"
               >
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-lg font-bold text-white">{range.position}</h3>
@@ -321,26 +321,26 @@ const GTOAnalysis = () => {
                 </div>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Your %:</span>
+                    <span className="text-gray-300">Your %:</span>
                     <span className="font-semibold text-white">{range.player_frequency.toFixed(1)}%</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-400">GTO %:</span>
-                    <span className="font-semibold text-blue-400">{range.gto_frequency.toFixed(1)}%</span>
+                    <span className="text-gray-300">GTO %:</span>
+                    <span className="font-semibold text-blue-300">{range.gto_frequency.toFixed(1)}%</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Diff:</span>
+                    <span className="text-gray-300">Diff:</span>
                     <span className={`font-semibold ${range.frequency_diff > 0 ? 'text-red-400' : range.frequency_diff < 0 ? 'text-yellow-400' : 'text-green-400'}`}>
                       {range.frequency_diff > 0 ? '+' : ''}{range.frequency_diff.toFixed(1)}%
                     </span>
                   </div>
-                  <div className="pt-2 border-t border-gray-700">
+                  <div className="pt-2 border-t border-slate-600">
                     <div className="flex justify-between">
-                      <span className="text-gray-400">Hands:</span>
-                      <span className="text-gray-300">{range.total_hands}</span>
+                      <span className="text-gray-300">Hands:</span>
+                      <span className="text-gray-200">{range.total_hands}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-400">EV Loss:</span>
+                      <span className="text-gray-300">EV Loss:</span>
                       <span className="text-red-400 font-medium">{range.ev_loss_bb.toFixed(2)} BB</span>
                     </div>
                   </div>
@@ -353,8 +353,8 @@ const GTOAnalysis = () => {
 
       {/* 3-Bet Stats */}
       {threebet_stats.length > 0 && (
-        <div className="bg-gray-800/50 backdrop-blur rounded-xl border border-gray-700 overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-700 flex items-center justify-between">
+        <div className="bg-slate-900 rounded-xl border border-purple-500/30 overflow-hidden shadow-xl">
+          <div className="px-6 py-4 border-b border-slate-700 flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <Zap className="w-6 h-6 text-purple-400" />
               <h2 className="text-xl font-bold text-white">3-Bet Frequencies</h2>
@@ -365,35 +365,35 @@ const GTOAnalysis = () => {
           </div>
           <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {threebet_stats.slice(0, 9).map((stat, idx) => (
-              <div key={idx} className="bg-gray-900/50 rounded-lg p-4 border border-gray-700 hover:border-purple-600 transition-all">
+              <div key={idx} className="bg-slate-800 rounded-lg p-4 border border-slate-600 hover:border-purple-400 transition-all shadow-lg">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex-1">
                     <h3 className="text-sm font-bold text-white">{stat.position} vs {stat.vs_position}</h3>
-                    <p className="text-xs text-gray-500 mt-0.5">3-betting vs {stat.vs_position} open</p>
+                    <p className="text-xs text-gray-400 mt-0.5">3-betting vs {stat.vs_position} open</p>
                   </div>
                   {getSeverityBadge(stat.leak_severity)}
                 </div>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Your %:</span>
+                    <span className="text-gray-300">Your %:</span>
                     <span className="font-semibold text-white">{stat.player_frequency.toFixed(1)}%</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-400">GTO %:</span>
-                    <span className="font-semibold text-purple-400">{stat.gto_frequency.toFixed(1)}%</span>
+                    <span className="text-gray-300">GTO %:</span>
+                    <span className="font-semibold text-purple-300">{stat.gto_frequency.toFixed(1)}%</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Diff:</span>
+                    <span className="text-gray-300">Diff:</span>
                     <span className={`font-semibold ${stat.frequency_diff > 0 ? 'text-red-400' : stat.frequency_diff < 0 ? 'text-yellow-400' : 'text-green-400'}`}>
                       {stat.frequency_diff > 0 ? '+' : ''}{stat.frequency_diff.toFixed(1)}%
                     </span>
                   </div>
-                  <div className="pt-2 border-t border-gray-700">
+                  <div className="pt-2 border-t border-slate-600">
                     <div className="flex justify-between">
-                      <span className="text-gray-400">Hands:</span>
-                      <span className="text-gray-300">{stat.total_hands}</span>
+                      <span className="text-gray-300">Hands:</span>
+                      <span className="text-gray-200">{stat.total_hands}</span>
                     </div>
-                    <div className="text-xs text-gray-500 mt-1">
+                    <div className="text-xs text-gray-400 mt-1">
                       {stat.leak_type === 'over3bet' && '⚠️ 3-betting too often'}
                       {stat.leak_type === 'under3bet' && '⚠️ 3-betting too rarely'}
                       {!stat.leak_type && 'No significant leak'}
@@ -407,8 +407,8 @@ const GTOAnalysis = () => {
       )}
 
       {/* Top Leaks */}
-      <div className="bg-gray-800/50 backdrop-blur rounded-xl border border-gray-700 overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-700 flex items-center justify-between">
+      <div className="bg-slate-900 rounded-xl border border-red-500/30 overflow-hidden shadow-xl">
+        <div className="px-6 py-4 border-b border-slate-700 flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <TrendingDown className="w-6 h-6 text-red-400" />
             <h2 className="text-xl font-bold text-white">Top Leaks (by EV Loss)</h2>
@@ -416,32 +416,32 @@ const GTOAnalysis = () => {
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-gray-900/50">
+            <thead className="bg-slate-800/80">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">#</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Scenario</th>
-                <th className="px-6 py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">Severity</th>
-                <th className="px-6 py-3 text-right text-xs font-semibold text-gray-400 uppercase tracking-wider">Hands</th>
-                <th className="px-6 py-3 text-right text-xs font-semibold text-gray-400 uppercase tracking-wider">Your %</th>
-                <th className="px-6 py-3 text-right text-xs font-semibold text-gray-400 uppercase tracking-wider">GTO %</th>
-                <th className="px-6 py-3 text-right text-xs font-semibold text-gray-400 uppercase tracking-wider">Diff</th>
-                <th className="px-6 py-3 text-right text-xs font-semibold text-gray-400 uppercase tracking-wider">EV Loss</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">#</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Scenario</th>
+                <th className="px-6 py-3 text-center text-xs font-semibold text-gray-300 uppercase tracking-wider">Severity</th>
+                <th className="px-6 py-3 text-right text-xs font-semibold text-gray-300 uppercase tracking-wider">Hands</th>
+                <th className="px-6 py-3 text-right text-xs font-semibold text-gray-300 uppercase tracking-wider">Your %</th>
+                <th className="px-6 py-3 text-right text-xs font-semibold text-gray-300 uppercase tracking-wider">GTO %</th>
+                <th className="px-6 py-3 text-right text-xs font-semibold text-gray-300 uppercase tracking-wider">Diff</th>
+                <th className="px-6 py-3 text-right text-xs font-semibold text-gray-300 uppercase tracking-wider">EV Loss</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-700">
+            <tbody className="divide-y divide-slate-700">
               {top_leaks.map((leak, idx) => (
-                <tr key={idx} className="hover:bg-gray-700/30 transition-colors">
-                  <td className="px-6 py-4 text-gray-300 font-medium">{idx + 1}</td>
+                <tr key={idx} className="hover:bg-slate-800/50 transition-colors">
+                  <td className="px-6 py-4 text-gray-200 font-medium">{idx + 1}</td>
                   <td className="px-6 py-4">
                     <div className="text-white font-medium">{formatScenarioName(leak.scenario_name)}</div>
-                    <div className="text-xs text-gray-400">{getScenarioExplanation(leak.scenario_name, leak.category)}</div>
+                    <div className="text-xs text-gray-300">{getScenarioExplanation(leak.scenario_name, leak.category)}</div>
                   </td>
                   <td className="px-6 py-4 text-center">
                     {getSeverityBadge(leak.leak_severity)}
                   </td>
-                  <td className="px-6 py-4 text-right text-gray-300">{leak.total_hands}</td>
+                  <td className="px-6 py-4 text-right text-gray-200">{leak.total_hands}</td>
                   <td className="px-6 py-4 text-right text-white font-medium">{leak.player_frequency.toFixed(1)}%</td>
-                  <td className="px-6 py-4 text-right text-blue-400 font-medium">{leak.gto_frequency.toFixed(1)}%</td>
+                  <td className="px-6 py-4 text-right text-blue-300 font-medium">{leak.gto_frequency.toFixed(1)}%</td>
                   <td className={`px-6 py-4 text-right font-semibold ${leak.frequency_diff > 0 ? 'text-red-400' : 'text-yellow-400'}`}>
                     {leak.frequency_diff > 0 ? '+' : ''}{leak.frequency_diff.toFixed(1)}%
                   </td>
@@ -457,35 +457,35 @@ const GTOAnalysis = () => {
 
       {/* Defense Stats */}
       {defense_stats.length > 0 && (
-        <div className="bg-gray-800/50 backdrop-blur rounded-xl border border-gray-700 overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-700 flex items-center justify-between">
+        <div className="bg-slate-900 rounded-xl border border-green-500/30 overflow-hidden shadow-xl">
+          <div className="px-6 py-4 border-b border-slate-700 flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <Shield className="w-6 h-6 text-green-400" />
               <h2 className="text-xl font-bold text-white">Defense Scenarios</h2>
             </div>
-            <span className="text-sm text-gray-400">{defense_stats.length} scenarios</span>
+            <span className="text-sm text-gray-300">{defense_stats.length} scenarios</span>
           </div>
           <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
             {defense_stats.slice(0, 6).map((stat, idx) => (
-              <div key={idx} className="bg-gray-900/50 rounded-lg p-4 border border-gray-700">
+              <div key={idx} className="bg-slate-800 rounded-lg p-4 border border-slate-600 hover:border-green-400 transition-all shadow-lg">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex-1">
                     <h3 className="text-sm font-semibold text-white">{formatScenarioName(stat.scenario_name)}</h3>
-                    <p className="text-xs text-gray-500 mt-0.5">{getScenarioExplanation(stat.scenario_name, 'defense')}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">{getScenarioExplanation(stat.scenario_name, 'defense')}</p>
                   </div>
                   {getSeverityBadge(stat.leak_severity)}
                 </div>
                 <div className="grid grid-cols-3 gap-3 text-xs">
                   <div>
-                    <div className="text-gray-400 mb-1">Your %</div>
+                    <div className="text-gray-300 mb-1">Your %</div>
                     <div className="font-semibold text-white">{stat.player_frequency.toFixed(1)}%</div>
                   </div>
                   <div>
-                    <div className="text-gray-400 mb-1">GTO %</div>
-                    <div className="font-semibold text-blue-400">{stat.gto_frequency.toFixed(1)}%</div>
+                    <div className="text-gray-300 mb-1">GTO %</div>
+                    <div className="font-semibold text-green-300">{stat.gto_frequency.toFixed(1)}%</div>
                   </div>
                   <div>
-                    <div className="text-gray-400 mb-1">Diff</div>
+                    <div className="text-gray-300 mb-1">Diff</div>
                     <div className={`font-semibold ${stat.frequency_diff > 0 ? 'text-red-400' : 'text-yellow-400'}`}>
                       {stat.frequency_diff > 0 ? '+' : ''}{stat.frequency_diff.toFixed(1)}%
                     </div>
