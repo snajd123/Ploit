@@ -1100,6 +1100,12 @@ async def http_exception_handler(request, exc: HTTPException):
         content={
             "detail": exc.detail,
             "timestamp": datetime.now().isoformat()
+        },
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Allow-Methods": "*",
+            "Access-Control-Allow-Headers": "*",
         }
     )
 
@@ -1113,6 +1119,12 @@ async def general_exception_handler(request, exc: Exception):
         content={
             "detail": "Internal server error",
             "timestamp": datetime.now().isoformat()
+        },
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Allow-Methods": "*",
+            "Access-Control-Allow-Headers": "*",
         }
     )
 
