@@ -551,11 +551,42 @@ async def get_gto_dashboard(
                 'leak_severity': stat.leak_severity
             })
 
+        # Get 3-bet stats (facing_3bet category)
+        threebet_scenarios = gto_service.db.query(PlayerGTOStat, GTOScenario).join(
+            GTOScenario,
+            PlayerGTOStat.scenario_id == GTOScenario.scenario_id
+        ).filter(
+            PlayerGTOStat.player_name == player,
+            GTOScenario.scenario_name.like('%_3bet')
+        ).order_by(desc(PlayerGTOStat.total_hands)).all()
+
+        threebet_stats = []
+        for stat, scenario in threebet_scenarios:
+            # Parse scenario name to get position and vs_position
+            # e.g., "BB_vs_UTG_3bet" -> position=BB, vs_position=UTG
+            parts = scenario.scenario_name.split('_')
+            if len(parts) >= 3 and parts[-1] == '3bet':
+                position = parts[0]
+                vs_position = parts[2] if parts[1] == 'vs' else None
+
+                threebet_stats.append({
+                    'scenario_name': scenario.scenario_name,
+                    'position': position,
+                    'vs_position': vs_position,
+                    'total_hands': stat.total_hands,
+                    'player_frequency': float(stat.player_frequency) * 100,
+                    'gto_frequency': float(stat.gto_frequency) * 100,
+                    'frequency_diff': float(stat.frequency_diff) * 100,
+                    'leak_type': stat.leak_type,
+                    'leak_severity': stat.leak_severity
+                })
+
         return {
             'player': player,
             'adherence': adherence,
             'opening_ranges': opening_ranges,
             'defense_stats': defense_stats,
+            'threebet_stats': threebet_stats,
             'top_leaks': leaks,
             'timestamp': datetime.now().isoformat()
         }
