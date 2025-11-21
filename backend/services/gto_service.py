@@ -647,3 +647,91 @@ class GTOService:
                 return f"Player overcalling. Bluff more on later streets."
 
         return f"Frequency deviation of {freq_diff*100:.1f}% in {scenario.scenario_name}"
+
+    def compare_player_to_gto(self, player_stats: Dict[str, Optional[float]]) -> Dict:
+        """
+        Compare player statistics to GTO baseline values.
+
+        Args:
+            player_stats: Dictionary with keys like vpip_pct, pfr_pct, three_bet_pct, etc.
+
+        Returns:
+            Dictionary with 'deviations' list containing exploitable tendencies
+        """
+        # GTO baseline ranges for common stats
+        gto_ranges = {
+            'vpip_pct': (20, 28),
+            'pfr_pct': (15, 22),
+            'three_bet_pct': (5, 9),
+            'fold_to_three_bet_pct': (55, 65),
+            'cbet_flop_pct': (50, 70),
+            'fold_to_cbet_flop_pct': (40, 50),
+            'wtsd_pct': (25, 35)
+        }
+
+        deviations = []
+
+        for stat_name, (gto_min, gto_max) in gto_ranges.items():
+            stat_value = player_stats.get(stat_name)
+
+            if stat_value is None:
+                continue
+
+            gto_mid = (gto_min + gto_max) / 2
+            deviation = stat_value - gto_mid
+            abs_deviation = abs(deviation)
+
+            # Only flag significant deviations (>10% from GTO midpoint)
+            if abs_deviation > 10:
+                exploitable = True
+
+                # Generate exploit recommendation
+                if stat_name == 'vpip_pct':
+                    if deviation > 0:
+                        exploit = f"Plays too many hands ({stat_value:.1f}% vs GTO {gto_mid:.1f}%). Exploit: 3-bet more, value bet thin."
+                    else:
+                        exploit = f"Too tight ({stat_value:.1f}% vs GTO {gto_mid:.1f}%). Exploit: Steal their blinds, bluff more."
+                elif stat_name == 'pfr_pct':
+                    if deviation > 0:
+                        exploit = f"Over-aggressive preflop ({stat_value:.1f}% vs GTO {gto_mid:.1f}%). Exploit: Call wider, trap with premiums."
+                    else:
+                        exploit = f"Passive preflop ({stat_value:.1f}% vs GTO {gto_mid:.1f}%). Exploit: Bet when checked to, barrel more."
+                elif stat_name == 'three_bet_pct':
+                    if deviation > 0:
+                        exploit = f"3-bets too much ({stat_value:.1f}% vs GTO {gto_mid:.1f}%). Exploit: Call down lighter, 4-bet bluff."
+                    else:
+                        exploit = f"Doesn't 3-bet enough ({stat_value:.1f}% vs GTO {gto_mid:.1f}%). Exploit: Open wider, flat their 3-bets."
+                elif stat_name == 'fold_to_three_bet_pct':
+                    if deviation > 0:
+                        exploit = f"Folds to 3-bets too much ({stat_value:.1f}% vs GTO {gto_mid:.1f}%). Exploit: 3-bet them liberally."
+                    else:
+                        exploit = f"Doesn't fold to 3-bets enough ({stat_value:.1f}% vs GTO {gto_mid:.1f}%). Exploit: Value 3-bet, avoid bluffs."
+                elif stat_name == 'cbet_flop_pct':
+                    if deviation > 0:
+                        exploit = f"C-bets too much ({stat_value:.1f}% vs GTO {gto_mid:.1f}%). Exploit: Float more, raise as bluff."
+                    else:
+                        exploit = f"Doesn't c-bet enough ({stat_value:.1f}% vs GTO {gto_mid:.1f}%). Exploit: Bet when checked to."
+                elif stat_name == 'fold_to_cbet_flop_pct':
+                    if deviation > 0:
+                        exploit = f"Folds to c-bets too much ({stat_value:.1f}% vs GTO {gto_mid:.1f}%). Exploit: C-bet bluff more."
+                    else:
+                        exploit = f"Doesn't fold to c-bets enough ({stat_value:.1f}% vs GTO {gto_mid:.1f}%). Exploit: C-bet value hands only."
+                elif stat_name == 'wtsd_pct':
+                    if deviation > 0:
+                        exploit = f"Goes to showdown too much ({stat_value:.1f}% vs GTO {gto_mid:.1f}%). Exploit: Value bet thin, avoid bluffs."
+                    else:
+                        exploit = f"Folds too much ({stat_value:.1f}% vs GTO {gto_mid:.1f}%). Exploit: Bluff more on all streets."
+                else:
+                    exploit = f"Deviates {deviation:+.1f}% from GTO baseline."
+
+                deviations.append({
+                    'stat': stat_name,
+                    'player_value': stat_value,
+                    'gto_baseline': gto_mid,
+                    'deviation': deviation,
+                    'abs_deviation': abs_deviation,
+                    'exploitable': exploitable,
+                    'exploit_recommendation': exploit
+                })
+
+        return {'deviations': deviations}
