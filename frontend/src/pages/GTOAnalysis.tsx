@@ -62,7 +62,8 @@ const GTOAnalysis = () => {
   const { data, isLoading, error } = useQuery<GTODashboardData>({
     queryKey: ['gtoDashboard', selectedPlayer],
     queryFn: async () => {
-      const response = await fetch(`/api/gto/dashboard/${selectedPlayer}`);
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${apiUrl}/api/gto/dashboard/${selectedPlayer}`);
       if (!response.ok) throw new Error('Failed to fetch GTO data');
       return response.json();
     },

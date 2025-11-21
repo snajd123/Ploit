@@ -38,8 +38,9 @@ const GTOBoardMatch: React.FC<GTOBoardMatchProps> = ({ board, onMatch }) => {
     setError(null);
 
     try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
       const response = await fetch(
-        `http://localhost:8000/api/gto/match?board=${encodeURIComponent(board)}&top_n=5`
+        `${apiUrl}/api/gto/match?board=${encodeURIComponent(board)}&top_n=5`
       );
 
       if (!response.ok) {
