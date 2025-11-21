@@ -48,7 +48,9 @@ class ClaudeService:
         """
         self.db = db_session
         self.client = Anthropic(api_key=settings.anthropic_api_key)
-        self.model = "claude-3-5-sonnet-20241022"  # Claude 3.5 Sonnet - 90% cheaper than Opus, better performance
+        # Claude 4.5 Haiku - Fastest and cheapest ($1/1M input, $5/1M output)
+        # Alternative: "claude-sonnet-4-5-20250929" for maximum intelligence
+        self.model = "claude-haiku-4-5-20251001"
 
     def _clean_response_text(self, text: str) -> str:
         """
