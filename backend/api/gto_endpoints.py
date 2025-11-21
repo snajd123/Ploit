@@ -494,6 +494,15 @@ async def get_gto_dashboard(
             street='preflop'
         )[:10]
 
+        # Convert leak frequencies to percentages
+        for leak in leaks:
+            if leak.get('player_frequency') is not None:
+                leak['player_frequency'] = float(leak['player_frequency']) * 100
+            if leak.get('gto_frequency') is not None:
+                leak['gto_frequency'] = float(leak['gto_frequency']) * 100
+            if leak.get('frequency_diff') is not None:
+                leak['frequency_diff'] = float(leak['frequency_diff']) * 100
+
         # Get opening ranges summary
         opening_scenarios = gto_service.db.query(PlayerGTOStat, GTOScenario).join(
             GTOScenario,
