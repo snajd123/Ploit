@@ -226,17 +226,36 @@ def process_player_correct(db, player_name: str, limit: int = 1000) -> Dict:
         ev_loss_per_hand = abs(freq_diff) * 0.5
         total_ev_loss = ev_loss_per_hand * opportunities
 
-        # Classify leak
+        # Classify leak - use both absolute and relative deviation
         leak_type = None
         leak_severity = None
 
         if opportunities >= 5:
-            if abs(freq_diff) > 0.3:
-                leak_severity = 'major'
-            elif abs(freq_diff) > 0.15:
-                leak_severity = 'moderate'
-            elif abs(freq_diff) > 0.05:
-                leak_severity = 'minor'
+            abs_diff = abs(freq_diff)
+
+            # Calculate relative deviation (% change from GTO)
+            # Avoid division by zero - if GTO is 0, use absolute thresholds only
+            if gto_freq > 0.01:  # GTO frequency is at least 1%
+                relative_diff = abs_diff / gto_freq
+
+                # Use relative thresholds for low-frequency actions (like 3-bets)
+                # Major: >40% relative deviation OR >30% absolute
+                # Moderate: >25% relative deviation OR >15% absolute
+                # Minor: >15% relative deviation OR >5% absolute
+                if (relative_diff > 0.40) or (abs_diff > 0.30):
+                    leak_severity = 'major'
+                elif (relative_diff > 0.25) or (abs_diff > 0.15):
+                    leak_severity = 'moderate'
+                elif (relative_diff > 0.15) or (abs_diff > 0.05):
+                    leak_severity = 'minor'
+            else:
+                # For very low or zero GTO frequencies, use absolute thresholds only
+                if abs_diff > 0.30:
+                    leak_severity = 'major'
+                elif abs_diff > 0.15:
+                    leak_severity = 'moderate'
+                elif abs_diff > 0.05:
+                    leak_severity = 'minor'
 
             if 'fold' in scenario_name:
                 leak_type = 'overfold' if freq_diff > 0 else 'underfold'
