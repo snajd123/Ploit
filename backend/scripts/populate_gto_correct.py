@@ -200,9 +200,17 @@ def process_player_correct(db, player_name: str, limit: int = 1000) -> Dict:
 
         scenario_id = scenario_result[0]
 
-        # Get GTO frequency (average across all hands)
+        # Get GTO frequency (weighted by combo count)
+        # Pairs: 6 combos, Suited: 4 combos, Offsuit: 12 combos
+        # Total combos: 1326
         gto_query = text("""
-            SELECT AVG(frequency) as avg_freq
+            SELECT SUM(
+                frequency * CASE
+                    WHEN hand ~ '^([AKQJT2-9])\\1$' THEN 6   -- Pairs: 6 combos
+                    WHEN hand ~ 's$' THEN 4                   -- Suited: 4 combos
+                    ELSE 12                                   -- Offsuit: 12 combos
+                END
+            ) / 1326.0 as weighted_freq
             FROM gto_frequencies gf
             WHERE gf.scenario_id = :scenario_id
         """)
