@@ -719,6 +719,8 @@ Remember: You're helping players make MORE MONEY by exploiting opponent weakness
 
         except Exception as e:
             logger.error(f"Database query error: {str(e)}")
+            # Rollback the session to clear the failed transaction state
+            self.db.rollback()
             return {
                 "success": False,
                 "error": str(e)

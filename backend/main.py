@@ -993,10 +993,16 @@ async def query_claude(
         claude_service = ClaudeService(db)
 
         # Process query
-        result = claude_service.query(
-            user_query=request.query,
-            conversation_history=request.conversation_history
-        )
+        try:
+            result = claude_service.query(
+                user_query=request.query,
+                conversation_history=request.conversation_history
+            )
+        except Exception as query_error:
+            # If query processing fails, rollback and re-raise
+            logger.error(f"Claude query processing failed: {str(query_error)}")
+            db.rollback()
+            raise
 
         # Convert tool calls to Pydantic models if present
         tool_calls = None
@@ -1008,15 +1014,21 @@ async def query_claude(
             tool_calls_json = result.get("tool_calls")
 
         # Save assistant message
-        assistant_message = ClaudeMessage(
-            conversation_id=conversation_id,
-            role="assistant",
-            content=result.get("response", ""),
-            tool_calls=tool_calls_json,
-            usage=result.get("usage")
-        )
-        db.add(assistant_message)
-        db.commit()
+        try:
+            assistant_message = ClaudeMessage(
+                conversation_id=conversation_id,
+                role="assistant",
+                content=result.get("response", ""),
+                tool_calls=tool_calls_json,
+                usage=result.get("usage")
+            )
+            db.add(assistant_message)
+            db.commit()
+        except Exception as save_error:
+            logger.error(f"Failed to save assistant message: {str(save_error)}")
+            db.rollback()
+            # Still return the response even if we couldn't save it
+            logger.warning("Continuing with response despite save failure")
 
         return ClaudeQueryResponse(
             success=result["success"],
