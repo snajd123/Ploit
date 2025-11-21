@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
 import {
   Target,
   TrendingDown,
@@ -58,7 +57,7 @@ interface GTODashboardData {
 
 const GTOAnalysis = () => {
   const [selectedPlayer, setSelectedPlayer] = useState<string>('');
-  const navigate = useNavigate();
+  const [searchValue, setSearchValue] = useState<string>('');
 
   const { data, isLoading, error } = useQuery<GTODashboardData>({
     queryKey: ['gtoDashboard', selectedPlayer],
@@ -69,14 +68,6 @@ const GTOAnalysis = () => {
     },
     enabled: !!selectedPlayer,
   });
-
-  const getScoreColor = (score: number) => {
-    if (score >= 80) return 'text-green-400';
-    if (score >= 60) return 'text-blue-400';
-    if (score >= 40) return 'text-yellow-400';
-    if (score >= 20) return 'text-orange-400';
-    return 'text-red-400';
-  };
 
   const getScoreGradient = (score: number) => {
     if (score >= 80) return 'from-green-500 to-emerald-600';
@@ -122,8 +113,11 @@ const GTOAnalysis = () => {
               Select Player to Analyze
             </label>
             <SinglePlayerAutocomplete
-              onPlayerSelect={setSelectedPlayer}
+              value={searchValue}
+              onChange={setSearchValue}
+              onSelect={setSelectedPlayer}
               placeholder="Search for a player..."
+              className="w-full"
             />
 
             <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
