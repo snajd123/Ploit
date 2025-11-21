@@ -59,6 +59,46 @@ const GTOAnalysis = () => {
   const [selectedPlayer, setSelectedPlayer] = useState<string>('');
   const [searchValue, setSearchValue] = useState<string>('');
 
+  const formatScenarioName = (scenarioName: string): string => {
+    // Convert "SB_vs_BTN_fold" to "SB vs BTN - Fold"
+    // Convert "UTG_open" to "UTG Open"
+    return scenarioName
+      .replace(/_/g, ' ')
+      .split(' ')
+      .map((word, idx, arr) => {
+        if (word === 'vs') return 'vs';
+        if (idx === arr.length - 1 && ['fold', 'call', 'raise', '3bet', 'open'].includes(word)) {
+          return '- ' + word.charAt(0).toUpperCase() + word.slice(1);
+        }
+        return word.toUpperCase();
+      })
+      .join(' ');
+  };
+
+  const getScenarioExplanation = (scenarioName: string, category: string): string => {
+    const explanations: Record<string, string> = {
+      'open': 'How often you raise first in (RFI) from this position',
+      'defense': 'How you respond when facing a raise',
+      'multiway': 'How you play when there are already callers or raises',
+      'facing_3bet': 'How you respond to a 3-bet',
+    };
+
+    const actions: Record<string, string> = {
+      'fold': 'Folding frequency in this spot',
+      'call': 'Calling frequency in this spot',
+      '3bet': '3-betting frequency in this spot',
+      'open': 'Opening raise frequency from this position',
+    };
+
+    const parts = scenarioName.split('_');
+    const action = parts[parts.length - 1];
+
+    const categoryExplanation = explanations[category] || 'Poker scenario';
+    const actionExplanation = actions[action] || '';
+
+    return actionExplanation || categoryExplanation;
+  };
+
   const { data, isLoading, error } = useQuery<GTODashboardData>({
     queryKey: ['gtoDashboard', selectedPlayer],
     queryFn: async () => {
@@ -327,8 +367,8 @@ const GTOAnalysis = () => {
                 <tr key={idx} className="hover:bg-gray-700/30 transition-colors">
                   <td className="px-6 py-4 text-gray-300 font-medium">{idx + 1}</td>
                   <td className="px-6 py-4">
-                    <div className="text-white font-medium">{leak.scenario_name}</div>
-                    <div className="text-xs text-gray-400">{leak.category}</div>
+                    <div className="text-white font-medium">{formatScenarioName(leak.scenario_name)}</div>
+                    <div className="text-xs text-gray-400">{getScenarioExplanation(leak.scenario_name, leak.category)}</div>
                   </td>
                   <td className="px-6 py-4 text-center">
                     {getSeverityBadge(leak.leak_severity)}
@@ -363,7 +403,10 @@ const GTOAnalysis = () => {
             {defense_stats.slice(0, 6).map((stat, idx) => (
               <div key={idx} className="bg-gray-900/50 rounded-lg p-4 border border-gray-700">
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-sm font-semibold text-white">{stat.scenario_name}</h3>
+                  <div className="flex-1">
+                    <h3 className="text-sm font-semibold text-white">{formatScenarioName(stat.scenario_name)}</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">{getScenarioExplanation(stat.scenario_name, 'defense')}</p>
+                  </div>
                   {getSeverityBadge(stat.leak_severity)}
                 </div>
                 <div className="grid grid-cols-3 gap-3 text-xs">
