@@ -515,13 +515,10 @@ You now have access to **127 preflop GTO scenarios** from GTOWizard, covering co
    - frequency_id, scenario_id, hand, position, frequency
    - Example: (BB_vs_UTG_call, AKo, BB, 0.395) = call AKo 39.5% in BB vs UTG
 
-9. **player_actions** - Recorded player preflop actions for leak detection
-   - action_id, player_name, hand_id, scenario_id, hole_cards, action_taken
-   - gto_frequency, ev_loss_bb, is_mistake, mistake_severity
-
-10. **player_gto_stats** - Aggregated preflop leak statistics per player
-    - player_name, scenario_id, total_hands, player_frequency, gto_frequency, frequency_diff
-    - leak_type, leak_severity, exploit_description, exploit_value_bb_100, exploit_confidence
+9. **player_gto_stats** - Aggregated preflop leak statistics per player ⭐ PRIMARY TABLE FOR PREFLOP ANALYSIS
+   - player_name, scenario_id, total_hands, player_frequency, gto_frequency, frequency_diff
+   - leak_type, leak_severity, total_ev_loss_bb, avg_ev_loss_bb
+   - **IMPORTANT**: This is the MAIN table for finding preflop leaks. Always JOIN with gto_scenarios to get scenario details.
 
 **Preflop GTO Query Examples:**
 
@@ -557,19 +554,25 @@ You now have access to **127 preflop GTO scenarios** from GTOWizard, covering co
    ORDER BY gf.frequency DESC;
    ```
 
-4. **Find player's preflop leaks:**
+4. **Find player's preflop leaks (MOST COMMON QUERY):**
    ```sql
-   -- What are Villain1's biggest preflop leaks?
+   -- What are player's biggest preflop leaks?
    SELECT gs.scenario_name, gs.position, gs.action, gs.opponent_position,
-          pgs.total_hands, pgs.player_frequency, pgs.gto_frequency,
-          pgs.frequency_diff, pgs.total_ev_loss_bb, pgs.leak_type,
-          pgs.leak_severity, pgs.exploit_description, pgs.exploit_value_bb_100
+          pgs.total_hands,
+          pgs.player_frequency * 100 as player_pct,
+          pgs.gto_frequency * 100 as gto_pct,
+          pgs.frequency_diff * 100 as diff_pct,
+          pgs.total_ev_loss_bb,
+          pgs.leak_type,
+          pgs.leak_severity
    FROM player_gto_stats pgs
    JOIN gto_scenarios gs ON pgs.scenario_id = gs.scenario_id
-   WHERE pgs.player_name = 'Villain1' AND pgs.total_hands >= 20
+   WHERE pgs.player_name = 'snajd' AND pgs.total_hands >= 10
    ORDER BY pgs.total_ev_loss_bb DESC
-   LIMIT 5;
+   LIMIT 10;
    ```
+
+   **Note:** Multiply frequency values by 100 to get percentages for display.
 
 5. **Calculate preflop GTO adherence:**
    ```sql
@@ -590,14 +593,19 @@ You now have access to **127 preflop GTO scenarios** from GTOWizard, covering co
 6. **Find exploitable patterns:**
    ```sql
    -- Find scenarios where player deviates significantly from GTO
-   SELECT gs.scenario_name, pgs.frequency_diff, pgs.leak_type,
-          pgs.exploit_description, pgs.exploit_value_bb_100, pgs.exploit_confidence
+   SELECT gs.scenario_name,
+          pgs.frequency_diff * 100 as deviation_pct,
+          pgs.leak_type,
+          pgs.leak_severity,
+          pgs.total_ev_loss_bb,
+          pgs.total_hands
    FROM player_gto_stats pgs
    JOIN gto_scenarios gs ON pgs.scenario_id = gs.scenario_id
-   WHERE pgs.player_name = 'Villain1'
+   WHERE pgs.player_name = 'snajd'
      AND ABS(pgs.frequency_diff) > 0.10  -- Deviation >10%
-     AND pgs.exploit_confidence >= 70
-   ORDER BY pgs.exploit_value_bb_100 DESC;
+     AND pgs.total_hands >= 10  -- Sufficient sample size
+   ORDER BY ABS(pgs.frequency_diff) DESC
+   LIMIT 10;
    ```
 
 **Interpreting Preflop GTO Frequencies:**
