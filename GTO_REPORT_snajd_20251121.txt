@@ -1,0 +1,168 @@
+====================================================================================================
+COMPREHENSIVE GTO REPORT: snajd
+====================================================================================================
+Generated: 2025-11-21 07:49:11
+
+====================================================================================================
+1. OVERALL GTO ADHERENCE
+====================================================================================================
+
+Total Scenarios Analyzed: 54
+Total Hands Analyzed: 1449
+Average Deviation from GTO: 16.9%
+Total EV Loss: 100.22 BB
+Avg EV Loss per Scenario: 1.86 BB
+
+Leak Severity Breakdown:
+  🔴 Major Leaks: 4
+  🟡 Moderate Leaks: 17
+  🟢 Minor Leaks: 13
+
+GTO Adherence Score: 66.3/100
+  Rating: ⭐⭐⭐⭐ Good
+
+
+====================================================================================================
+2. PREFLOP OPENING RANGES (RFI)
+====================================================================================================
+
+Position    Hands   Your %    GTO %     Diff      Assessment    EV Loss
+----------------------------------------------------------------------------------------------------
+🟢 UTG        133    31.6%    17.7%   +13.9%  Slightly Loose      9.26 BB
+🟡 MP          71    38.0%    21.8%   +16.2%       Too Loose      5.75 BB
+🟢 CO         114    36.0%    28.6%    +7.4%  Slightly Loose      4.21 BB
+🟢 BTN        102    49.0%    42.3%    +6.7%  Slightly Loose      3.44 BB
+🔴 SB          50    60.0%   100.0%   -40.0%       Too Tight     10.00 BB
+
+Key Insights:
+  • Your opening frequencies are relatively balanced
+
+
+====================================================================================================
+3. DEFENSE VS OPEN RAISES
+====================================================================================================
+
+Scenario                        Hands   Your %    GTO %     Diff       Leak Type
+----------------------------------------------------------------------------------------------------
+🟢 SB_vs_BTN_3bet                   47    21.3%    14.1%    +7.2%        over3bet
+🟡 SB_vs_BTN_call                   47    19.1%     3.1%   +16.0%        overcall
+🟡 SB_vs_BTN_fold                   47    59.6%    82.8%   -23.2%       underfold
+🟢 BB_vs_BTN_3bet                   43     9.3%    14.3%    -5.0%       under3bet
+🟢 BB_vs_BTN_call                   43    41.9%    29.0%   +12.9%        overcall
+🟢 BB_vs_BTN_fold                   43    48.8%    56.7%    -7.9%       underfold
+🟢 BTN_vs_CO_3bet                   33    15.2%    11.1%    +4.1%        over3bet
+🟡 BTN_vs_CO_call                   33    21.2%     5.5%   +15.7%        overcall
+🟡 BTN_vs_CO_fold                   33    63.6%    83.4%   -19.8%       underfold
+🟢 BB_vs_CO_3bet                    24     8.3%    10.0%    -1.6%       under3bet
+🟢 BB_vs_CO_call                    24    29.2%    22.9%    +6.2%        overcall
+🟢 BB_vs_CO_fold                    24    62.5%    67.1%    -4.6%       underfold
+🟢 BTN_vs_UTG_3bet                  24    12.5%     7.2%    +5.3%        over3bet
+🟡 BTN_vs_UTG_call                  24    25.0%     6.1%   +18.9%        overcall
+🟡 BTN_vs_UTG_fold                  24    62.5%    86.7%   -24.2%       underfold
+
+
+====================================================================================================
+4. 3BET AND 4BET SCENARIOS
+====================================================================================================
+
+  No significant 3bet/4bet data (need more hands)
+
+
+====================================================================================================
+5. TOP 10 BIGGEST LEAKS (BY EV LOSS)
+====================================================================================================
+
+1. 🔴 SB_open
+   Category: opening
+   Sample: 50 hands
+   Your Frequency: 60.0% | GTO: 100.0% | Deviation: -40.0%
+   Leak Type: tight
+   Total EV Loss: 10.00 BB | Avg per hand: 0.20 BB
+
+2. 🟢 UTG_open
+   Category: opening
+   Sample: 133 hands
+   Your Frequency: 31.6% | GTO: 17.7% | Deviation: +13.9%
+   Leak Type: loose
+   Total EV Loss: 9.26 BB | Avg per hand: 0.07 BB
+
+3. 🟡 MP_open
+   Category: opening
+   Sample: 71 hands
+   Your Frequency: 38.0% | GTO: 21.8% | Deviation: +16.2%
+   Leak Type: loose
+   Total EV Loss: 5.75 BB | Avg per hand: 0.08 BB
+
+4. 🟡 SB_vs_BTN_fold
+   Category: multiway
+   Sample: 47 hands
+   Your Frequency: 59.6% | GTO: 82.8% | Deviation: -23.2%
+   Leak Type: underfold
+   Total EV Loss: 5.46 BB | Avg per hand: 0.12 BB
+
+5. 🔴 BB_vs_UTG_fold
+   Category: defense
+   Sample: 22 hands
+   Your Frequency: 27.3% | GTO: 73.5% | Deviation: -46.3%
+   Leak Type: underfold
+   Total EV Loss: 5.09 BB | Avg per hand: 0.23 BB
+
+6. 🟢 CO_open
+   Category: opening
+   Sample: 114 hands
+   Your Frequency: 36.0% | GTO: 28.6% | Deviation: +7.4%
+   Leak Type: loose
+   Total EV Loss: 4.21 BB | Avg per hand: 0.04 BB
+
+7. 🟡 SB_vs_BTN_call
+   Category: multiway
+   Sample: 47 hands
+   Your Frequency: 19.1% | GTO: 3.1% | Deviation: +16.0%
+   Leak Type: overcall
+   Total EV Loss: 3.77 BB | Avg per hand: 0.08 BB
+
+8. 🟢 BTN_open
+   Category: opening
+   Sample: 102 hands
+   Your Frequency: 49.0% | GTO: 42.3% | Deviation: +6.7%
+   Leak Type: loose
+   Total EV Loss: 3.44 BB | Avg per hand: 0.03 BB
+
+9. 🟡 BTN_vs_CO_fold
+   Category: multiway
+   Sample: 33 hands
+   Your Frequency: 63.6% | GTO: 83.4% | Deviation: -19.8%
+   Leak Type: underfold
+   Total EV Loss: 3.26 BB | Avg per hand: 0.10 BB
+
+10. 🟡 BB_vs_UTG_call
+   Category: defense
+   Sample: 22 hands
+   Your Frequency: 50.0% | GTO: 20.5% | Deviation: +29.5%
+   Leak Type: overcall
+   Total EV Loss: 3.25 BB | Avg per hand: 0.15 BB
+
+====================================================================================================
+6. RECOMMENDATIONS & EXPLOITS
+====================================================================================================
+
+🎯 Priority Fixes:
+
+1. SB_open
+   → You open 40% less than GTO
+   → ACTION: Open more hands, especially from late position
+   → EXPLOIT: Opponents steal your blinds too easily
+
+2. BB_vs_UTG_fold
+   → You fold 46% less than GTO
+   → ACTION: Fold more weak hands in this spot
+   → EXPLOIT: Opponents can bluff you more
+
+
+====================================================================================================
+END OF REPORT
+====================================================================================================
+
+💡 To improve: Focus on the top 3 leaks first, then work down the list.
+💡 Track progress by running this analysis again after 100+ hands.
+

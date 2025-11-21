@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Outlet, NavLink } from 'react-router-dom';
-import { LayoutDashboard, Upload, Users, MessageSquare, Target, Settings, Search, Menu, X, BookOpen } from 'lucide-react';
+import { LayoutDashboard, Upload, Users, MessageSquare, Target, Settings, Search, Menu, X, BookOpen, Crosshair } from 'lucide-react';
 import QuickLookupModal from './QuickLookupModal';
 
 const Layout = () => {
@@ -12,6 +12,7 @@ const Layout = () => {
     { to: '/upload', icon: Upload, label: 'Upload' },
     { to: '/players', icon: Users, label: 'Players' },
     { to: '/strategy', icon: Target, label: 'Strategy' },
+    { to: '/gto', icon: Crosshair, label: 'GTO Analysis' },
     { to: '/claude', icon: MessageSquare, label: 'Claude AI' },
     { to: '/glossary', icon: BookOpen, label: 'Stats Guide' },
     { to: '/settings', icon: Settings, label: 'Settings' },

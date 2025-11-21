@@ -464,6 +464,100 @@ async def list_scenarios(
     return [s.to_dict() for s in scenarios]
 
 
+@router.get("/dashboard/{player}")
+async def get_gto_dashboard(
+    player: str,
+    gto_service: GTOService = Depends(get_gto_service)
+):
+    """
+    Get comprehensive GTO dashboard data for a player.
+
+    Returns:
+    - Overall adherence score
+    - Top leaks
+    - Opening ranges analysis
+    - Defense stats
+    - Position-by-position breakdown
+    """
+    from backend.models.gto_models import PlayerGTOStats, GTOScenario
+    from sqlalchemy import func, desc
+
+    try:
+        # Get overall adherence
+        adherence = gto_service.get_player_gto_adherence(player, 'preflop')
+
+        # Get top 10 leaks
+        leaks = gto_service.get_player_leaks(
+            player_name=player,
+            min_hands=10,
+            sort_by='ev_loss',
+            street='preflop'
+        )[:10]
+
+        # Get opening ranges summary
+        opening_scenarios = gto_service.db.query(PlayerGTOStats, GTOScenario).join(
+            GTOScenario,
+            PlayerGTOStats.scenario_id == GTOScenario.scenario_id
+        ).filter(
+            PlayerGTOStats.player_name == player,
+            GTOScenario.scenario_name.like('%_open')
+        ).all()
+
+        opening_ranges = []
+        for stat, scenario in opening_scenarios:
+            position = scenario.scenario_name.replace('_open', '')
+            opening_ranges.append({
+                'position': position,
+                'total_hands': stat.total_hands,
+                'player_frequency': float(stat.player_frequency) * 100,
+                'gto_frequency': float(stat.gto_frequency) * 100,
+                'frequency_diff': float(stat.frequency_diff) * 100,
+                'leak_severity': stat.leak_severity,
+                'ev_loss_bb': float(stat.total_ev_loss_bb) if stat.total_ev_loss_bb else 0
+            })
+
+        # Sort by position order
+        position_order = {'UTG': 1, 'MP': 2, 'CO': 3, 'BTN': 4, 'SB': 5}
+        opening_ranges.sort(key=lambda x: position_order.get(x['position'], 99))
+
+        # Get defense stats summary
+        defense_scenarios = gto_service.db.query(PlayerGTOStats, GTOScenario).join(
+            GTOScenario,
+            PlayerGTOStats.scenario_id == GTOScenario.scenario_id
+        ).filter(
+            PlayerGTOStats.player_name == player,
+            GTOScenario.category == 'defense',
+            PlayerGTOStats.total_hands >= 10
+        ).order_by(desc(PlayerGTOStats.total_ev_loss_bb)).limit(10).all()
+
+        defense_stats = []
+        for stat, scenario in defense_scenarios:
+            defense_stats.append({
+                'scenario_name': scenario.scenario_name,
+                'total_hands': stat.total_hands,
+                'player_frequency': float(stat.player_frequency) * 100,
+                'gto_frequency': float(stat.gto_frequency) * 100,
+                'frequency_diff': float(stat.frequency_diff) * 100,
+                'leak_type': stat.leak_type,
+                'leak_severity': stat.leak_severity
+            })
+
+        return {
+            'player': player,
+            'adherence': adherence,
+            'opening_ranges': opening_ranges,
+            'defense_stats': defense_stats,
+            'top_leaks': leaks,
+            'timestamp': datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate dashboard: {str(e)}"
+        )
+
+
 @router.get("/health")
 async def health_check(gto_service: GTOService = Depends(get_gto_service)):
     """
