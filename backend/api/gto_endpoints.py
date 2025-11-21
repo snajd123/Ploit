@@ -479,7 +479,7 @@ async def get_gto_dashboard(
     - Defense stats
     - Position-by-position breakdown
     """
-    from backend.models.gto_models import PlayerGTOStats, GTOScenario
+    from backend.models.gto_models import PlayerGTOStat, GTOScenario
     from sqlalchemy import func, desc
 
     try:
@@ -495,11 +495,11 @@ async def get_gto_dashboard(
         )[:10]
 
         # Get opening ranges summary
-        opening_scenarios = gto_service.db.query(PlayerGTOStats, GTOScenario).join(
+        opening_scenarios = gto_service.db.query(PlayerGTOStat, GTOScenario).join(
             GTOScenario,
-            PlayerGTOStats.scenario_id == GTOScenario.scenario_id
+            PlayerGTOStat.scenario_id == GTOScenario.scenario_id
         ).filter(
-            PlayerGTOStats.player_name == player,
+            PlayerGTOStat.player_name == player,
             GTOScenario.scenario_name.like('%_open')
         ).all()
 
@@ -521,14 +521,14 @@ async def get_gto_dashboard(
         opening_ranges.sort(key=lambda x: position_order.get(x['position'], 99))
 
         # Get defense stats summary
-        defense_scenarios = gto_service.db.query(PlayerGTOStats, GTOScenario).join(
+        defense_scenarios = gto_service.db.query(PlayerGTOStat, GTOScenario).join(
             GTOScenario,
-            PlayerGTOStats.scenario_id == GTOScenario.scenario_id
+            PlayerGTOStat.scenario_id == GTOScenario.scenario_id
         ).filter(
-            PlayerGTOStats.player_name == player,
+            PlayerGTOStat.player_name == player,
             GTOScenario.category == 'defense',
-            PlayerGTOStats.total_hands >= 10
-        ).order_by(desc(PlayerGTOStats.total_ev_loss_bb)).limit(10).all()
+            PlayerGTOStat.total_hands >= 10
+        ).order_by(desc(PlayerGTOStat.total_ev_loss_bb)).limit(10).all()
 
         defense_stats = []
         for stat, scenario in defense_scenarios:
