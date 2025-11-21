@@ -235,8 +235,8 @@ def process_player_correct(db, player_name: str, limit: int = 1000) -> Dict:
 
             # Calculate relative deviation (% change from GTO)
             # Avoid division by zero - if GTO is 0, use absolute thresholds only
-            if gto_freq > 0.01:  # GTO frequency is at least 1%
-                relative_diff = abs_diff / gto_freq
+            if avg_gto_freq > 0.01:  # GTO frequency is at least 1%
+                relative_diff = abs_diff / avg_gto_freq
 
                 # Use relative thresholds for low-frequency actions (like 3-bets)
                 # Major: >40% relative deviation OR >30% absolute
