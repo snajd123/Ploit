@@ -365,8 +365,13 @@ async def quick_lookup(
         'three_bet_pct': player.three_bet_pct,
         'fold_to_three_bet_pct': player.fold_to_three_bet_pct,
         'cbet_flop_pct': player.cbet_flop_pct,
+        'cbet_turn_pct': player.cbet_turn_pct,
         'fold_to_cbet_flop_pct': player.fold_to_cbet_flop_pct,
-        'wtsd_pct': player.wtsd_pct
+        'fold_to_cbet_turn_pct': player.fold_to_cbet_turn_pct,
+        'wtsd_pct': player.wtsd_pct,
+        'wsd_pct': player.wsd_pct,
+        'af': player.af,
+        'raise_cbet_flop_pct': player.raise_cbet_flop_pct
     }
 
     # Get GTO-based exploits
@@ -376,6 +381,48 @@ async def quick_lookup(
     # Get traditional stats exploits (always get these as supplementary info)
     traditional_analysis = gto_service.compare_player_to_gto(player_stats=player_stats_dict)
     traditional_exploits = [d for d in traditional_analysis.get('deviations', []) if d.get('exploitable', False)]
+
+    # Generate strategy summary based on player type and key exploits
+    def generate_strategy_summary():
+        summary = []
+        player_type = player.player_type or "UNKNOWN"
+
+        # Overall approach based on player type
+        type_strategies = {
+            'TAG': "🎯 **Balanced approach required.** This solid player requires careful exploitation of specific leaks rather than broad strategies.",
+            'LAG': "🛡️ **Play defensively and trap.** Let them be aggressive, call with strong hands, and avoid getting into betting wars without premium holdings.",
+            'NIT': "💰 **Attack relentlessly.** Steal their blinds constantly, fold when they show aggression, and value bet thinly when they call.",
+            'CALLING_STATION': "💎 **Pure value betting.** Stop bluffing entirely. Only bet for value with strong hands. They'll pay you off with weak holdings.",
+            'MANIAC': "🎰 **Trap and call down.** Let them bet, call with medium strength hands, and wait for them to donate chips with air.",
+            'FISH': "🐟 **Exploit everything.** Multiple severe leaks to attack. Play aggressively and punish their mistakes."
+        }
+
+        summary.append(type_strategies.get(player_type, "⚡ **Exploit their tendencies.** Multiple exploitable patterns identified."))
+
+        # Add top 2-3 most critical exploits
+        all_devs = gto_exploits + traditional_exploits
+        if all_devs:
+            all_devs.sort(key=lambda x: (
+                abs(x.get('ev_loss', 0)) if x.get('is_gto_based') else x.get('abs_deviation', 0) / 10
+            ), reverse=True)
+
+            top_priorities = []
+            for dev in all_devs[:3]:
+                if dev.get('is_gto_based'):
+                    ev = abs(dev.get('ev_loss', 0))
+                    if ev > 1.5:
+                        top_priorities.append(f"• **{dev['exploit_direction']}** ({ev:.2f} BB/hand)")
+                else:
+                    if dev.get('abs_deviation', 0) > 20:
+                        top_priorities.append(f"• **{dev['exploit_direction']}** ({dev['deviation']:+.0f}%)")
+
+            if top_priorities:
+                summary.append("\n**Key Priorities:**")
+                summary.extend(top_priorities)
+
+        return "\n".join(summary)
+
+    strategy_summary = generate_strategy_summary()
 
     # Combine both types of exploits
     all_exploits = []
@@ -418,6 +465,7 @@ async def quick_lookup(
         'player_type': player.player_type,
         'total_hands': player.total_hands,
         'exploitability_index': player.exploitability_index,
+        'strategy_summary': strategy_summary,
         'key_stats': {
             'VPIP': f"{player.vpip_pct:.1f}%" if player.vpip_pct else "N/A",
             'PFR': f"{player.pfr_pct:.1f}%" if player.pfr_pct else "N/A",

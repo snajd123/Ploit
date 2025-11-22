@@ -203,6 +203,23 @@ const QuickLookupModal: React.FC<QuickLookupModalProps> = ({
                 </div>
               </div>
 
+              {/* Strategy Summary */}
+              {playerData.strategy_summary && (
+                <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl p-5 text-white shadow-lg">
+                  <div className="flex items-start gap-3">
+                    <div className="bg-white bg-opacity-20 p-2 rounded-lg flex-shrink-0">
+                      <Target className="w-5 h-5" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-bold text-lg mb-2">Game Plan</h4>
+                      <div className="text-sm leading-relaxed whitespace-pre-line opacity-95">
+                        {playerData.strategy_summary}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Key Stats Grid */}
               <div>
                 <div className="flex items-center gap-2 mb-3">
