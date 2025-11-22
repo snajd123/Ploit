@@ -153,25 +153,22 @@ def get_comprehensive_pool_analysis(
             GTOScenario.scenario_name,
             GTOScenario.position,
             GTOScenario.action,
-            GTOScenario.gto_frequency,
+            func.avg(PlayerGTOStat.gto_frequency).label("avg_gto_freq"),
             func.avg(PlayerGTOStat.player_frequency).label("avg_player_freq"),
-            func.avg(PlayerGTOStat.ev_loss).label("avg_ev_loss"),
+            func.avg(PlayerGTOStat.avg_ev_loss_bb).label("avg_ev_loss"),
             func.count(PlayerGTOStat.player_name).label("num_players"),
-            func.avg(
-                func.abs(PlayerGTOStat.player_frequency - GTOScenario.gto_frequency)
-            ).label("avg_deviation")
+            func.avg(func.abs(PlayerGTOStat.frequency_diff)).label("avg_deviation")
         ).join(
-            PlayerGTOStat, PlayerGTOStat.scenario_id == GTOScenario.id
+            PlayerGTOStat, PlayerGTOStat.scenario_id == GTOScenario.scenario_id
         ).group_by(
-            GTOScenario.id,
+            GTOScenario.scenario_id,
             GTOScenario.scenario_name,
             GTOScenario.position,
-            GTOScenario.action,
-            GTOScenario.gto_frequency
+            GTOScenario.action
         ).having(
-            func.avg(func.abs(PlayerGTOStat.player_frequency - GTOScenario.gto_frequency)) > 0.10
+            func.avg(func.abs(PlayerGTOStat.frequency_diff)) > 0.10
         ).order_by(
-            desc(func.avg(PlayerGTOStat.ev_loss))
+            desc(func.avg(PlayerGTOStat.avg_ev_loss_bb))
         ).limit(10).all()
 
         common_leaks = []
@@ -184,7 +181,7 @@ def get_comprehensive_pool_analysis(
                 position_action = leak.scenario_name
 
             # Determine exploit recommendation based on deviation
-            deviation = float(leak.avg_player_freq or 0) - float(leak.gto_frequency or 0)
+            deviation = float(leak.avg_player_freq or 0) - float(leak.avg_gto_freq or 0)
             if abs(deviation) < 0.1:
                 exploit = "Minor deviation - no major exploit"
             elif deviation > 0.3:
@@ -215,7 +212,7 @@ def get_comprehensive_pool_analysis(
                 "position": leak.position,
                 "action": leak.action,
                 "pool_frequency": float(leak.avg_player_freq or 0) * 100,
-                "gto_frequency": float(leak.gto_frequency or 0) * 100,
+                "gto_frequency": float(leak.avg_gto_freq or 0) * 100,
                 "deviation_percentage": abs(deviation) * 100,
                 "avg_ev_loss": float(leak.avg_ev_loss or 0),
                 "num_players_with_leak": leak.num_players,
@@ -245,13 +242,11 @@ def get_comprehensive_pool_analysis(
         # Get GTO stats grouped by position to see where pool is weakest
         positional_analysis = db.query(
             GTOScenario.position,
-            func.avg(
-                func.abs(PlayerGTOStat.player_frequency - GTOScenario.gto_frequency)
-            ).label("avg_deviation"),
-            func.avg(PlayerGTOStat.ev_loss).label("avg_ev_loss"),
+            func.avg(func.abs(PlayerGTOStat.frequency_diff)).label("avg_deviation"),
+            func.avg(PlayerGTOStat.avg_ev_loss_bb).label("avg_ev_loss"),
             func.count(func.distinct(PlayerGTOStat.player_name)).label("sample_size")
         ).join(
-            PlayerGTOStat, PlayerGTOStat.scenario_id == GTOScenario.id
+            PlayerGTOStat, PlayerGTOStat.scenario_id == GTOScenario.scenario_id
         ).filter(
             GTOScenario.position.in_(['UTG', 'MP', 'CO', 'BTN', 'SB', 'BB'])
         ).group_by(
