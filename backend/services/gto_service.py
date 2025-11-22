@@ -798,8 +798,8 @@ class GTOService:
             else:
                 continue  # Skip non-significant deviations
 
-                # Generate ACTIONABLE exploit recommendations
-                if stat_name == 'vpip_pct':
+            # Generate ACTIONABLE exploit recommendations
+            if stat_name == 'vpip_pct':
                     if deviation > 0:
                         exploit = f"Player enters {stat_value:.1f}% of pots (GTO: {gto_mid:.1f}%). ACTION: 3-bet them to 12BB with top 15% of hands. Iso-raise to 5BB with any Ace or King when they limp. They're playing trash hands - punish with aggression."
                         direction = "Too loose"
@@ -887,16 +887,16 @@ class GTOService:
                     exploit = f"Deviates {deviation:+.1f}% from GTO baseline."
                     direction = "Deviation"
 
-                deviations.append({
-                    'stat': stat_name,
-                    'player_value': stat_value,
-                    'gto_baseline': gto_mid,
-                    'deviation': deviation,
-                    'abs_deviation': abs_deviation,
-                    'exploitable': exploitable,
-                    'exploit_direction': direction,
-                    'exploit_recommendation': exploit,
-                    'severity': severity
-                })
+            deviations.append({
+                'stat': stat_name,
+                'player_value': stat_value,
+                'gto_baseline': gto_mid,
+                'deviation': deviation,
+                'abs_deviation': abs_deviation,
+                'exploitable': exploitable,
+                'exploit_direction': direction,
+                'exploit_recommendation': exploit,
+                'severity': severity
+            })
 
         return {'deviations': deviations}
