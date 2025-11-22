@@ -11,7 +11,7 @@ import logging
 from decimal import Decimal
 
 from ..database import get_db
-from ..models.database_models import PlayerStat
+from ..models.database_models import PlayerStatss
 from ..models.gto_models import PlayerGTOStat, GTOScenario
 
 logger = logging.getLogger(__name__)
@@ -57,19 +57,19 @@ def get_comprehensive_pool_analysis(
     try:
         # 1. Pool Overview Statistics
         pool_stats_query = db.query(
-            func.count(PlayerStat.player_name).label("total_players"),
-            func.avg(PlayerStat.vpip_pct).label("avg_vpip"),
-            func.avg(PlayerStat.pfr_pct).label("avg_pfr"),
-            func.avg(PlayerStat.three_bet_pct).label("avg_3bet"),
-            func.avg(PlayerStat.cbet_flop_pct).label("avg_cbet"),
-            func.avg(PlayerStat.fold_to_three_bet_pct).label("avg_fold_to_3bet"),
-            func.avg(PlayerStat.wtsd_pct).label("avg_wtsd"),
-            func.avg(PlayerStat.wsd_pct).label("avg_wsd"),
-            func.avg(PlayerStat.exploitability_index).label("avg_exploitability"),
-            func.avg(PlayerStat.pressure_vulnerability_score).label("avg_pressure_vulnerability"),
-            func.avg(PlayerStat.aggression_consistency_ratio).label("avg_aggression_consistency"),
-            func.sum(PlayerStat.total_hands).label("total_hands_in_database")
-        ).filter(PlayerStat.total_hands >= min_hands).first()
+            func.count(PlayerStatss.player_name).label("total_players"),
+            func.avg(PlayerStatss.vpip_pct).label("avg_vpip"),
+            func.avg(PlayerStatss.pfr_pct).label("avg_pfr"),
+            func.avg(PlayerStatss.three_bet_pct).label("avg_3bet"),
+            func.avg(PlayerStatss.cbet_flop_pct).label("avg_cbet"),
+            func.avg(PlayerStatss.fold_to_three_bet_pct).label("avg_fold_to_3bet"),
+            func.avg(PlayerStatss.wtsd_pct).label("avg_wtsd"),
+            func.avg(PlayerStatss.wsd_pct).label("avg_wsd"),
+            func.avg(PlayerStatss.exploitability_index).label("avg_exploitability"),
+            func.avg(PlayerStatss.pressure_vulnerability_score).label("avg_pressure_vulnerability"),
+            func.avg(PlayerStatss.aggression_consistency_ratio).label("avg_aggression_consistency"),
+            func.sum(PlayerStatss.total_hands).label("total_hands_in_database")
+        ).filter(PlayerStatss.total_hands >= min_hands).first()
 
         pool_overview = {
             "total_players": pool_stats_query.total_players or 0,
@@ -92,11 +92,11 @@ def get_comprehensive_pool_analysis(
 
         # 2. Player Type Distribution
         player_types = db.query(
-            PlayerStat.player_type,
-            func.count(PlayerStat.player_name).label("count")
+            PlayerStats.player_type,
+            func.count(PlayerStats.player_name).label("count")
         ).filter(
-            PlayerStat.total_hands >= min_hands
-        ).group_by(PlayerStat.player_type).all()
+            PlayerStats.total_hands >= min_hands
+        ).group_by(PlayerStats.player_type).all()
 
         type_distribution = {
             pt.player_type: pt.count for pt in player_types if pt.player_type
@@ -104,18 +104,18 @@ def get_comprehensive_pool_analysis(
 
         # 3. Top 10 Most Exploitable Players
         exploitable_players = db.query(
-            PlayerStat.player_name,
-            PlayerStat.player_type,
-            PlayerStat.exploitability_index,
-            PlayerStat.total_hands,
-            PlayerStat.vpip_pct,
-            PlayerStat.pfr_pct,
-            PlayerStat.pressure_vulnerability_score,
-            PlayerStat.value_bluff_imbalance_ratio
+            PlayerStats.player_name,
+            PlayerStats.player_type,
+            PlayerStats.exploitability_index,
+            PlayerStats.total_hands,
+            PlayerStats.vpip_pct,
+            PlayerStats.pfr_pct,
+            PlayerStats.pressure_vulnerability_score,
+            PlayerStats.value_bluff_imbalance_ratio
         ).filter(
-            PlayerStat.total_hands >= min_hands
+            PlayerStats.total_hands >= min_hands
         ).order_by(
-            desc(PlayerStat.exploitability_index)
+            desc(PlayerStats.exploitability_index)
         ).limit(10).all()
 
         top_exploitable = []
@@ -224,12 +224,12 @@ def get_comprehensive_pool_analysis(
 
         # 5. Aggression Patterns by Street
         aggression_by_street = db.query(
-            func.avg(PlayerStat.cbet_flop_pct).label("flop_aggression"),
-            func.avg(PlayerStat.cbet_turn_pct).label("turn_aggression"),
-            func.avg(PlayerStat.aggression_frequency).label("overall_aggression"),
-            func.avg(PlayerStat.aggression_factor).label("aggression_factor")
+            func.avg(PlayerStats.cbet_flop_pct).label("flop_aggression"),
+            func.avg(PlayerStats.cbet_turn_pct).label("turn_aggression"),
+            func.avg(PlayerStats.aggression_frequency).label("overall_aggression"),
+            func.avg(PlayerStats.aggression_factor).label("aggression_factor")
         ).filter(
-            PlayerStat.total_hands >= min_hands
+            PlayerStats.total_hands >= min_hands
         ).first()
 
         aggression_patterns = {
@@ -272,14 +272,14 @@ def get_comprehensive_pool_analysis(
 
         # 7. Profit Distribution
         profit_distribution = db.query(
-            func.count(case((PlayerStat.total_hands >= min_hands, 1))).label("total"),
+            func.count(case((PlayerStats.total_hands >= min_hands, 1))).label("total"),
             func.count(
-                case((and_(PlayerStat.total_hands >= min_hands,
-                          PlayerStat.wsd_pct > 55), 1))
+                case((and_(PlayerStats.total_hands >= min_hands,
+                          PlayerStats.wsd_pct > 55), 1))
             ).label("winners"),
             func.count(
-                case((and_(PlayerStat.total_hands >= min_hands,
-                          PlayerStat.wsd_pct <= 45), 1))
+                case((and_(PlayerStats.total_hands >= min_hands,
+                          PlayerStats.wsd_pct <= 45), 1))
             ).label("losers")
         ).first()
 
@@ -359,23 +359,23 @@ def get_quick_pool_summary(db: Session = Depends(get_db)) -> Dict[str, Any]:
     try:
         # Basic pool stats
         summary = db.query(
-            func.count(PlayerStat.player_name).label("total_players"),
-            func.avg(PlayerStat.exploitability_index).label("avg_exploitability"),
-            func.max(PlayerStat.exploitability_index).label("max_exploitability"),
-            func.avg(PlayerStat.vpip_pct).label("avg_vpip"),
-            func.avg(PlayerStat.pfr_pct).label("avg_pfr")
-        ).filter(PlayerStat.total_hands >= 100).first()
+            func.count(PlayerStats.player_name).label("total_players"),
+            func.avg(PlayerStats.exploitability_index).label("avg_exploitability"),
+            func.max(PlayerStats.exploitability_index).label("max_exploitability"),
+            func.avg(PlayerStats.vpip_pct).label("avg_vpip"),
+            func.avg(PlayerStats.pfr_pct).label("avg_pfr")
+        ).filter(PlayerStats.total_hands >= 100).first()
 
         # Most common player type
         most_common_type = db.query(
-            PlayerStat.player_type,
-            func.count(PlayerStat.player_name).label("count")
+            PlayerStats.player_type,
+            func.count(PlayerStats.player_name).label("count")
         ).filter(
-            PlayerStat.total_hands >= 100
+            PlayerStats.total_hands >= 100
         ).group_by(
-            PlayerStat.player_type
+            PlayerStats.player_type
         ).order_by(
-            desc(func.count(PlayerStat.player_name))
+            desc(func.count(PlayerStats.player_name))
         ).first()
 
         return {
