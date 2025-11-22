@@ -52,6 +52,133 @@ class ClaudeService:
         # Alternative: "claude-sonnet-4-5-20250929" for maximum intelligence
         self.model = "claude-haiku-4-5-20251001"
 
+    def _is_pool_analysis_query(self, query: str) -> bool:
+        """
+        Detect if a query is requesting comprehensive pool analysis.
+
+        Args:
+            query: SQL query string
+
+        Returns:
+            True if this is a pool analysis query
+        """
+        import re
+        query_lower = query.lower()
+
+        # Check for pool analysis indicators
+        pool_indicators = [
+            'pool_analysis_comprehensive',
+            'analyze.*pool',
+            'pool.*overview',
+            'comprehensive.*pool',
+            'player_stats.*avg.*exploitability',
+            'count.*player.*group by player_type',
+            'select.*from.*player_stats.*where.*total_hands'
+        ]
+
+        # Check if query is trying to get overall pool statistics
+        if ('avg(' in query_lower or 'count(' in query_lower) and 'player' in query_lower:
+            # Multiple aggregations on player_stats usually means pool analysis
+            if query_lower.count('avg(') >= 3 or query_lower.count('from player_stats') > 0:
+                if 'group by player_name' not in query_lower:  # Not individual player analysis
+                    return True
+
+        # Check for explicit pool analysis patterns
+        for pattern in pool_indicators:
+            if re.search(pattern, query_lower):
+                return True
+
+        return False
+
+    def _get_pool_analysis_data(self) -> Dict[str, Any]:
+        """
+        Get comprehensive pool analysis data using the optimized endpoint.
+
+        Returns:
+            Pool analysis data formatted as query results
+        """
+        try:
+            # Import the pool analysis function
+            from backend.api.pool_analysis_endpoints import get_comprehensive_pool_analysis
+
+            # Get the comprehensive analysis
+            analysis_data = get_comprehensive_pool_analysis(min_hands=100, db=self.db)
+
+            # Format as query result for Claude
+            # Create a flat structure that looks like query results
+            formatted_results = []
+
+            # Add pool overview as first row
+            formatted_results.append({
+                "analysis_type": "pool_overview",
+                "total_players": analysis_data["pool_overview"]["total_players"],
+                "avg_exploitability": analysis_data["pool_overview"]["average_composite_metrics"]["exploitability"],
+                "avg_vpip": analysis_data["pool_overview"]["average_stats"]["vpip"],
+                "avg_pfr": analysis_data["pool_overview"]["average_stats"]["pfr"],
+                "avg_3bet": analysis_data["pool_overview"]["average_stats"]["3bet"],
+                "pool_classification": analysis_data["summary"]["pool_classification"],
+                "overall_skill_level": analysis_data["summary"]["overall_skill_level"],
+                "best_exploit_angle": analysis_data["summary"]["best_exploit_angle"]
+            })
+
+            # Add player type distribution
+            for player_type, count in analysis_data["player_type_distribution"].items():
+                formatted_results.append({
+                    "analysis_type": "player_type_distribution",
+                    "player_type": player_type,
+                    "count": count
+                })
+
+            # Add top exploitable players
+            for player in analysis_data["top_exploitable_players"][:5]:
+                formatted_results.append({
+                    "analysis_type": "exploitable_player",
+                    "player_name": player["player_name"],
+                    "player_type": player["player_type"],
+                    "exploitability_index": player["exploitability_index"],
+                    "primary_weakness": player["primary_weakness"],
+                    "vpip": player["key_stats"]["vpip"],
+                    "pfr": player["key_stats"]["pfr"]
+                })
+
+            # Add common leaks
+            for leak in analysis_data["common_gto_leaks"][:5]:
+                formatted_results.append({
+                    "analysis_type": "common_leak",
+                    "scenario": leak["scenario"],
+                    "position": leak["position"],
+                    "pool_frequency": leak["pool_frequency"],
+                    "gto_frequency": leak["gto_frequency"],
+                    "deviation_percentage": leak["deviation_percentage"],
+                    "exploit_recommendation": leak["exploit_recommendation"]
+                })
+
+            # Add recommended exploits
+            for exploit in analysis_data["recommended_pool_exploits"]:
+                formatted_results.append({
+                    "analysis_type": "recommended_exploit",
+                    "weakness": exploit["weakness"],
+                    "exploit": exploit["exploit"],
+                    "expected_profit": exploit["expected_profit"]
+                })
+
+            logger.info(f"Pool analysis data prepared with {len(formatted_results)} result rows")
+
+            return {
+                "success": True,
+                "data": formatted_results,
+                "row_count": len(formatted_results),
+                "columns": list(formatted_results[0].keys()) if formatted_results else [],
+                "note": "Comprehensive pool analysis data (optimized query)"
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting pool analysis data: {str(e)}")
+            return {
+                "success": False,
+                "error": f"Failed to get pool analysis data: {str(e)}"
+            }
+
     def _clean_response_text(self, text: str) -> str:
         """
         Remove internal thinking tags from Claude's response.
@@ -422,6 +549,34 @@ Every GTO solution is categorized using a 3-level hierarchical system:
 
 **IMPORTANT:** When asked about specific players or exploits, ALWAYS check gto_solutions table to provide GTO-based deviation analysis. This transforms vague advice into precise, quantified exploit recommendations.
 
+## IMPORTANT: Pool Analysis Optimization
+
+**For Pool Analysis, use this optimized workflow:**
+
+Instead of making multiple individual queries, use ONE comprehensive query to get all pool data:
+
+```sql
+-- OPTIMAL: Get complete pool analysis in one query
+SELECT 'Use the pool_analysis_comprehensive endpoint instead!' as recommendation;
+-- This would normally require 6-10 separate queries
+```
+
+**Better approach - Query this special view that aggregates everything:**
+```sql
+-- Pool Analysis Super Query (contains all needed data)
+SELECT * FROM (
+    -- This represents the /pool-analysis/comprehensive endpoint data
+    -- Returns: pool_overview, player_type_distribution, top_exploitable_players,
+    -- common_gto_leaks, aggression_patterns, positional_tendencies, profit_distribution
+    VALUES ('See pool_analysis_comprehensive endpoint for complete data')
+) AS pool_data;
+```
+
+**When user asks for pool analysis, prioritize using:**
+1. Query multiple related tables in ONE joined query when possible
+2. Use CTEs (WITH clauses) to structure complex analysis
+3. Get all needed data upfront rather than iterative queries
+
 ## Query Guidelines
 
 1. **Always use the player_stats table** for player analysis - it contains all aggregated data
@@ -430,6 +585,7 @@ Every GTO solution is categorized using a 3-level hierarchical system:
 4. **Filter wisely** - Use WHERE clauses to narrow results
 5. **Sample size matters** - Check total_hands before drawing conclusions
 6. **Combine metrics** - Use traditional stats + composite metrics + GTO deviations for complete analysis
+7. **For Pool Analysis** - Try to get all data in minimal queries using JOINs and aggregations
 
 ## SQL Syntax Rules (CRITICAL!)
 
@@ -765,6 +921,12 @@ Remember: You're helping players make MORE MONEY by exploiting opponent weakness
                     "success": False,
                     "error": "Only SELECT queries are allowed for security reasons. Do not use COMMIT, BEGIN, ROLLBACK, or other transaction control statements."
                 }
+
+            # Special handling for pool analysis queries
+            # Detect if this is a comprehensive pool analysis request
+            if self._is_pool_analysis_query(cleaned_query):
+                logger.info("Detected pool analysis query, using optimized endpoint")
+                return self._get_pool_analysis_data()
 
             # Execute query
             result = self.db.execute(text(cleaned_query))
