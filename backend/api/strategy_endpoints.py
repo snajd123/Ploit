@@ -83,16 +83,19 @@ async def generate_pre_game_strategy(
                 'exploitability_index': hero_player.exploitability_index
             }
 
-            # Get hero's deviations from GTO
-            hero_analysis = gto_service.compare_player_to_gto({
-                'vpip_pct': hero_player.vpip_pct,
-                'pfr_pct': hero_player.pfr_pct,
-                'three_bet_pct': hero_player.three_bet_pct,
-                'fold_to_three_bet_pct': hero_player.fold_to_three_bet_pct,
-                'cbet_flop_pct': hero_player.cbet_flop_pct,
-                'fold_to_cbet_flop_pct': hero_player.fold_to_cbet_flop_pct,
-                'wtsd_pct': hero_player.wtsd_pct
-            })
+            # Get hero's deviations from GTO using REAL GTO data
+            hero_analysis = gto_service.compare_player_to_gto(
+                player_name=request.hero_name,  # Pass hero name for real GTO data
+                player_stats={  # Fallback traditional stats if no GTO data
+                    'vpip_pct': hero_player.vpip_pct,
+                    'pfr_pct': hero_player.pfr_pct,
+                    'three_bet_pct': hero_player.three_bet_pct,
+                    'fold_to_three_bet_pct': hero_player.fold_to_three_bet_pct,
+                    'cbet_flop_pct': hero_player.cbet_flop_pct,
+                    'fold_to_cbet_flop_pct': hero_player.fold_to_cbet_flop_pct,
+                    'wtsd_pct': hero_player.wtsd_pct
+                }
+            )
 
     # Analyze each opponent
     for opponent_name in request.opponent_names:
@@ -112,20 +115,27 @@ async def generate_pre_game_strategy(
             ))
             continue
 
-        # Get exploit analysis
-        analysis = gto_service.compare_player_to_gto({
-            'vpip_pct': player.vpip_pct,
-            'pfr_pct': player.pfr_pct,
-            'three_bet_pct': player.three_bet_pct,
-            'fold_to_three_bet_pct': player.fold_to_three_bet_pct,
-            'cbet_flop_pct': player.cbet_flop_pct,
-            'fold_to_cbet_flop_pct': player.fold_to_cbet_flop_pct,
-            'wtsd_pct': player.wtsd_pct
-        })
+        # Get exploit analysis using REAL GTO data
+        analysis = gto_service.compare_player_to_gto(
+            player_name=opponent_name,  # Pass player name for real GTO data lookup
+            player_stats={  # Fallback traditional stats if no GTO data
+                'vpip_pct': player.vpip_pct,
+                'pfr_pct': player.pfr_pct,
+                'three_bet_pct': player.three_bet_pct,
+                'fold_to_three_bet_pct': player.fold_to_three_bet_pct,
+                'cbet_flop_pct': player.cbet_flop_pct,
+                'fold_to_cbet_flop_pct': player.fold_to_cbet_flop_pct,
+                'wtsd_pct': player.wtsd_pct
+            }
+        )
 
-        # Get top 3 exploits
+        # Get top 3 exploits (prioritize by EV loss if available, else by deviation)
         exploitable_devs = [d for d in analysis['deviations'] if d.get('exploitable', False)]
-        exploitable_devs.sort(key=lambda x: x['abs_deviation'], reverse=True)
+        # Sort by EV loss if available (real GTO data), otherwise by absolute deviation
+        exploitable_devs.sort(
+            key=lambda x: x.get('ev_loss', x['abs_deviation']),
+            reverse=True
+        )
         top_3 = exploitable_devs[:3]
 
         top_exploit_strs = [

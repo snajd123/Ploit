@@ -648,17 +648,109 @@ class GTOService:
 
         return f"Frequency deviation of {freq_diff*100:.1f}% in {scenario.scenario_name}"
 
-    def compare_player_to_gto(self, player_stats: Dict[str, Optional[float]]) -> Dict:
+    def compare_player_to_gto(self, player_name: Optional[str] = None, player_stats: Optional[Dict[str, Optional[float]]] = None) -> Dict:
         """
-        Compare player statistics to GTO baseline values.
+        Compare player to GTO using REAL GTO data from player_gto_stats table.
 
         Args:
-            player_stats: Dictionary with keys like vpip_pct, pfr_pct, three_bet_pct, etc.
+            player_name: Player name to look up in player_gto_stats
+            player_stats: Traditional stats as fallback (vpip_pct, pfr_pct, etc.)
 
         Returns:
             Dictionary with 'deviations' list containing exploitable tendencies
         """
-        # GTO baseline ranges for common stats
+        deviations = []
+
+        # First, try to get REAL GTO data from player_gto_stats
+        if player_name:
+            # Query actual GTO deviations from database
+            gto_stats = self.db.query(PlayerGTOStat, GTOScenario).join(
+                GTOScenario,
+                PlayerGTOStat.scenario_id == GTOScenario.scenario_id
+            ).filter(
+                PlayerGTOStat.player_name == player_name,
+                PlayerGTOStat.total_hands >= 10,  # Minimum sample size
+                PlayerGTOStat.leak_severity.in_(['minor', 'moderate', 'major', 'critical'])
+            ).order_by(
+                PlayerGTOStat.total_ev_loss_bb.desc()  # Sort by EV loss (most costly first)
+            ).limit(10).all()
+
+            # Convert GTO stats to deviations format
+            for stat, scenario in gto_stats:
+                # Determine exploit direction based on leak type
+                if stat.leak_type:
+                    if 'over' in stat.leak_type.lower():
+                        if 'fold' in stat.leak_type:
+                            direction = "Over-folding"
+                        elif '3bet' in stat.leak_type:
+                            direction = "Over-3betting"
+                        elif 'call' in stat.leak_type:
+                            direction = "Over-calling"
+                        else:
+                            direction = "Over-" + scenario.action if scenario.action else "Over-acting"
+                    elif 'under' in stat.leak_type.lower():
+                        if 'fold' in stat.leak_type:
+                            direction = "Under-folding"
+                        elif '3bet' in stat.leak_type:
+                            direction = "Under-3betting"
+                        elif 'call' in stat.leak_type:
+                            direction = "Under-calling"
+                        else:
+                            direction = "Under-" + scenario.action if scenario.action else "Under-acting"
+                    else:
+                        direction = stat.leak_type.replace('_', ' ').title()
+                else:
+                    direction = "Deviation"
+
+                # Build exploit recommendation
+                position = scenario.position or ""
+                opponent = scenario.opponent_position or ""
+                action = scenario.action or ""
+
+                # Create specific exploit based on scenario
+                if stat.frequency_diff > 0.1:  # Over-doing the action
+                    if action == 'open':
+                        exploit = f"Opens too wide from {position} ({stat.player_frequency*100:.1f}% vs GTO {stat.gto_frequency*100:.1f}%). Exploit: 3-bet more, defend wider."
+                    elif action == '3bet':
+                        exploit = f"3-bets too much {position} vs {opponent} ({stat.player_frequency*100:.1f}% vs GTO {stat.gto_frequency*100:.1f}%). Exploit: Call/4-bet lighter."
+                    elif action == 'fold':
+                        exploit = f"Folds too much {position} vs {opponent} ({stat.player_frequency*100:.1f}% vs GTO {stat.gto_frequency*100:.1f}%). Exploit: Bet/raise more."
+                    else:
+                        exploit = f"{scenario.scenario_name}: {stat.player_frequency*100:.1f}% vs GTO {stat.gto_frequency*100:.1f}%. Costs {stat.total_ev_loss_bb:.1f}BB"
+                elif stat.frequency_diff < -0.1:  # Under-doing the action
+                    if action == 'open':
+                        exploit = f"Too tight from {position} ({stat.player_frequency*100:.1f}% vs GTO {stat.gto_frequency*100:.1f}%). Exploit: Steal more, pressure blinds."
+                    elif action == '3bet':
+                        exploit = f"Doesn't 3-bet enough {position} vs {opponent} ({stat.player_frequency*100:.1f}% vs GTO {stat.gto_frequency*100:.1f}%). Exploit: Open wider, flat 3-bets."
+                    elif action == 'fold':
+                        exploit = f"Doesn't fold enough {position} vs {opponent} ({stat.player_frequency*100:.1f}% vs GTO {stat.gto_frequency*100:.1f}%). Exploit: Value bet only."
+                    else:
+                        exploit = f"{scenario.scenario_name}: {stat.player_frequency*100:.1f}% vs GTO {stat.gto_frequency*100:.1f}%. Costs {stat.total_ev_loss_bb:.1f}BB"
+                else:
+                    exploit = f"Small deviation in {scenario.scenario_name}. Costs {stat.total_ev_loss_bb:.1f}BB"
+
+                deviations.append({
+                    'stat': scenario.scenario_name,
+                    'player_value': stat.player_frequency * 100,
+                    'gto_baseline': stat.gto_frequency * 100,
+                    'deviation': stat.frequency_diff * 100,
+                    'abs_deviation': abs(stat.frequency_diff * 100),
+                    'ev_loss': stat.total_ev_loss_bb,
+                    'exploitable': True,
+                    'exploit_direction': direction,
+                    'exploit_recommendation': exploit,
+                    'is_gto_based': True  # Flag to indicate this is from real GTO data
+                })
+
+        # If we got real GTO data, return it (skip hardcoded ranges)
+        if deviations:
+            return {'deviations': deviations}
+
+        # Fallback to hardcoded ranges if no GTO data or no player_name
+        if not player_stats:
+            return {'deviations': []}
+
+        # Original hardcoded GTO ranges (fallback)
         gto_ranges = {
             'vpip_pct': (20, 28),
             'pfr_pct': (15, 22),
