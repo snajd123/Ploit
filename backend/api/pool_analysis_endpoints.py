@@ -11,7 +11,7 @@ import logging
 from decimal import Decimal
 
 from ..database import get_db
-from ..models.database_models import PlayerStatss
+from ..models.database_models import PlayerStats
 from ..models.gto_models import PlayerGTOStat, GTOScenario
 
 logger = logging.getLogger(__name__)
