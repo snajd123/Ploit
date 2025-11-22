@@ -223,19 +223,27 @@ def get_comprehensive_pool_analysis(
         aggression_by_street = db.query(
             func.avg(PlayerStats.cbet_flop_pct).label("flop_aggression"),
             func.avg(PlayerStats.cbet_turn_pct).label("turn_aggression"),
-            func.avg(PlayerStats.aggression_frequency).label("overall_aggression"),
-            func.avg(PlayerStats.aggression_factor).label("aggression_factor")
+            func.avg(PlayerStats.cbet_river_pct).label("river_aggression"),
+            func.avg(PlayerStats.aggression_consistency_ratio).label("aggression_consistency")
         ).filter(
             PlayerStats.total_hands >= min_hands
         ).first()
 
+        # Calculate overall aggression as average of street c-bets
+        avg_cbet = (
+            float(aggression_by_street.flop_aggression or 0) +
+            float(aggression_by_street.turn_aggression or 0) +
+            float(aggression_by_street.river_aggression or 0)
+        ) / 3
+
         aggression_patterns = {
             "flop_cbet": float(aggression_by_street.flop_aggression or 0),
             "turn_cbet": float(aggression_by_street.turn_aggression or 0),
-            "overall_aggression": float(aggression_by_street.overall_aggression or 0),
-            "aggression_factor": float(aggression_by_street.aggression_factor or 0),
-            "tendency": "Aggressive" if (aggression_by_street.overall_aggression or 0) > 35 else
-                       "Passive" if (aggression_by_street.overall_aggression or 0) < 25 else "Balanced"
+            "river_cbet": float(aggression_by_street.river_aggression or 0),
+            "overall_aggression": avg_cbet,
+            "aggression_consistency": float(aggression_by_street.aggression_consistency or 0),
+            "tendency": "Aggressive" if avg_cbet > 60 else
+                       "Passive" if avg_cbet < 45 else "Balanced"
         }
 
         # 6. Positional Play Analysis
