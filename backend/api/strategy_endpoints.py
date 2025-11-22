@@ -358,24 +358,38 @@ async def quick_lookup(
 
     gto_service = GTOService(db)
 
-    # Get exploit analysis
-    analysis = gto_service.compare_player_to_gto({
-        'vpip_pct': player.vpip_pct,
-        'pfr_pct': player.pfr_pct,
-        'three_bet_pct': player.three_bet_pct,
-        'fold_to_three_bet_pct': player.fold_to_three_bet_pct,
-        'cbet_flop_pct': player.cbet_flop_pct,
-        'fold_to_cbet_flop_pct': player.fold_to_cbet_flop_pct,
-        'wtsd_pct': player.wtsd_pct
-    })
+    # Get exploit analysis using REAL GTO data
+    analysis = gto_service.compare_player_to_gto(
+        player_name=player_name,
+        player_stats={
+            'vpip_pct': player.vpip_pct,
+            'pfr_pct': player.pfr_pct,
+            'three_bet_pct': player.three_bet_pct,
+            'fold_to_three_bet_pct': player.fold_to_three_bet_pct,
+            'cbet_flop_pct': player.cbet_flop_pct,
+            'fold_to_cbet_flop_pct': player.fold_to_cbet_flop_pct,
+            'wtsd_pct': player.wtsd_pct
+        }
+    )
 
-    # Get top 5 exploits
+    # Get top 5 exploits sorted by EV loss (GTO-based) or deviation (fallback)
     exploitable_devs = [d for d in analysis['deviations'] if d.get('exploitable', False)]
-    exploitable_devs.sort(key=lambda x: x['abs_deviation'], reverse=True)
+
+    # Sort by EV loss if GTO-based, otherwise by deviation
+    if exploitable_devs and exploitable_devs[0].get('is_gto_based', False):
+        exploitable_devs.sort(key=lambda x: abs(x.get('ev_loss', 0)), reverse=True)
+    else:
+        exploitable_devs.sort(key=lambda x: x['abs_deviation'], reverse=True)
+
     top_5 = exploitable_devs[:5]
 
     # Helper function to get explicit exploitation strategy
     def get_explicit_exploit(dev):
+        # If this is GTO-based data, use the detailed exploit recommendation
+        if dev.get('is_gto_based', False):
+            return dev.get('exploit_recommendation', dev.get('exploit_direction', 'No specific exploit'))
+
+        # Otherwise, use old hardcoded mapping for traditional stats
         stat = dev['stat']
         direction = dev['exploit_direction']
         deviation = dev['deviation']
@@ -419,6 +433,23 @@ async def quick_lookup(
 
         return strategy
 
+    # Helper function to determine severity from GTO data
+    def get_severity(dev):
+        if dev.get('is_gto_based', False):
+            # For GTO-based, use EV loss to determine severity
+            ev_loss = abs(dev.get('ev_loss', 0))
+            if ev_loss > 2.0:
+                return 'critical'
+            elif ev_loss > 1.0:
+                return 'major'
+            elif ev_loss > 0.5:
+                return 'moderate'
+            else:
+                return 'minor'
+        else:
+            # For traditional stats, use existing severity
+            return dev.get('severity', 'moderate')
+
     return {
         'player_name': player_name,
         'player_type': player.player_type,
@@ -440,7 +471,9 @@ async def quick_lookup(
                 'stat': dev['stat'],
                 'exploit': get_explicit_exploit(dev),
                 'deviation': f"{dev['deviation']:+.1f}%",
-                'severity': dev['severity']
+                'severity': get_severity(dev),
+                'ev_loss': f"{dev.get('ev_loss', 0):.2f} BB" if dev.get('is_gto_based', False) else None,
+                'is_gto_based': dev.get('is_gto_based', False)
             }
             for dev in top_5
         ],
