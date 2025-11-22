@@ -358,30 +358,37 @@ async def quick_lookup(
 
     gto_service = GTOService(db)
 
-    # Get exploit analysis using REAL GTO data
-    analysis = gto_service.compare_player_to_gto(
-        player_name=player_name,
-        player_stats={
-            'vpip_pct': player.vpip_pct,
-            'pfr_pct': player.pfr_pct,
-            'three_bet_pct': player.three_bet_pct,
-            'fold_to_three_bet_pct': player.fold_to_three_bet_pct,
-            'cbet_flop_pct': player.cbet_flop_pct,
-            'fold_to_cbet_flop_pct': player.fold_to_cbet_flop_pct,
-            'wtsd_pct': player.wtsd_pct
-        }
-    )
+    # Get BOTH GTO exploits AND traditional stats exploits
+    player_stats_dict = {
+        'vpip_pct': player.vpip_pct,
+        'pfr_pct': player.pfr_pct,
+        'three_bet_pct': player.three_bet_pct,
+        'fold_to_three_bet_pct': player.fold_to_three_bet_pct,
+        'cbet_flop_pct': player.cbet_flop_pct,
+        'fold_to_cbet_flop_pct': player.fold_to_cbet_flop_pct,
+        'wtsd_pct': player.wtsd_pct
+    }
 
-    # Get top 5 exploits sorted by EV loss (GTO-based) or deviation (fallback)
-    exploitable_devs = [d for d in analysis['deviations'] if d.get('exploitable', False)]
+    # Get GTO-based exploits
+    gto_analysis = gto_service.compare_player_to_gto(player_name=player_name)
+    gto_exploits = [d for d in gto_analysis.get('deviations', []) if d.get('exploitable', False)]
 
-    # Sort by EV loss if GTO-based, otherwise by deviation
-    if exploitable_devs and exploitable_devs[0].get('is_gto_based', False):
-        exploitable_devs.sort(key=lambda x: abs(x.get('ev_loss', 0)), reverse=True)
-    else:
-        exploitable_devs.sort(key=lambda x: x['abs_deviation'], reverse=True)
+    # Get traditional stats exploits (always get these as supplementary info)
+    traditional_analysis = gto_service.compare_player_to_gto(player_stats=player_stats_dict)
+    traditional_exploits = [d for d in traditional_analysis.get('deviations', []) if d.get('exploitable', False)]
 
-    top_5 = exploitable_devs[:5]
+    # Combine both types of exploits
+    all_exploits = []
+
+    # Add top GTO exploits (sorted by EV loss)
+    gto_exploits.sort(key=lambda x: abs(x.get('ev_loss', 0)), reverse=True)
+    all_exploits.extend(gto_exploits[:5])  # Top 5 GTO exploits
+
+    # Add top traditional exploits (sorted by deviation)
+    traditional_exploits.sort(key=lambda x: x['abs_deviation'], reverse=True)
+    all_exploits.extend(traditional_exploits[:3])  # Top 3 traditional exploits
+
+    top_exploits = all_exploits[:8]  # Total of 8 exploits max
 
     # Helper function to get explicit exploitation strategy
     def get_explicit_exploit(dev):
@@ -475,7 +482,9 @@ async def quick_lookup(
                 'ev_loss': f"{dev.get('ev_loss', 0):.2f} BB" if dev.get('is_gto_based', False) else None,
                 'is_gto_based': dev.get('is_gto_based', False)
             }
-            for dev in top_5
+            for dev in top_exploits
         ],
-        'total_ev': analysis.get('total_estimated_ev', 0)
+        'gto_exploit_count': len(gto_exploits),
+        'traditional_exploit_count': len(traditional_exploits),
+        'total_ev': sum(abs(e.get('ev_loss', 0)) for e in gto_exploits)
     }
