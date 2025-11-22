@@ -761,8 +761,13 @@ class GTOService:
             'three_bet_pct': (5, 9),
             'fold_to_three_bet_pct': (55, 65),
             'cbet_flop_pct': (50, 70),
+            'cbet_turn_pct': (40, 55),
             'fold_to_cbet_flop_pct': (40, 50),
-            'wtsd_pct': (25, 35)
+            'fold_to_cbet_turn_pct': (45, 55),
+            'wtsd_pct': (25, 35),
+            'wsd_pct': (48, 54),
+            'af': (1.5, 3.0),
+            'raise_cbet_flop_pct': (8, 15)
         }
 
         deviations = []
@@ -780,9 +785,18 @@ class GTOService:
             deviation = stat_value - gto_mid
             abs_deviation = abs(deviation)
 
-            # Only flag significant deviations (>10% from GTO midpoint)
-            if abs_deviation > 10:
+            # Classify deviation severity
+            if abs_deviation > 25:
                 exploitable = True
+                severity = 'major'
+            elif abs_deviation > 15:
+                exploitable = True
+                severity = 'moderate'
+            elif abs_deviation > 10:
+                exploitable = True
+                severity = 'minor'
+            else:
+                continue  # Skip non-significant deviations
 
                 # Generate ACTIONABLE exploit recommendations
                 if stat_name == 'vpip_pct':
@@ -827,6 +841,20 @@ class GTOService:
                     else:
                         exploit = f"Player only folds to c-bets {stat_value:.1f}% (GTO: {gto_mid:.1f}%). ACTION: Only c-bet with top pair or better. Check-fold missed flops. They never fold - stop bluffing entirely."
                         direction = "Sticky to c-bets"
+                elif stat_name == 'cbet_turn_pct':
+                    if deviation > 0:
+                        exploit = f"Player c-bets turn {stat_value:.1f}% (GTO: {gto_mid:.1f}%). ACTION: Float flop in position, raise turn c-bet to 2.5x with bluffs. They barrel too much - punish with aggression."
+                        direction = "Over-barreling"
+                    else:
+                        exploit = f"Player only c-bets turn {stat_value:.1f}% (GTO: {gto_mid:.1f}%). ACTION: Donk bet turn when they check. They gave up after flop c-bet - steal pots immediately."
+                        direction = "Gives up on turn"
+                elif stat_name == 'fold_to_cbet_turn_pct':
+                    if deviation > 0:
+                        exploit = f"Player folds to turn c-bets {stat_value:.1f}% (GTO: {gto_mid:.1f}%). ACTION: Double barrel 100% of turns with air. Bet 50% pot - they fold too easily."
+                        direction = "Folds to barrels"
+                    else:
+                        exploit = f"Player only folds to turn c-bets {stat_value:.1f}% (GTO: {gto_mid:.1f}%). ACTION: Only barrel turn with strong hands. Give up with air after flop c-bet."
+                        direction = "Sticky on turns"
                 elif stat_name == 'wtsd_pct':
                     if deviation > 0:
                         exploit = f"Player goes to showdown {stat_value:.1f}% (GTO: {gto_mid:.1f}%). ACTION: Value bet 50% pot with any pair on all three streets. Never bluff. They call with ace-high - value bet relentlessly."
@@ -834,6 +862,27 @@ class GTOService:
                     else:
                         exploit = f"Player only goes to showdown {stat_value:.1f}% (GTO: {gto_mid:.1f}%). ACTION: Triple barrel bluff with any missed draw. Bet 150% pot on rivers. They fold everything except the nuts."
                         direction = "Over-folding"
+                elif stat_name == 'wsd_pct':
+                    if deviation > 0:
+                        exploit = f"Player wins at showdown {stat_value:.1f}% (GTO: {gto_mid:.1f}%). ACTION: Avoid calling them down light. They're not bluffing enough - only pay them off with strong hands."
+                        direction = "Value-heavy"
+                    else:
+                        exploit = f"Player only wins at showdown {stat_value:.1f}% (GTO: {gto_mid:.1f}%). ACTION: Call them down lighter. Bluff-catch with ace-high. They're getting to showdown with garbage."
+                        direction = "Bluff-heavy"
+                elif stat_name == 'af':
+                    if deviation > 0:
+                        exploit = f"Player aggression factor {stat_value:.2f} (GTO: {gto_mid:.2f}). ACTION: Let them bet, then check-raise. Slow-play strong hands. They're too aggressive - trap them."
+                        direction = "Over-aggressive"
+                    else:
+                        exploit = f"Player aggression factor {stat_value:.2f} (GTO: {gto_mid:.2f}). ACTION: Bet when they check. Don't slow-play. They're passive - value bet everything."
+                        direction = "Too passive"
+                elif stat_name == 'raise_cbet_flop_pct':
+                    if deviation > 0:
+                        exploit = f"Player raises c-bets {stat_value:.1f}% (GTO: {gto_mid:.1f}%). ACTION: Check-fold weak hands. 3-bet the raise with strong hands only. They're not bluffing."
+                        direction = "Raises c-bets often"
+                    else:
+                        exploit = f"Player rarely raises c-bets ({stat_value:.1f}%, GTO: {gto_mid:.1f}%). ACTION: C-bet full range. When they do raise, fold unless you have the nuts."
+                        direction = "Never raises c-bets"
                 else:
                     exploit = f"Deviates {deviation:+.1f}% from GTO baseline."
                     direction = "Deviation"
@@ -846,7 +895,8 @@ class GTOService:
                     'abs_deviation': abs_deviation,
                     'exploitable': exploitable,
                     'exploit_direction': direction,
-                    'exploit_recommendation': exploit
+                    'exploit_recommendation': exploit,
+                    'severity': severity
                 })
 
         return {'deviations': deviations}
