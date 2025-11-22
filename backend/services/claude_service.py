@@ -119,8 +119,10 @@ class ClaudeService:
             while iteration < max_iterations:
                 has_tool_call = False
 
+                # Process all blocks in current response
                 for block in current_response.content:
                     if block.type == "text":
+                        # Add text to final output
                         final_text += self._clean_response_text(block.text)
                     elif block.type == "tool_use":
                         has_tool_call = True
@@ -168,6 +170,14 @@ class ClaudeService:
                             messages=messages
                         )
 
+                        # Log what Claude responded with after receiving tool results
+                        logger.info(f"Followup response has {len(current_response.content)} blocks")
+                        for idx, block in enumerate(current_response.content):
+                            if block.type == "text":
+                                logger.info(f"Block {idx}: Text with {len(block.text)} chars")
+                            elif block.type == "tool_use":
+                                logger.info(f"Block {idx}: Tool use ({block.name})")
+
                         # Update final_response to track the last response for usage stats
                         final_response = current_response
                         break  # Exit for loop to process new response
@@ -177,6 +187,15 @@ class ClaudeService:
                     break
 
                 iteration += 1
+
+            # After all iterations, make sure we captured any remaining text
+            # This handles the case where Claude outputs analysis after all tool calls
+            if current_response != response:  # If we have a different response than initial
+                for block in current_response.content:
+                    if block.type == "text" and block.text not in final_text:
+                        # Add any text we haven't captured yet
+                        final_text += self._clean_response_text(block.text)
+                        logger.info(f"Added final text block: {len(block.text)} chars")
 
             return {
                 "success": True,
