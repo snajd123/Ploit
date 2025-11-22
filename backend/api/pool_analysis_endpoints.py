@@ -57,19 +57,19 @@ def get_comprehensive_pool_analysis(
     try:
         # 1. Pool Overview Statistics
         pool_stats_query = db.query(
-            func.count(PlayerStatss.player_name).label("total_players"),
-            func.avg(PlayerStatss.vpip_pct).label("avg_vpip"),
-            func.avg(PlayerStatss.pfr_pct).label("avg_pfr"),
-            func.avg(PlayerStatss.three_bet_pct).label("avg_3bet"),
-            func.avg(PlayerStatss.cbet_flop_pct).label("avg_cbet"),
-            func.avg(PlayerStatss.fold_to_three_bet_pct).label("avg_fold_to_3bet"),
-            func.avg(PlayerStatss.wtsd_pct).label("avg_wtsd"),
-            func.avg(PlayerStatss.wsd_pct).label("avg_wsd"),
-            func.avg(PlayerStatss.exploitability_index).label("avg_exploitability"),
-            func.avg(PlayerStatss.pressure_vulnerability_score).label("avg_pressure_vulnerability"),
-            func.avg(PlayerStatss.aggression_consistency_ratio).label("avg_aggression_consistency"),
-            func.sum(PlayerStatss.total_hands).label("total_hands_in_database")
-        ).filter(PlayerStatss.total_hands >= min_hands).first()
+            func.count(PlayerStats.player_name).label("total_players"),
+            func.avg(PlayerStats.vpip_pct).label("avg_vpip"),
+            func.avg(PlayerStats.pfr_pct).label("avg_pfr"),
+            func.avg(PlayerStats.three_bet_pct).label("avg_3bet"),
+            func.avg(PlayerStats.cbet_flop_pct).label("avg_cbet"),
+            func.avg(PlayerStats.fold_to_three_bet_pct).label("avg_fold_to_3bet"),
+            func.avg(PlayerStats.wtsd_pct).label("avg_wtsd"),
+            func.avg(PlayerStats.wsd_pct).label("avg_wsd"),
+            func.avg(PlayerStats.exploitability_index).label("avg_exploitability"),
+            func.avg(PlayerStats.pressure_vulnerability_score).label("avg_pressure_vulnerability"),
+            func.avg(PlayerStats.aggression_consistency_ratio).label("avg_aggression_consistency"),
+            func.sum(PlayerStats.total_hands).label("total_hands_in_database")
+        ).filter(PlayerStats.total_hands >= min_hands).first()
 
         pool_overview = {
             "total_players": pool_stats_query.total_players or 0,
