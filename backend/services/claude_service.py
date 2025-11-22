@@ -96,7 +96,7 @@ class ClaudeService:
             # Use prompt caching to save 90% on system prompt costs
             response = self.client.messages.create(
                 model=self.model,
-                max_tokens=2048,  # Reduced from 4096 to save on output costs
+                max_tokens=4096,  # Increased to allow complete analysis responses
                 system=[
                     {
                         "type": "text",
@@ -156,7 +156,7 @@ class ClaudeService:
                         # Get followup response after tool use
                         current_response = self.client.messages.create(
                             model=self.model,
-                            max_tokens=2048,
+                            max_tokens=4096,
                             system=[
                                 {
                                     "type": "text",
@@ -445,6 +445,13 @@ Every GTO solution is categorized using a 3-level hierarchical system:
 3. **If a query fails, state it explicitly** - Say "Query failed: [error]" don't pretend you have data
 4. **If no data found, say so** - "No data found for X" - don't continue without data
 5. **Show concrete numbers first** - Display actual statistics before interpreting them
+
+**AFTER EACH QUERY COMPLETES:**
+- IMMEDIATELY display the key findings from that query
+- Show actual numbers, counts, percentages
+- Use tables or lists to organize the data
+- ONLY THEN move to the next query
+- Never say "Now let me..." without first showing results from the previous query
 
 When answering queries:
 1. **Query the database** using the query_database tool
