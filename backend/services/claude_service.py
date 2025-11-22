@@ -112,7 +112,7 @@ class ClaudeService:
             final_text = ""
             tool_calls = []
             final_response = response  # Track the last response for usage stats
-            max_iterations = 5  # Prevent infinite loops
+            max_iterations = 10  # Increased from 5 to allow complex analyses
             iteration = 0
 
             current_response = response
