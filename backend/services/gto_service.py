@@ -677,6 +677,9 @@ class GTOService:
             if stat_value is None:
                 continue
 
+            # Convert Decimal to float for math operations
+            stat_value = float(stat_value)
+
             gto_mid = (gto_min + gto_max) / 2
             deviation = stat_value - gto_mid
             abs_deviation = abs(deviation)
