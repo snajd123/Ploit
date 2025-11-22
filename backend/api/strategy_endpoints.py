@@ -138,8 +138,9 @@ async def generate_pre_game_strategy(
         )
         top_3 = exploitable_devs[:3]
 
+        # Use full exploit recommendations for actionable, precise instructions
         top_exploit_strs = [
-            f"{dev['stat']}: {dev['exploit_direction']} ({dev['deviation']:+.1f}%)"
+            dev['exploit_recommendation']
             for dev in top_3
         ]
 
