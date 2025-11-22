@@ -688,44 +688,59 @@ class GTOService:
             if abs_deviation > 10:
                 exploitable = True
 
-                # Generate exploit recommendation
+                # Generate exploit recommendation and direction
                 if stat_name == 'vpip_pct':
                     if deviation > 0:
                         exploit = f"Plays too many hands ({stat_value:.1f}% vs GTO {gto_mid:.1f}%). Exploit: 3-bet more, value bet thin."
+                        direction = "Too loose"
                     else:
                         exploit = f"Too tight ({stat_value:.1f}% vs GTO {gto_mid:.1f}%). Exploit: Steal their blinds, bluff more."
+                        direction = "Too tight"
                 elif stat_name == 'pfr_pct':
                     if deviation > 0:
                         exploit = f"Over-aggressive preflop ({stat_value:.1f}% vs GTO {gto_mid:.1f}%). Exploit: Call wider, trap with premiums."
+                        direction = "Over-aggressive"
                     else:
                         exploit = f"Passive preflop ({stat_value:.1f}% vs GTO {gto_mid:.1f}%). Exploit: Bet when checked to, barrel more."
+                        direction = "Too passive"
                 elif stat_name == 'three_bet_pct':
                     if deviation > 0:
                         exploit = f"3-bets too much ({stat_value:.1f}% vs GTO {gto_mid:.1f}%). Exploit: Call down lighter, 4-bet bluff."
+                        direction = "Over 3-betting"
                     else:
                         exploit = f"Doesn't 3-bet enough ({stat_value:.1f}% vs GTO {gto_mid:.1f}%). Exploit: Open wider, flat their 3-bets."
+                        direction = "Under 3-betting"
                 elif stat_name == 'fold_to_three_bet_pct':
                     if deviation > 0:
                         exploit = f"Folds to 3-bets too much ({stat_value:.1f}% vs GTO {gto_mid:.1f}%). Exploit: 3-bet them liberally."
+                        direction = "Folds too much"
                     else:
                         exploit = f"Doesn't fold to 3-bets enough ({stat_value:.1f}% vs GTO {gto_mid:.1f}%). Exploit: Value 3-bet, avoid bluffs."
+                        direction = "Sticky to 3-bets"
                 elif stat_name == 'cbet_flop_pct':
                     if deviation > 0:
                         exploit = f"C-bets too much ({stat_value:.1f}% vs GTO {gto_mid:.1f}%). Exploit: Float more, raise as bluff."
+                        direction = "Over c-betting"
                     else:
                         exploit = f"Doesn't c-bet enough ({stat_value:.1f}% vs GTO {gto_mid:.1f}%). Exploit: Bet when checked to."
+                        direction = "Under c-betting"
                 elif stat_name == 'fold_to_cbet_flop_pct':
                     if deviation > 0:
                         exploit = f"Folds to c-bets too much ({stat_value:.1f}% vs GTO {gto_mid:.1f}%). Exploit: C-bet bluff more."
+                        direction = "Folds to c-bets"
                     else:
                         exploit = f"Doesn't fold to c-bets enough ({stat_value:.1f}% vs GTO {gto_mid:.1f}%). Exploit: C-bet value hands only."
+                        direction = "Sticky to c-bets"
                 elif stat_name == 'wtsd_pct':
                     if deviation > 0:
                         exploit = f"Goes to showdown too much ({stat_value:.1f}% vs GTO {gto_mid:.1f}%). Exploit: Value bet thin, avoid bluffs."
+                        direction = "Station"
                     else:
                         exploit = f"Folds too much ({stat_value:.1f}% vs GTO {gto_mid:.1f}%). Exploit: Bluff more on all streets."
+                        direction = "Over-folding"
                 else:
                     exploit = f"Deviates {deviation:+.1f}% from GTO baseline."
+                    direction = "Deviation"
 
                 deviations.append({
                     'stat': stat_name,
@@ -734,6 +749,7 @@ class GTOService:
                     'deviation': deviation,
                     'abs_deviation': abs_deviation,
                     'exploitable': exploitable,
+                    'exploit_direction': direction,
                     'exploit_recommendation': exploit
                 })
 
