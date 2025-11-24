@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from ..database import get_db
 from ..models.gto_models import GTOScenario, PlayerGTOStat
 
-router = APIRouter(prefix="/gto", tags=["gto_browser"])
+router = APIRouter(prefix="/api/gto", tags=["gto_browser"])
 
 
 class ActionStep(BaseModel):
