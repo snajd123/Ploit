@@ -26,6 +26,8 @@ engine = create_engine(
     pool_size=settings.database_pool_size,
     max_overflow=settings.database_pool_max_overflow,
     pool_pre_ping=True,  # Verify connections before using
+    pool_recycle=300,  # Recycle connections after 5 minutes
+    pool_timeout=30,  # Wait up to 30 seconds for available connection
     echo=not settings.is_production  # Log SQL in development
 )
 

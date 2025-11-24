@@ -19,8 +19,8 @@ class Settings(BaseSettings):
 
     # Database Configuration
     database_url: str
-    database_pool_size: int = 10
-    database_pool_max_overflow: int = 20
+    database_pool_size: int = 2  # Reduced for Supabase Session mode limits
+    database_pool_max_overflow: int = 1  # Very limited overflow
 
     # Claude API
     anthropic_api_key: str
