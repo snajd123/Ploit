@@ -32,6 +32,42 @@ interface SessionStats {
   cbet_flop_pct: number;
 }
 
+interface GTOAnalysis {
+  session_id: number;
+  total_mistakes: number;
+  total_ev_loss_bb: number;
+  mistakes_by_street: Record<string, number>;
+  mistakes_by_severity: Record<string, number>;
+  biggest_mistakes: Array<{
+    hand_id: number;
+    street: string;
+    hero_hand: string;
+    action_taken: string;
+    gto_action: string;
+    ev_loss_bb: number;
+    mistake_severity: string;
+  }>;
+}
+
+interface OpponentAnalysis {
+  session_id: number;
+  opponents_analyzed: number;
+  opponents: Array<{
+    opponent_name: string;
+    hands_observed: number;
+    vpip_pct: number;
+    pfr_pct: number;
+    three_bet_pct: number;
+    tendencies: Record<string, string>;
+    exploits: Array<{
+      exploit_type: string;
+      description: string;
+      estimated_ev_gain_bb: number;
+      priority: string;
+    }>;
+  }>;
+}
+
 interface Hand {
   hand_id: number;
   player_name: string;
@@ -51,6 +87,8 @@ const SessionDetail: React.FC = () => {
   const [session, setSession] = useState<Session | null>(null);
   const [stats, setStats] = useState<SessionStats | null>(null);
   const [hands, setHands] = useState<Hand[]>([]);
+  const [gtoAnalysis, setGtoAnalysis] = useState<GTOAnalysis | null>(null);
+  const [opponentAnalysis, setOpponentAnalysis] = useState<OpponentAnalysis | null>(null);
   const [loading, setLoading] = useState(true);
   const [notes, setNotes] = useState('');
   const [savingNotes, setSavingNotes] = useState(false);
@@ -68,17 +106,21 @@ const SessionDetail: React.FC = () => {
 
       console.log('Fetching session data for ID:', sessionId);
 
-      // Fetch session details, stats, and hands in parallel
-      const [sessionRes, statsRes, handsRes] = await Promise.all([
+      // Fetch session details, stats, hands, GTO analysis, and opponent analysis in parallel
+      const [sessionRes, statsRes, handsRes, gtoRes, opponentsRes] = await Promise.all([
         fetch(`${apiUrl}/api/sessions/${sessionId}`),
         fetch(`${apiUrl}/api/sessions/${sessionId}/stats`),
-        fetch(`${apiUrl}/api/sessions/${sessionId}/hands`)
+        fetch(`${apiUrl}/api/sessions/${sessionId}/hands`),
+        fetch(`${apiUrl}/api/sessions/${sessionId}/gto-analysis`),
+        fetch(`${apiUrl}/api/sessions/${sessionId}/opponents`)
       ]);
 
       console.log('Response statuses:', {
         session: sessionRes.status,
         stats: statsRes.status,
-        hands: handsRes.status
+        hands: handsRes.status,
+        gto: gtoRes.status,
+        opponents: opponentsRes.status
       });
 
       if (!sessionRes.ok || !statsRes.ok || !handsRes.ok) {
@@ -88,12 +130,16 @@ const SessionDetail: React.FC = () => {
       const sessionData = await sessionRes.json();
       const statsData = await statsRes.json();
       const handsData = await handsRes.json();
+      const gtoData = gtoRes.ok ? await gtoRes.json() : null;
+      const opponentsData = opponentsRes.ok ? await opponentsRes.json() : null;
 
-      console.log('Fetched data:', { sessionData, statsData, handsData });
+      console.log('Fetched data:', { sessionData, statsData, handsData, gtoData, opponentsData });
 
       setSession(sessionData);
       setStats(statsData);
       setHands(handsData.hands);
+      setGtoAnalysis(gtoData);
+      setOpponentAnalysis(opponentsData);
       setNotes(sessionData.notes || '');
     } catch (error) {
       console.error('Error fetching session data:', error);
@@ -319,13 +365,119 @@ const SessionDetail: React.FC = () => {
           {/* GTO Analysis Tab */}
           {activeTab === 'gto' && (
             <div className="space-y-6">
-              <div className="text-center py-12">
-                <Target className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">GTO Analysis Coming Soon</h3>
-                <p className="text-gray-600">
-                  This will show your GTO mistakes, missed exploits, and optimization opportunities.
-                </p>
-              </div>
+              {gtoAnalysis && (
+                <>
+                  {/* Hero Mistakes Summary */}
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Your GTO Mistakes</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                      <div className="bg-red-50 rounded-lg p-4">
+                        <div className="text-sm text-red-600">Total Mistakes</div>
+                        <div className="text-2xl font-bold text-red-700">{gtoAnalysis.total_mistakes}</div>
+                      </div>
+                      <div className="bg-red-50 rounded-lg p-4">
+                        <div className="text-sm text-red-600">Total EV Loss</div>
+                        <div className="text-2xl font-bold text-red-700">{gtoAnalysis.total_ev_loss_bb.toFixed(2)} bb</div>
+                      </div>
+                      <div className="bg-gray-50 rounded-lg p-4">
+                        <div className="text-sm text-gray-600">Cost per Hand</div>
+                        <div className="text-2xl font-bold text-gray-900">
+                          {(gtoAnalysis.total_ev_loss_bb / (session?.total_hands || 1)).toFixed(2)} bb/hand
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Biggest Mistakes */}
+                    {gtoAnalysis.biggest_mistakes && gtoAnalysis.biggest_mistakes.length > 0 && (
+                      <div className="bg-white border border-gray-200 rounded-lg p-4">
+                        <h4 className="font-semibold text-gray-900 mb-3">Biggest Mistakes</h4>
+                        <div className="space-y-2">
+                          {gtoAnalysis.biggest_mistakes.map((mistake, idx) => (
+                            <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded">
+                              <div className="flex items-center gap-3">
+                                <span className="font-mono font-bold text-blue-600">{mistake.hero_hand}</span>
+                                <span className="text-sm text-gray-600">{mistake.street}</span>
+                                <span className="text-sm">
+                                  <span className="text-red-600">{mistake.action_taken}</span>
+                                  {' → should '}
+                                  <span className="text-green-600">{mistake.gto_action}</span>
+                                </span>
+                              </div>
+                              <div className="text-red-600 font-semibold">-{mistake.ev_loss_bb.toFixed(2)} bb</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Opponent Exploits */}
+                  {opponentAnalysis && opponentAnalysis.opponents && opponentAnalysis.opponents.length > 0 && (
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Opponent Tendencies & Exploits</h3>
+                      <div className="space-y-4">
+                        {opponentAnalysis.opponents.map((opp, idx) => (
+                          <div key={idx} className="bg-white border border-gray-200 rounded-lg p-4">
+                            <div className="flex items-center justify-between mb-3">
+                              <div>
+                                <h4 className="font-semibold text-gray-900">{opp.opponent_name}</h4>
+                                <p className="text-sm text-gray-500">{opp.hands_observed} hands observed</p>
+                              </div>
+                              <div className="text-sm text-gray-600">
+                                VPIP: {opp.vpip_pct?.toFixed(1)}% | PFR: {opp.pfr_pct?.toFixed(1)}%
+                              </div>
+                            </div>
+
+                            {/* Tendencies */}
+                            {opp.tendencies && Object.keys(opp.tendencies).length > 0 && (
+                              <div className="mb-3">
+                                <div className="flex flex-wrap gap-2">
+                                  {Object.entries(opp.tendencies).map(([key, value]) => (
+                                    <span key={key} className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded">
+                                      {key}: {value}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Exploits */}
+                            {opp.exploits && opp.exploits.length > 0 && (
+                              <div>
+                                <p className="text-sm font-medium text-gray-700 mb-2">Recommended Exploits:</p>
+                                <div className="space-y-2">
+                                  {opp.exploits.map((exploit, eidx) => (
+                                    <div key={eidx} className="flex items-start gap-2 p-2 bg-green-50 rounded">
+                                      <div className="flex-1">
+                                        <p className="text-sm text-gray-900">{exploit.description}</p>
+                                        <p className="text-xs text-gray-500 mt-1">
+                                          Expected EV gain: +{exploit.estimated_ev_gain_bb.toFixed(2)} bb
+                                        </p>
+                                      </div>
+                                      <span className={`px-2 py-1 text-xs rounded ${
+                                        exploit.priority === 'high' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'
+                                      }`}>
+                                        {exploit.priority}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {!gtoAnalysis && (
+                <div className="text-center py-12">
+                  <Target className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-600">No GTO analysis available for this session.</p>
+                </div>
+              )}
             </div>
           )}
 
