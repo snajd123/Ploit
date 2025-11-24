@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Calendar, Clock, TrendingUp, TrendingDown, Target, History, MessageSquare, FileText } from 'lucide-react';
+import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 
 interface Session {
   session_id: number;
@@ -393,19 +394,85 @@ const SessionDetail: React.FC = () => {
                         <h4 className="font-semibold text-gray-900 mb-3">Biggest Mistakes</h4>
                         <div className="space-y-2">
                           {gtoAnalysis.biggest_mistakes.map((mistake, idx) => (
-                            <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded">
-                              <div className="flex items-center gap-3">
-                                <span className="font-mono font-bold text-blue-600">{mistake.hero_hand}</span>
-                                <span className="text-sm text-gray-600">{mistake.street}</span>
-                                <span className="text-sm">
-                                  <span className="text-red-600">{mistake.action_taken}</span>
-                                  {' → should '}
-                                  <span className="text-green-600">{mistake.gto_action}</span>
-                                </span>
+                            <div key={idx} className="p-3 bg-gray-50 rounded">
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-3">
+                                  <span className="font-mono font-bold text-blue-600">{mistake.hero_hand}</span>
+                                  <span className="text-sm text-gray-600">{mistake.street}</span>
+                                  <span className="text-sm">
+                                    <span className="text-red-600">{mistake.action_taken}</span>
+                                    {' → should '}
+                                    <span className="text-green-600">{mistake.gto_action}</span>
+                                  </span>
+                                </div>
+                                <div className="text-red-600 font-semibold">-{mistake.ev_loss_bb.toFixed(2)} bb</div>
                               </div>
-                              <div className="text-red-600 font-semibold">-{mistake.ev_loss_bb.toFixed(2)} bb</div>
+                              {mistake.opponents && (
+                                <div className="flex items-center gap-2 text-xs text-gray-500">
+                                  <span>vs:</span>
+                                  <span className="font-medium">{mistake.opponents}</span>
+                                  <span className="mx-1">•</span>
+                                  <span>GTO freq: {(mistake.gto_frequency * 100).toFixed(1)}%</span>
+                                </div>
+                              )}
                             </div>
                           ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Mistake Visualizations */}
+                    {gtoAnalysis.total_mistakes > 0 && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+                        {/* Mistakes by Severity */}
+                        <div className="bg-white border border-gray-200 rounded-lg p-4">
+                          <h4 className="font-semibold text-gray-900 mb-3">Mistakes by Severity</h4>
+                          <ResponsiveContainer width="100%" height={250}>
+                            <PieChart>
+                              <Pie
+                                data={Object.entries(gtoAnalysis.mistakes_by_severity).map(([severity, count]) => ({
+                                  name: severity.charAt(0).toUpperCase() + severity.slice(1),
+                                  value: count
+                                }))}
+                                cx="50%"
+                                cy="50%"
+                                labelLine={false}
+                                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                                outerRadius={80}
+                                fill="#8884d8"
+                                dataKey="value"
+                              >
+                                {Object.keys(gtoAnalysis.mistakes_by_severity).map((severity, index) => (
+                                  <Cell
+                                    key={`cell-${index}`}
+                                    fill={severity === 'major' ? '#DC2626' : severity === 'moderate' ? '#F59E0B' : '#6B7280'}
+                                  />
+                                ))}
+                              </Pie>
+                              <Tooltip />
+                              <Legend />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </div>
+
+                        {/* Mistakes by Street */}
+                        <div className="bg-white border border-gray-200 rounded-lg p-4">
+                          <h4 className="font-semibold text-gray-900 mb-3">Mistakes by Street</h4>
+                          <ResponsiveContainer width="100%" height={250}>
+                            <BarChart
+                              data={Object.entries(gtoAnalysis.mistakes_by_street).map(([street, count]) => ({
+                                street: street.charAt(0).toUpperCase() + street.slice(1),
+                                count: count
+                              }))}
+                              margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                            >
+                              <CartesianGrid strokeDasharray="3 3" />
+                              <XAxis dataKey="street" />
+                              <YAxis />
+                              <Tooltip />
+                              <Bar dataKey="count" fill="#3B82F6" />
+                            </BarChart>
+                          </ResponsiveContainer>
                         </div>
                       </div>
                     )}
