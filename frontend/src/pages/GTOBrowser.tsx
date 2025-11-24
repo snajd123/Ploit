@@ -78,14 +78,9 @@ const GTOBrowser: React.FC = () => {
     const newSequence = [...actionSequence, newAction];
     setActionSequence(newSequence);
 
-    // If action is not fold, query GTO solution
-    if (action !== 'fold') {
-      await matchScenario(newSequence, currentPosition, action);
-    } else {
-      // Move to next position
-      if (currentPositionIndex < POSITIONS.length - 1) {
-        setCurrentPositionIndex(currentPositionIndex + 1);
-      }
+    // Move to next position after any action
+    if (currentPositionIndex < POSITIONS.length - 1) {
+      setCurrentPositionIndex(currentPositionIndex + 1);
     }
   };
 
@@ -167,7 +162,7 @@ const GTOBrowser: React.FC = () => {
                 </span>
               </div>
 
-              <div className="flex flex-wrap gap-3">
+              <div className="flex flex-wrap gap-3 mb-4">
                 {getAvailableActions().map((actionOption) => (
                   <button
                     key={`${actionOption.action}-${actionOption.size_bb || 0}`}
@@ -178,6 +173,20 @@ const GTOBrowser: React.FC = () => {
                   </button>
                 ))}
               </div>
+
+              {actionSequence.length > 0 && (
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => {
+                      const lastAction = actionSequence[actionSequence.length - 1];
+                      matchScenario(actionSequence, lastAction.position, lastAction.action);
+                    }}
+                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors font-medium"
+                  >
+                    View GTO Solution for {actionSequence[actionSequence.length - 1].position}
+                  </button>
+                </div>
+              )}
             </>
           )}
 
