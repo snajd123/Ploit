@@ -130,6 +130,12 @@ class FlagCalculator:
         faced_raise = any(a.facing_bet for a in voluntary_actions)
         flags.faced_raise = faced_raise
 
+        # 3-bet opportunity: player faced the first raise but didn't make it
+        if raise_count >= 1:
+            made_first_raise = self._player_made_raise_number(player_name, 1)
+            faced_first_raise = self._player_faced_raise_number(player_name, 1)
+            flags.three_bet_opportunity = faced_first_raise and not made_first_raise
+
         # 3-bet: Check if player made the 2nd raise
         if raise_count >= 2:
             made_3bet = self._player_made_raise_number(player_name, 2)

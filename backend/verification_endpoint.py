@@ -91,18 +91,19 @@ async def verify_player_stats(player_name: str, db: Session = Depends(get_db)):
 
     # 3-BET STATISTICS
     faced_raise_count = count_true('faced_raise')
+    three_bet_opportunity_count = count_true('three_bet_opportunity')
     made_3bet_count = count_true('made_three_bet')
     faced_3bet_count = count_true('faced_three_bet')
     folded_to_3bet_count = count_true('folded_to_three_bet')
 
     verification["statistics"]["3-Bet%"] = {
-        "formula": "(Times made 3-bet) / (Times faced a raise) × 100",
+        "formula": "(Times made 3-bet) / (Times had 3-bet opportunity) × 100",
         "numerator": made_3bet_count,
-        "denominator": faced_raise_count,
-        "calculation": f"{made_3bet_count} / {faced_raise_count} × 100",
-        "result": calc_pct(made_3bet_count, faced_raise_count),
-        "interpretation": "How often player 3-bets when facing a raise",
-        "note": "Denominator is 'faced_raise' not 'faced_3bet' - opportunity to 3-bet"
+        "denominator": three_bet_opportunity_count,
+        "calculation": f"{made_3bet_count} / {three_bet_opportunity_count} × 100",
+        "result": calc_pct(made_3bet_count, three_bet_opportunity_count),
+        "interpretation": "How often player 3-bets when facing an open raise (not counting times when player opened)",
+        "note": "Denominator is 'three_bet_opportunity' - only counts when player faced a raise they didn't make"
     }
 
     verification["statistics"]["Fold_to_3-Bet%"] = {
@@ -287,7 +288,7 @@ async def verify_player_stats(player_name: str, db: Session = Depends(get_db)):
         "key_stats": {
             "VPIP": f"{vpip_pct}%",
             "PFR": f"{pfr_pct}%",
-            "3-Bet": f"{calc_pct(made_3bet_count, faced_raise_count)}%",
+            "3-Bet": f"{calc_pct(made_3bet_count, three_bet_opportunity_count)}%",
             "C-Bet_Flop": f"{calc_pct(cbet_made_flop, cbet_opp_flop)}%",
             "WTSD": f"{calc_pct(went_to_showdown, saw_flop_count)}%",
             "W$SD": f"{calc_pct(won_at_showdown, went_to_showdown)}%"

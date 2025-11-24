@@ -117,6 +117,7 @@ class PlayerHandSummaryFlags:
     pfr: bool = False
     limp: bool = False
     faced_raise: bool = False
+    three_bet_opportunity: bool = False
     faced_three_bet: bool = False
     folded_to_three_bet: bool = False
     called_three_bet: bool = False

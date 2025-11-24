@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS player_hand_summary (
     pfr BOOLEAN DEFAULT FALSE,
     limp BOOLEAN DEFAULT FALSE,
     faced_raise BOOLEAN DEFAULT FALSE,
+    three_bet_opportunity BOOLEAN DEFAULT FALSE,
     faced_three_bet BOOLEAN DEFAULT FALSE,
     folded_to_three_bet BOOLEAN DEFAULT FALSE,
     called_three_bet BOOLEAN DEFAULT FALSE,

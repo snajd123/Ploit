@@ -89,6 +89,7 @@ class PlayerHandSummary(Base):
     pfr = Column(Boolean, default=False)
     limp = Column(Boolean, default=False)
     faced_raise = Column(Boolean, default=False)
+    three_bet_opportunity = Column(Boolean, default=False)
     faced_three_bet = Column(Boolean, default=False)
     folded_to_three_bet = Column(Boolean, default=False)
     called_three_bet = Column(Boolean, default=False)

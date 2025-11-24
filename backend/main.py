@@ -770,6 +770,7 @@ async def debug_player_stats(player_name: str, db: Session = Depends(get_db)):
         vpip_count = count_true('vpip')
         pfr_count = count_true('pfr')
         faced_raise_count = count_true('faced_raise')
+        three_bet_opportunity_count = count_true('three_bet_opportunity')
         made_3bet_count = count_true('made_three_bet')
         faced_3bet_count = count_true('faced_three_bet')
         saw_flop_count = count_true('saw_flop')
@@ -788,7 +789,7 @@ async def debug_player_stats(player_name: str, db: Session = Depends(get_db)):
             "counts": {
                 "vpip": f"{vpip_count}/{total_hands} = {round(vpip_count/total_hands*100, 1)}%" if total_hands > 0 else "0/0",
                 "pfr": f"{pfr_count}/{total_hands} = {round(pfr_count/total_hands*100, 1)}%" if total_hands > 0 else "0/0",
-                "three_bet": f"{made_3bet_count}/{faced_raise_count} = {round(made_3bet_count/faced_raise_count*100, 1) if faced_raise_count > 0 else 'N/A'}",
+                "three_bet": f"{made_3bet_count}/{three_bet_opportunity_count} = {round(made_3bet_count/three_bet_opportunity_count*100, 1) if three_bet_opportunity_count > 0 else 'N/A'}",
                 "fold_to_three_bet": f"{count_true('folded_to_three_bet')}/{faced_3bet_count} = {round(count_true('folded_to_three_bet')/faced_3bet_count*100, 1) if faced_3bet_count > 0 else 'N/A'}",
                 "cbet_flop": f"{cbet_made_flop}/{cbet_opp_flop} = {round(cbet_made_flop/cbet_opp_flop*100, 1) if cbet_opp_flop > 0 else 'N/A'}",
                 "fold_to_cbet_flop": f"{folded_to_cbet_flop}/{faced_cbet_flop} = {round(folded_to_cbet_flop/faced_cbet_flop*100, 1) if faced_cbet_flop > 0 else 'N/A'}",
