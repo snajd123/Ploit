@@ -341,7 +341,49 @@ def list_scenarios(
             "category": s.category,
             "position": s.position,
             "action": s.action,
+            "opponent_position": s.opponent_position,
             "description": s.description
         }
         for s in scenarios
     ]
+
+
+@router.get("/scenario/{scenario_id}")
+def get_scenario_details(scenario_id: int, db: Session = Depends(get_db)):
+    """
+    Get detailed information for a specific scenario including GTO actions and ranges.
+    """
+    scenario = db.query(GTOScenario).filter(GTOScenario.scenario_id == scenario_id).first()
+
+    if not scenario:
+        raise HTTPException(status_code=404, detail="Scenario not found")
+
+    # Get GTO stats for this scenario
+    stats = db.query(PlayerGTOStat).filter(
+        PlayerGTOStat.scenario_id == scenario_id
+    ).first()
+
+    # Get range data
+    range_matrix = get_range_from_frequencies(db, scenario_id)
+    combos = calculate_combos_from_matrix(range_matrix) if range_matrix else None
+
+    # Build GTO action
+    gto_action = None
+    if stats:
+        gto_action = {
+            "action": scenario.action or "unknown",
+            "frequency": float(stats.gto_frequency * 100) if stats.gto_frequency else 0.0,
+            "range_matrix": range_matrix if range_matrix else None,
+            "combos": combos
+        }
+
+    return {
+        "scenario_id": scenario.scenario_id,
+        "scenario_name": scenario.scenario_name,
+        "category": scenario.category,
+        "position": scenario.position,
+        "action": scenario.action,
+        "opponent_position": scenario.opponent_position,
+        "description": scenario.description,
+        "gto_action": gto_action
+    }

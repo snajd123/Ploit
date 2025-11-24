@@ -1,335 +1,353 @@
-import React, { useState } from 'react';
-import { AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Filter, X } from 'lucide-react';
 import RangeGrid from '../components/RangeGrid';
 
-interface ActionStep {
+interface Scenario {
+  scenario_id: number;
+  scenario_name: string;
+  category: string;
   position: string;
   action: string;
-  size_bb?: number;
-}
-
-interface GTOAction {
-  action: string;
-  frequency: number;
-  range_string?: string;
-  range_matrix?: Record<string, number>;
-  combos?: number;
-}
-
-interface MatchedScenario {
-  found: boolean;
-  scenario_id?: number;
-  scenario_name?: string;
-  category?: string;
+  opponent_position?: string;
   description?: string;
-  gto_actions?: GTOAction[];
-  message?: string;
-  searched_for?: any;
 }
+
+interface ScenarioDetails extends Scenario {
+  gto_action?: {
+    action: string;
+    frequency: number;
+    range_matrix?: Record<string, number>;
+    combos?: number;
+  };
+}
+
+const CATEGORIES = [
+  { id: 'opening', label: 'Opening', description: 'Open raises from each position' },
+  { id: 'defense', label: 'Defense', description: 'Defending against opens heads-up' },
+  { id: 'facing_3bet', label: 'Facing 3-Bet', description: '3-betting and facing 3-bets' },
+  { id: 'facing_4bet', label: 'Facing 4-Bet', description: 'Facing 4-bets' },
+  { id: 'multiway', label: 'Multiway', description: 'Multiple players in the pot' },
+];
 
 const POSITIONS = ['UTG', 'MP', 'CO', 'BTN', 'SB', 'BB'];
 
 const GTOBrowser: React.FC = () => {
-  const [actionSequence, setActionSequence] = useState<ActionStep[]>([]);
-  const [currentPositionIndex, setCurrentPositionIndex] = useState(0);
-  const [matchedScenario, setMatchedScenario] = useState<MatchedScenario | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState('opening');
+  const [scenarios, setScenarios] = useState<Scenario[]>([]);
+  const [filteredScenarios, setFilteredScenarios] = useState<Scenario[]>([]);
+  const [selectedScenario, setSelectedScenario] = useState<ScenarioDetails | null>(null);
   const [loading, setLoading] = useState(false);
-  const [selectedActionTab, setSelectedActionTab] = useState<string>('');
+  const [detailsLoading, setDetailsLoading] = useState(false);
 
-  const currentPosition = POSITIONS[currentPositionIndex];
+  // Filters
+  const [positionFilter, setPositionFilter] = useState<string>('');
+  const [opponentFilter, setOpponentFilter] = useState<string>('');
+  const [showFilters, setShowFilters] = useState(false);
 
-  const getAvailableActions = (): Array<{label: string, action: string, size_bb?: number}> => {
-    // Check if there's an open before current position
-    const hasOpen = actionSequence.some(a => a.action === 'raise' || a.action === 'open');
-    const has3Bet = actionSequence.filter(a => a.action === '3bet').length > 0;
-    const has4Bet = actionSequence.filter(a => a.action === '4bet').length > 0;
+  // Fetch scenarios for selected category
+  useEffect(() => {
+    fetchScenarios();
+  }, [selectedCategory]);
 
-    if (!hasOpen) {
-      // No one has acted yet, can fold or raise (open)
-      return [
-        { label: 'Fold', action: 'fold' },
-        { label: 'Raise', action: 'raise', size_bb: 2.5 },
-      ];
-    } else if (has4Bet) {
-      // Facing a 4-bet, can fold/call/5bet/allin
-      return [
-        { label: 'Fold', action: 'fold' },
-        { label: 'Call', action: 'call' },
-        { label: '5-Bet', action: '5bet' },
-        { label: 'All-in', action: 'allin' },
-      ];
-    } else if (has3Bet) {
-      // Facing a 3-bet, can fold/call/4bet
-      return [
-        { label: 'Fold', action: 'fold' },
-        { label: 'Call', action: 'call' },
-        { label: '4-Bet', action: '4bet', size_bb: 22 },
-      ];
-    } else if (hasOpen) {
-      // Facing an open, can fold/call/3bet
-      return [
-        { label: 'Fold', action: 'fold' },
-        { label: 'Call', action: 'call' },
-        { label: '3-Bet', action: '3bet', size_bb: 10 },
-      ];
+  // Apply filters
+  useEffect(() => {
+    let filtered = [...scenarios];
+
+    if (positionFilter) {
+      filtered = filtered.filter(s => s.position === positionFilter);
     }
 
-    return [{ label: 'Fold', action: 'fold' }];
-  };
-
-  const handleAction = async (action: string, size_bb?: number) => {
-    const newAction: ActionStep = {
-      position: currentPosition,
-      action,
-      size_bb,
-    };
-
-    const newSequence = [...actionSequence, newAction];
-    setActionSequence(newSequence);
-
-    // Move to next position after any action
-    if (currentPositionIndex < POSITIONS.length - 1) {
-      setCurrentPositionIndex(currentPositionIndex + 1);
+    if (opponentFilter) {
+      filtered = filtered.filter(s => s.opponent_position === opponentFilter);
     }
-  };
 
-  const matchScenario = async (sequence: ActionStep[], heroPosition: string, heroAction: string) => {
+    setFilteredScenarios(filtered);
+  }, [scenarios, positionFilter, opponentFilter]);
+
+  const fetchScenarios = async () => {
     setLoading(true);
     try {
       const apiUrl = import.meta.env.VITE_API_URL || '';
-      const response = await fetch(`${apiUrl}/api/gto/match-scenario`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          table_size: '6max',
-          actions: sequence,
-          hero_position: heroPosition,
-          hero_action: heroAction,
-        }),
-      });
-
+      const response = await fetch(`${apiUrl}/api/gto/scenarios?category=${selectedCategory}`);
       const data = await response.json();
-      setMatchedScenario(data);
-
-      // Set default selected action tab to the first action with highest frequency
-      if (data.found && data.gto_actions && data.gto_actions.length > 0) {
-        const sortedActions = [...data.gto_actions].sort((a, b) => b.frequency - a.frequency);
-        setSelectedActionTab(sortedActions[0].action);
-      }
+      setScenarios(data);
+      setFilteredScenarios(data);
     } catch (error) {
-      console.error('Error matching scenario:', error);
-      setMatchedScenario({
-        found: false,
-        message: 'Error connecting to server',
-      });
+      console.error('Error fetching scenarios:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const resetScenario = () => {
-    setActionSequence([]);
-    setCurrentPositionIndex(0);
-    setMatchedScenario(null);
+  const fetchScenarioDetails = async (scenarioId: number) => {
+    setDetailsLoading(true);
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${apiUrl}/api/gto/scenario/${scenarioId}`);
+      const data = await response.json();
+      setSelectedScenario(data);
+    } catch (error) {
+      console.error('Error fetching scenario details:', error);
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
+
+  const handleScenarioClick = (scenario: Scenario) => {
+    if (selectedScenario?.scenario_id === scenario.scenario_id) {
+      setSelectedScenario(null);
+    } else {
+      fetchScenarioDetails(scenario.scenario_id);
+    }
+  };
+
+  const clearFilters = () => {
+    setPositionFilter('');
+    setOpponentFilter('');
+  };
+
+  const getActionBadgeColor = (action: string) => {
+    switch (action) {
+      case 'open':
+      case 'raise':
+        return 'bg-blue-100 text-blue-800 border-blue-300';
+      case 'fold':
+        return 'bg-gray-100 text-gray-800 border-gray-300';
+      case 'call':
+        return 'bg-green-100 text-green-800 border-green-300';
+      case '3bet':
+      case '4bet':
+      case '5bet':
+        return 'bg-orange-100 text-orange-800 border-orange-300';
+      case 'allin':
+        return 'bg-red-100 text-red-800 border-red-300';
+      default:
+        return 'bg-gray-100 text-gray-800 border-gray-300';
+    }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-6xl mx-auto">
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Header */}
         <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">GTO Scenario Builder</h1>
-          <p className="text-gray-600">Build preflop scenarios and see GTO solutions with range visualization</p>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">GTO Scenario Browser</h1>
+          <p className="text-gray-600">Browse and study all {scenarios.length} GTO scenarios with range visualization</p>
         </div>
 
-        {/* Action Sequence Display */}
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Action Sequence</h2>
-          <div className="flex flex-wrap items-center gap-2 mb-4">
-            {actionSequence.length === 0 ? (
-              <div className="text-gray-400 italic">No actions yet - click buttons below to build scenario</div>
-            ) : (
-              actionSequence.map((step, index) => (
-                <React.Fragment key={index}>
-                  <div className="px-3 py-1 bg-blue-100 text-blue-800 rounded-md font-medium">
-                    {step.position}: {step.action}
-                    {step.size_bb && ` (${step.size_bb}bb)`}
-                  </div>
-                  {index < actionSequence.length - 1 && (
-                    <span className="text-gray-400">→</span>
-                  )}
-                </React.Fragment>
-              ))
+        {/* Category Tabs */}
+        <div className="bg-white rounded-lg shadow-sm mb-6">
+          <div className="border-b border-gray-200">
+            <nav className="flex -mb-px overflow-x-auto">
+              {CATEGORIES.map((category) => (
+                <button
+                  key={category.id}
+                  onClick={() => {
+                    setSelectedCategory(category.id);
+                    setSelectedScenario(null);
+                    clearFilters();
+                  }}
+                  className={`
+                    px-6 py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap
+                    ${selectedCategory === category.id
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }
+                  `}
+                >
+                  <div>{category.label}</div>
+                  <div className="text-xs font-normal mt-1 text-gray-500">{category.description}</div>
+                </button>
+              ))}
+            </nav>
+          </div>
+
+          {/* Filters */}
+          <div className="p-4 border-b border-gray-200">
+            <div className="flex items-center justify-between mb-3">
+              <button
+                onClick={() => setShowFilters(!showFilters)}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
+              >
+                <Filter className="w-4 h-4" />
+                Filters
+                {(positionFilter || opponentFilter) && (
+                  <span className="ml-1 px-2 py-0.5 bg-blue-600 text-white text-xs rounded-full">
+                    {[positionFilter, opponentFilter].filter(Boolean).length}
+                  </span>
+                )}
+              </button>
+
+              {(positionFilter || opponentFilter) && (
+                <button
+                  onClick={clearFilters}
+                  className="text-sm text-blue-600 hover:text-blue-700"
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+
+            {showFilters && (
+              <div className="flex flex-wrap gap-4 pt-3 border-t border-gray-200">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Position</label>
+                  <select
+                    value={positionFilter}
+                    onChange={(e) => setPositionFilter(e.target.value)}
+                    className="px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="">All Positions</option>
+                    {POSITIONS.map((pos) => (
+                      <option key={pos} value={pos}>{pos}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Opponent</label>
+                  <select
+                    value={opponentFilter}
+                    onChange={(e) => setOpponentFilter(e.target.value)}
+                    className="px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="">All Opponents</option>
+                    {POSITIONS.map((pos) => (
+                      <option key={pos} value={pos}>{pos}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             )}
           </div>
 
-          {!matchedScenario && (
-            <>
-              <div className="mb-4">
-                <span className="text-sm font-medium text-gray-700">
-                  Action to: <span className="text-blue-600 font-bold">{currentPosition}</span>
-                </span>
-              </div>
-
-              <div className="flex flex-wrap gap-3 mb-4">
-                {getAvailableActions().map((actionOption) => (
-                  <button
-                    key={`${actionOption.action}-${actionOption.size_bb || 0}`}
-                    onClick={() => handleAction(actionOption.action, actionOption.size_bb)}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium"
-                  >
-                    {actionOption.label}
-                  </button>
-                ))}
-              </div>
-
-              {actionSequence.length > 0 && (
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => {
-                      const lastAction = actionSequence[actionSequence.length - 1];
-                      matchScenario(actionSequence, lastAction.position, lastAction.action);
-                    }}
-                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors font-medium"
-                  >
-                    View GTO Solution for {actionSequence[actionSequence.length - 1].position}
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-
-          <button
-            onClick={resetScenario}
-            className="mt-4 px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
-          >
-            Reset Scenario
-          </button>
+          {/* Scenario Count */}
+          <div className="px-4 py-3 bg-gray-50 text-sm text-gray-600">
+            Showing {filteredScenarios.length} of {scenarios.length} scenarios
+          </div>
         </div>
 
         {/* Loading State */}
         {loading && (
           <div className="bg-white rounded-lg shadow-sm p-12 text-center">
             <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-            <p className="mt-4 text-gray-600">Searching for GTO solution...</p>
+            <p className="mt-4 text-gray-600">Loading scenarios...</p>
           </div>
         )}
 
-        {/* Matched Scenario Display */}
-        {!loading && matchedScenario && matchedScenario.found && (
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-              <h2 className="text-xl font-bold text-gray-900">
-                GTO Solution: {matchedScenario.scenario_name}
-              </h2>
-            </div>
+        {/* Scenario Cards Grid */}
+        {!loading && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredScenarios.map((scenario) => (
+              <div key={scenario.scenario_id}>
+                <button
+                  onClick={() => handleScenarioClick(scenario)}
+                  className={`
+                    w-full text-left p-4 rounded-lg border-2 transition-all
+                    ${selectedScenario?.scenario_id === scenario.scenario_id
+                      ? 'border-blue-600 bg-blue-50 shadow-lg'
+                      : 'border-gray-200 bg-white hover:border-blue-300 hover:shadow-md'
+                    }
+                  `}
+                >
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="font-semibold text-gray-900">{scenario.scenario_name}</div>
+                    <span className={`
+                      px-2 py-1 text-xs font-medium rounded border
+                      ${getActionBadgeColor(scenario.action)}
+                    `}>
+                      {scenario.action.toUpperCase()}
+                    </span>
+                  </div>
 
-            {matchedScenario.description && (
-              <p className="text-gray-600 mb-6">{matchedScenario.description}</p>
-            )}
+                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <span className="font-medium text-blue-600">{scenario.position}</span>
+                    {scenario.opponent_position && (
+                      <>
+                        <span>vs</span>
+                        <span className="font-medium text-orange-600">{scenario.opponent_position}</span>
+                      </>
+                    )}
+                  </div>
 
-            <div className="mb-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-3">GTO Actions:</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {matchedScenario.gto_actions?.map((action) => (
-                  <div key={action.action} className="border border-gray-200 rounded-lg p-4">
-                    <div className="text-sm font-medium text-gray-600 mb-1">
-                      {action.action.toUpperCase()}
-                    </div>
-                    <div className="text-3xl font-bold text-blue-600">
-                      {action.frequency.toFixed(1)}%
-                    </div>
-                    {action.combos && (
-                      <div className="text-sm text-gray-500 mt-1">
-                        {action.combos} combos
+                  {scenario.description && (
+                    <p className="mt-2 text-xs text-gray-500">{scenario.description}</p>
+                  )}
+                </button>
+
+                {/* Expanded Details */}
+                {selectedScenario?.scenario_id === scenario.scenario_id && (
+                  <div className="mt-4 bg-white rounded-lg border-2 border-blue-600 p-6">
+                    {detailsLoading ? (
+                      <div className="text-center py-8">
+                        <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                        <p className="mt-2 text-sm text-gray-600">Loading range data...</p>
+                      </div>
+                    ) : selectedScenario.gto_action ? (
+                      <div>
+                        <div className="mb-4">
+                          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                            {selectedScenario.scenario_name}
+                          </h3>
+                          <div className="flex items-center gap-4 text-sm text-gray-600">
+                            <span>
+                              <span className="font-medium">Frequency:</span>{' '}
+                              <span className="text-blue-600 font-bold">
+                                {selectedScenario.gto_action.frequency.toFixed(1)}%
+                              </span>
+                            </span>
+                            {selectedScenario.gto_action.combos && (
+                              <span>
+                                <span className="font-medium">Combos:</span>{' '}
+                                <span className="text-gray-900 font-bold">
+                                  {selectedScenario.gto_action.combos}
+                                </span>
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {selectedScenario.gto_action.range_matrix ? (
+                          <RangeGrid
+                            rangeMatrix={selectedScenario.gto_action.range_matrix}
+                            title={`${selectedScenario.action.toUpperCase()} Range`}
+                          />
+                        ) : (
+                          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
+                            <p className="text-yellow-800">Range data not available for this scenario</p>
+                          </div>
+                        )}
+
+                        <button
+                          onClick={() => setSelectedScenario(null)}
+                          className="mt-4 w-full px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors flex items-center justify-center gap-2"
+                        >
+                          <X className="w-4 h-4" />
+                          Close
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
+                        <p className="text-red-800">No GTO data available for this scenario</p>
                       </div>
                     )}
                   </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Action Tabs */}
-            {matchedScenario.gto_actions && matchedScenario.gto_actions.length > 0 && (
-              <div className="mb-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">Range Visualization:</h3>
-                <div className="flex flex-wrap gap-2 mb-4">
-                  {matchedScenario.gto_actions.map((action) => (
-                    <button
-                      key={action.action}
-                      onClick={() => setSelectedActionTab(action.action)}
-                      className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                        selectedActionTab === action.action
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      {action.action.toUpperCase()} ({action.frequency.toFixed(1)}%)
-                    </button>
-                  ))}
-                </div>
-
-                {/* Show RangeGrid for selected action */}
-                {selectedActionTab && (
-                  <RangeGrid
-                    rangeString={
-                      matchedScenario.gto_actions.find(a => a.action === selectedActionTab)?.range_string
-                    }
-                    rangeMatrix={
-                      matchedScenario.gto_actions.find(a => a.action === selectedActionTab)?.range_matrix
-                    }
-                    title={`${selectedActionTab.toUpperCase()} Range`}
-                  />
-                )}
-
-                {/* Message if no range data available */}
-                {selectedActionTab &&
-                 !matchedScenario.gto_actions.find(a => a.action === selectedActionTab)?.range_string &&
-                 !matchedScenario.gto_actions.find(a => a.action === selectedActionTab)?.range_matrix && (
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
-                    <p className="text-yellow-800">
-                      Range data not available for this action in the database.
-                    </p>
-                  </div>
                 )}
               </div>
-            )}
+            ))}
           </div>
         )}
 
-        {/* Not Found Display */}
-        {!loading && matchedScenario && !matchedScenario.found && (
-          <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-red-500">
-            <div className="flex items-start gap-3">
-              <AlertCircle className="w-6 h-6 text-red-500 flex-shrink-0 mt-1" />
-              <div className="flex-1">
-                <h2 className="text-xl font-bold text-gray-900 mb-2">
-                  No GTO Solution Found
-                </h2>
-                <p className="text-gray-600 mb-4">
-                  {matchedScenario.message || 'This scenario is not in the GTO database'}
-                </p>
-
-                {matchedScenario.searched_for && (
-                  <div className="bg-gray-50 rounded-md p-4 mb-4">
-                    <p className="text-sm font-medium text-gray-700 mb-2">Searched for:</p>
-                    <pre className="text-xs text-gray-600 overflow-auto">
-                      {JSON.stringify(matchedScenario.searched_for, null, 2)}
-                    </pre>
-                  </div>
-                )}
-
-                <div className="text-sm text-gray-600">
-                  <p className="mb-2">This could mean:</p>
-                  <ul className="list-disc list-inside space-y-1">
-                    <li>Scenario not yet solved/imported</li>
-                    <li>Invalid action sequence</li>
-                    <li>Uncommon spot not covered</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
+        {/* Empty State */}
+        {!loading && filteredScenarios.length === 0 && (
+          <div className="bg-white rounded-lg shadow-sm p-12 text-center">
+            <p className="text-gray-600">No scenarios found matching your filters</p>
+            <button
+              onClick={clearFilters}
+              className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+            >
+              Clear Filters
+            </button>
           </div>
         )}
       </div>
