@@ -68,15 +68,7 @@ class HeroGTOAnalyzer:
                 phs.faced_three_bet,
                 phs.folded_to_three_bet,
                 phs.called_three_bet,
-                phs.saw_flop,
-                phs.cbet_made_flop,
-                phs.cbet_opportunity_flop,
-                rh.stake_level,
-                rh.flop_card_1,
-                rh.flop_card_2,
-                rh.flop_card_3,
-                rh.turn_card,
-                rh.river_card
+                rh.stake_level
             FROM player_hand_summary phs
             JOIN raw_hands rh ON phs.hand_id = rh.hand_id
             WHERE phs.session_id = :session_id
@@ -91,11 +83,7 @@ class HeroGTOAnalyzer:
         """
         Analyze a single hand for GTO mistakes using real GTO database.
 
-        Analyzes:
-        1. Preflop opening decisions
-        2. Preflop facing raise decisions
-        3. Preflop 3-bet defense decisions
-        4. Flop cbet decisions
+        Analyzes preflop decisions only (database has no postflop data).
 
         Returns list of mistakes found in this hand.
         """
@@ -111,62 +99,61 @@ class HeroGTOAnalyzer:
 
         # Analyze preflop decisions based on what hero faced
         if hand['faced_three_bet']:
-            # Hero faced a 3-bet
-            mistake = self._analyze_three_bet_defense(hand, normalized_hand, bb, session_id)
+            # Hero faced a 3-bet (category: facing_4bet in database)
+            mistake = self._analyze_vs_three_bet(hand, normalized_hand, bb, session_id)
             if mistake:
                 mistakes.append(mistake)
         elif hand['faced_raise']:
-            # Hero faced a raise (not 3-bet)
-            mistake = self._analyze_facing_raise(hand, normalized_hand, bb, session_id)
+            # Hero faced an open (category: defense + facing_3bet in database)
+            mistake = self._analyze_vs_open(hand, normalized_hand, bb, session_id)
             if mistake:
                 mistakes.append(mistake)
         else:
-            # Hero was first to act or facing limps
-            mistake = self._analyze_preflop_open(hand, normalized_hand, bb, session_id)
-            if mistake:
-                mistakes.append(mistake)
-
-        # Analyze flop cbet decisions (if had opportunity)
-        if hand['saw_flop'] and hand['cbet_opportunity_flop']:
-            mistake = self._analyze_cbet(hand, normalized_hand, bb, session_id)
+            # Hero was first to act (category: opening in database)
+            mistake = self._analyze_opening(hand, normalized_hand, bb, session_id)
             if mistake:
                 mistakes.append(mistake)
 
         return mistakes
 
-    def _analyze_preflop_open(self, hand: Dict[str, Any], normalized_hand: str, bb: float, session_id: int) -> Optional[Dict[str, Any]]:
+    def _analyze_opening(self, hand: Dict[str, Any], normalized_hand: str, bb: float, session_id: int) -> Optional[Dict[str, Any]]:
         """
         Analyze preflop opening decision using real GTO database.
         """
         position = hand['position']
         vpip = hand['vpip']
 
-        # Find GTO scenario for preflop opening
-        scenario = self._find_gto_scenario(
-            street='preflop',
-            position=position,
-            action='open'
-        )
+        # Find opening scenario for this position
+        query = text("""
+            SELECT scenario_id
+            FROM gto_scenarios
+            WHERE category = 'opening'
+            AND position = :position
+            LIMIT 1
+        """)
 
-        if not scenario:
+        result = self.db.execute(query, {"position": position})
+        row = result.first()
+
+        if not row:
             return None
+
+        scenario_id = row[0]
 
         # Get GTO frequency for this hand
-        gto_freq = self._get_gto_frequency(scenario['scenario_id'], normalized_hand, position)
+        gto_freq = self._get_hand_frequency(scenario_id, normalized_hand)
 
         if gto_freq is None:
-            return None
+            # Hand not in database = 0% frequency
+            gto_freq = 0.0
 
-        # Determine what hero did vs what GTO recommends
-        hero_action = "open" if vpip else "fold"
-
-        # GTO says open with high frequency (>50% means should open)
+        # Determine mistake
+        # GTO says open with frequency > 50%
         gto_recommends_open = gto_freq > 0.50
 
-        # Check for mistake
         if gto_recommends_open and not vpip:
             # Should have opened but folded
-            ev_loss = self._calculate_ev_loss_from_frequency(gto_freq, "fold", bb)
+            ev_loss = gto_freq * bb * 0.3
             return {
                 "hand_id": hand['hand_id'],
                 "session_id": session_id,
@@ -174,14 +161,15 @@ class HeroGTOAnalyzer:
                 "hero_hand": hand['hole_cards'],
                 "action_taken": "fold",
                 "gto_action": "open",
-                "gto_frequency": float(gto_freq),
-                "ev_loss_bb": ev_loss,
+                "gto_frequency": round(gto_freq, 3),
+                "ev_loss_bb": round(ev_loss, 2),
                 "hand_in_gto_range": True,
-                "mistake_severity": self._classify_mistake_severity(ev_loss)
+                "mistake_severity": self._classify_severity(ev_loss)
             }
         elif not gto_recommends_open and vpip:
             # Should have folded but opened
-            ev_loss = self._calculate_ev_loss_from_frequency(gto_freq, "open", bb)
+            # EV loss is inversely related to frequency (opening 0% hand is worse than opening 20% hand)
+            ev_loss = (1.0 - gto_freq) * bb * 0.15
             return {
                 "hand_id": hand['hand_id'],
                 "session_id": session_id,
@@ -189,108 +177,122 @@ class HeroGTOAnalyzer:
                 "hero_hand": hand['hole_cards'],
                 "action_taken": "open",
                 "gto_action": "fold",
-                "gto_frequency": float(gto_freq),
-                "ev_loss_bb": ev_loss,
+                "gto_frequency": round(gto_freq, 3),
+                "ev_loss_bb": round(ev_loss, 2),
                 "hand_in_gto_range": False,
-                "mistake_severity": self._classify_mistake_severity(ev_loss)
+                "mistake_severity": self._classify_severity(ev_loss)
             }
 
         return None
 
-    def _analyze_facing_raise(self, hand: Dict[str, Any], normalized_hand: str, bb: float, session_id: int) -> Optional[Dict[str, Any]]:
+    def _analyze_vs_open(self, hand: Dict[str, Any], normalized_hand: str, bb: float, session_id: int) -> Optional[Dict[str, Any]]:
         """
-        Analyze decision when facing a raise (not 3-bet).
+        Analyze decision when facing an open.
+        Need to check both "defense" (fold/call) and "facing_3bet" (3bet) categories.
         """
         position = hand['position']
         vpip = hand['vpip']
+        made_three_bet = hand['made_three_bet']
 
-        # Find GTO scenario for facing raise
-        scenario = self._find_gto_scenario(
-            street='preflop',
-            position=position,
-            action='facing_open'
-        )
+        # Get all scenarios for facing open from this position
+        query = text("""
+            SELECT scenario_id, action, category
+            FROM gto_scenarios
+            WHERE position = :position
+            AND category IN ('defense', 'facing_3bet')
+            ORDER BY scenario_id
+        """)
 
-        if not scenario:
+        result = self.db.execute(query, {"position": position})
+        scenarios = [dict(row._mapping) for row in result]
+
+        if not scenarios:
             return None
 
-        # Get GTO frequency for this hand
-        gto_freq = self._get_gto_frequency(scenario['scenario_id'], normalized_hand, position)
+        # Get frequencies for each action
+        action_frequencies = {}
+        for scenario in scenarios:
+            freq = self._get_hand_frequency(scenario['scenario_id'], normalized_hand)
+            if freq is None:
+                freq = 0.0
 
-        if gto_freq is None:
+            action = scenario['action']
+            action_frequencies[action] = freq
+
+        # Determine GTO action (highest frequency)
+        if not action_frequencies:
             return None
+
+        gto_action = max(action_frequencies, key=action_frequencies.get)
+        gto_freq = action_frequencies[gto_action]
 
         # Determine hero's action
-        hero_action = "fold" if not vpip else ("3bet" if hand['made_three_bet'] else "call")
-
-        # GTO recommendation (simplified: >40% = call/3bet, <20% = fold, mixed in between)
-        if gto_freq > 0.40:
-            gto_action = "call/3bet"
-            gto_should_continue = True
-        elif gto_freq < 0.20:
-            gto_action = "fold"
-            gto_should_continue = False
+        if not vpip:
+            hero_action = "fold"
+        elif made_three_bet:
+            hero_action = "3bet"
         else:
-            # Mixed strategy - not clear mistake
-            return None
+            hero_action = "call"
 
         # Check for mistake
-        if gto_should_continue and not vpip:
-            # Should have continued but folded
-            ev_loss = self._calculate_ev_loss_from_frequency(gto_freq, "fold", bb)
-            return {
-                "hand_id": hand['hand_id'],
-                "session_id": session_id,
-                "street": "preflop",
-                "hero_hand": hand['hole_cards'],
-                "action_taken": "fold",
-                "gto_action": gto_action,
-                "gto_frequency": float(gto_freq),
-                "ev_loss_bb": ev_loss,
-                "hand_in_gto_range": True,
-                "mistake_severity": self._classify_mistake_severity(ev_loss)
-            }
-        elif not gto_should_continue and vpip:
-            # Should have folded but continued
-            ev_loss = self._calculate_ev_loss_from_frequency(gto_freq, "call/3bet", bb)
+        if gto_action != hero_action and gto_freq > 0.40:
+            # Clear mistake: GTO recommends different action with >40% frequency
+            ev_loss = gto_freq * bb * 0.25
             return {
                 "hand_id": hand['hand_id'],
                 "session_id": session_id,
                 "street": "preflop",
                 "hero_hand": hand['hole_cards'],
                 "action_taken": hero_action,
-                "gto_action": "fold",
-                "gto_frequency": float(gto_freq),
-                "ev_loss_bb": ev_loss,
-                "hand_in_gto_range": False,
-                "mistake_severity": self._classify_mistake_severity(ev_loss)
+                "gto_action": gto_action,
+                "gto_frequency": round(gto_freq, 3),
+                "ev_loss_bb": round(ev_loss, 2),
+                "hand_in_gto_range": gto_freq > 0.20,
+                "mistake_severity": self._classify_severity(ev_loss)
             }
 
         return None
 
-    def _analyze_three_bet_defense(self, hand: Dict[str, Any], normalized_hand: str, bb: float, session_id: int) -> Optional[Dict[str, Any]]:
+    def _analyze_vs_three_bet(self, hand: Dict[str, Any], normalized_hand: str, bb: float, session_id: int) -> Optional[Dict[str, Any]]:
         """
-        Analyze decision when facing a 3-bet using real GTO database.
+        Analyze decision when facing a 3-bet.
+        Category "facing_4bet" in database (confusing naming).
         """
         position = hand['position']
         folded = hand['folded_to_three_bet']
         called = hand['called_three_bet']
 
-        # Find GTO scenario for facing 3-bet
-        scenario = self._find_gto_scenario(
-            street='preflop',
-            position=position,
-            action='facing_3bet'
-        )
+        # Get all scenarios for facing 3-bet from this position
+        query = text("""
+            SELECT scenario_id, action
+            FROM gto_scenarios
+            WHERE position = :position
+            AND category = 'facing_4bet'
+            ORDER BY scenario_id
+        """)
 
-        if not scenario:
+        result = self.db.execute(query, {"position": position})
+        scenarios = [dict(row._mapping) for row in result]
+
+        if not scenarios:
             return None
 
-        # Get GTO frequency for this hand
-        gto_freq = self._get_gto_frequency(scenario['scenario_id'], normalized_hand, position)
+        # Get frequencies for each action
+        action_frequencies = {}
+        for scenario in scenarios:
+            freq = self._get_hand_frequency(scenario['scenario_id'], normalized_hand)
+            if freq is None:
+                freq = 0.0
 
-        if gto_freq is None:
+            action = scenario['action']
+            action_frequencies[action] = freq
+
+        if not action_frequencies:
             return None
+
+        # Determine GTO action (highest frequency)
+        gto_action = max(action_frequencies, key=action_frequencies.get)
+        gto_freq = action_frequencies[gto_action]
 
         # Determine hero's action
         if folded:
@@ -300,177 +302,43 @@ class HeroGTOAnalyzer:
         else:
             hero_action = "4bet"
 
-        # GTO recommendation (>35% = continue, <15% = fold)
-        if gto_freq > 0.35:
-            gto_action = "call/4bet"
-            gto_should_continue = True
-        elif gto_freq < 0.15:
-            gto_action = "fold"
-            gto_should_continue = False
-        else:
-            # Mixed strategy
-            return None
-
         # Check for mistake
-        if gto_should_continue and folded:
-            # Should have continued but folded to 3-bet
-            ev_loss = self._calculate_ev_loss_from_frequency(gto_freq, "fold", bb * 3)  # 3-bet pot is bigger
-            return {
-                "hand_id": hand['hand_id'],
-                "session_id": session_id,
-                "street": "preflop",
-                "hero_hand": hand['hole_cards'],
-                "action_taken": "fold",
-                "gto_action": gto_action,
-                "gto_frequency": float(gto_freq),
-                "ev_loss_bb": ev_loss,
-                "hand_in_gto_range": True,
-                "mistake_severity": self._classify_mistake_severity(ev_loss)
-            }
-        elif not gto_should_continue and not folded:
-            # Should have folded but continued vs 3-bet
-            ev_loss = self._calculate_ev_loss_from_frequency(gto_freq, hero_action, bb * 3)
+        if gto_action != hero_action and gto_freq > 0.35:
+            # Clear mistake facing 3-bet
+            ev_loss = gto_freq * bb * 3 * 0.30  # Bigger pot
             return {
                 "hand_id": hand['hand_id'],
                 "session_id": session_id,
                 "street": "preflop",
                 "hero_hand": hand['hole_cards'],
                 "action_taken": hero_action,
-                "gto_action": "fold",
-                "gto_frequency": float(gto_freq),
-                "ev_loss_bb": ev_loss,
-                "hand_in_gto_range": False,
-                "mistake_severity": self._classify_mistake_severity(ev_loss)
+                "gto_action": gto_action,
+                "gto_frequency": round(gto_freq, 3),
+                "ev_loss_bb": round(ev_loss, 2),
+                "hand_in_gto_range": gto_freq > 0.15,
+                "mistake_severity": self._classify_severity(ev_loss)
             }
 
         return None
 
-    def _analyze_cbet(self, hand: Dict[str, Any], normalized_hand: str, bb: float, session_id: int) -> Optional[Dict[str, Any]]:
-        """
-        Analyze continuation bet decision on flop using real GTO database.
-        """
-        position = hand['position']
-        cbet_made = hand['cbet_made_flop']
-
-        # Get board cards
-        board = self._get_board_string(hand)
-        if not board:
-            return None
-
-        # Find GTO scenario for flop cbet
-        scenario = self._find_gto_scenario(
-            street='flop',
-            position=position,
-            action='cbet',
-            board=board
-        )
-
-        if not scenario:
-            return None
-
-        # Get GTO frequency for this hand on this board
-        gto_freq = self._get_gto_frequency(scenario['scenario_id'], normalized_hand, position)
-
-        if gto_freq is None:
-            return None
-
-        # Determine if GTO recommends cbet (>50% = cbet)
-        gto_recommends_cbet = gto_freq > 0.50
-
-        # Check for mistake
-        if gto_recommends_cbet and not cbet_made:
-            # Should have cbet but checked
-            ev_loss = self._calculate_ev_loss_from_frequency(gto_freq, "check", bb * 5)  # Flop pot ~5bb
-            return {
-                "hand_id": hand['hand_id'],
-                "session_id": session_id,
-                "street": "flop",
-                "hero_hand": hand['hole_cards'],
-                "action_taken": "check",
-                "gto_action": "cbet",
-                "gto_frequency": float(gto_freq),
-                "ev_loss_bb": ev_loss,
-                "hand_in_gto_range": True,
-                "mistake_severity": self._classify_mistake_severity(ev_loss)
-            }
-        elif not gto_recommends_cbet and cbet_made:
-            # Should have checked but cbet
-            ev_loss = self._calculate_ev_loss_from_frequency(gto_freq, "cbet", bb * 5)
-            return {
-                "hand_id": hand['hand_id'],
-                "session_id": session_id,
-                "street": "flop",
-                "hero_hand": hand['hole_cards'],
-                "action_taken": "cbet",
-                "gto_action": "check",
-                "gto_frequency": float(gto_freq),
-                "ev_loss_bb": ev_loss,
-                "hand_in_gto_range": False,
-                "mistake_severity": self._classify_mistake_severity(ev_loss)
-            }
-
-        return None
-
-    def _find_gto_scenario(self, street: str, position: str, action: str, board: Optional[str] = None) -> Optional[Dict[str, Any]]:
-        """
-        Find matching GTO scenario from database.
-
-        Args:
-            street: 'preflop', 'flop', 'turn', 'river'
-            position: Hero's position
-            action: 'open', 'facing_open', 'facing_3bet', 'cbet', etc.
-            board: Board cards (for postflop scenarios)
-        """
-        query = text("""
-            SELECT scenario_id, scenario_name, street, position, action
-            FROM gto_scenarios
-            WHERE street = :street
-            AND (position = :position OR position IS NULL)
-            AND action = :action
-            ORDER BY
-                CASE WHEN position = :position THEN 0 ELSE 1 END,
-                scenario_id
-            LIMIT 1
-        """)
-
-        result = self.db.execute(query, {
-            "street": street,
-            "position": position,
-            "action": action
-        })
-
-        row = result.first()
-        if row:
-            return dict(row._mapping)
-        return None
-
-    def _get_gto_frequency(self, scenario_id: int, normalized_hand: str, position: str) -> Optional[float]:
+    def _get_hand_frequency(self, scenario_id: int, normalized_hand: str) -> Optional[float]:
         """
         Get GTO frequency for a specific hand in a scenario.
 
-        Args:
-            scenario_id: The GTO scenario ID
-            normalized_hand: Normalized hand like "AKs", "AKo", "AA"
-            position: Hero's position
-
         Returns:
-            Float between 0-1 representing GTO frequency, or None if not found
+            Float between 0-1, or None if hand not found (should treat as 0.0)
         """
         query = text("""
             SELECT frequency
             FROM gto_frequencies
             WHERE scenario_id = :scenario_id
             AND hand = :hand
-            AND (position = :position OR position IS NULL)
-            ORDER BY
-                CASE WHEN position = :position THEN 0 ELSE 1 END
             LIMIT 1
         """)
 
         result = self.db.execute(query, {
             "scenario_id": scenario_id,
-            "hand": normalized_hand,
-            "position": position
+            "hand": normalized_hand
         })
 
         row = result.first()
@@ -521,56 +389,7 @@ class HeroGTOAnalyzer:
 
         return f"{high_rank}{low_rank}{'s' if suited else 'o'}"
 
-    def _get_board_string(self, hand: Dict[str, Any]) -> Optional[str]:
-        """
-        Get board cards as string for scenario matching.
-        """
-        flop1 = hand.get('flop_card_1')
-        flop2 = hand.get('flop_card_2')
-        flop3 = hand.get('flop_card_3')
-
-        if flop1 and flop2 and flop3:
-            return f"{flop1}{flop2}{flop3}"
-        return None
-
-    def _calculate_ev_loss_from_frequency(self, gto_frequency: float, wrong_action: str, pot_size_bb: float) -> float:
-        """
-        Calculate EV loss based on deviation from GTO frequency.
-
-        Args:
-            gto_frequency: GTO frequency for correct action (0-1)
-            wrong_action: The action hero took
-            pot_size_bb: Pot size in big blinds
-
-        Returns:
-            EV loss in big blinds
-        """
-        # EV loss is roughly proportional to:
-        # - How often GTO recommends the correct action (frequency)
-        # - The pot size
-        # - A scaling factor based on the action type
-
-        # Basic formula: EV loss = frequency * pot_size * action_multiplier
-        action_multipliers = {
-            "fold": 0.3,      # Folding when should continue
-            "call": 0.2,      # Calling when should fold
-            "3bet": 0.25,     # 3-betting when should fold
-            "4bet": 0.4,      # 4-betting when should fold
-            "open": 0.15,     # Opening when should fold
-            "call/3bet": 0.2, # Continuing when should fold
-            "cbet": 0.2,      # Cbetting when should check
-            "check": 0.25     # Checking when should cbet
-        }
-
-        multiplier = action_multipliers.get(wrong_action, 0.2)
-
-        # Calculate EV loss
-        # Higher GTO frequency = bigger mistake when deviating
-        ev_loss = gto_frequency * pot_size_bb * multiplier
-
-        return round(ev_loss, 2)
-
-    def _classify_mistake_severity(self, ev_loss_bb: float) -> str:
+    def _classify_severity(self, ev_loss_bb: float) -> str:
         """
         Classify mistake severity based on EV loss.
         """
@@ -648,12 +467,12 @@ class HeroGTOAnalyzer:
         """
         Store mistakes in hero_gto_mistakes table.
         """
-        # First, delete existing mistakes for these hands to avoid duplicates
         if not mistakes:
             return
 
         session_id = mistakes[0]['session_id']
 
+        # Delete existing mistakes for this session
         delete_query = text("""
             DELETE FROM hero_gto_mistakes
             WHERE session_id = :session_id
