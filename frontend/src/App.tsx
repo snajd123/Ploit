@@ -8,6 +8,8 @@ import ClaudeChat from './pages/ClaudeChat';
 import PreGameStrategy from './pages/PreGameStrategy';
 import GTOAnalysis from './pages/GTOAnalysis';
 import GTOBrowser from './pages/GTOBrowser';
+import Sessions from './pages/Sessions';
+import SessionDetail from './pages/SessionDetail';
 import Settings from './pages/Settings';
 import StatsGlossary from './pages/StatsGlossary';
 
@@ -25,6 +27,8 @@ function App() {
           <Route path="strategy" element={<PreGameStrategy />} />
           <Route path="gto" element={<GTOAnalysis />} />
           <Route path="gto-browser" element={<GTOBrowser />} />
+          <Route path="sessions" element={<Sessions />} />
+          <Route path="sessions/:sessionId" element={<SessionDetail />} />
           <Route path="glossary" element={<StatsGlossary />} />
           <Route path="settings" element={<Settings />} />
         </Route>
