@@ -176,6 +176,12 @@ class PlayerHandSummary(Base):
     middle_card_rank = Column(String(2))
     low_card_rank = Column(String(2))
 
+    # Hero hole cards (only for hero player, NULL for opponents)
+    hole_cards = Column(String(10))
+
+    # Session assignment
+    session_id = Column(Integer, ForeignKey('sessions.session_id'))
+
     created_at = Column(TIMESTAMP, default=func.current_timestamp())
 
     __table_args__ = (
