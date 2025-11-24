@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { AlertCircle } from 'lucide-react';
+import RangeGrid from '../components/RangeGrid';
 
 interface ActionStep {
   position: string;
@@ -33,6 +34,7 @@ const GTOBrowser: React.FC = () => {
   const [currentPositionIndex, setCurrentPositionIndex] = useState(0);
   const [matchedScenario, setMatchedScenario] = useState<MatchedScenario | null>(null);
   const [loading, setLoading] = useState(false);
+  const [selectedActionTab, setSelectedActionTab] = useState<string>('');
 
   const currentPosition = POSITIONS[currentPositionIndex];
 
@@ -107,6 +109,12 @@ const GTOBrowser: React.FC = () => {
 
       const data = await response.json();
       setMatchedScenario(data);
+
+      // Set default selected action tab to the first action with highest frequency
+      if (data.found && data.gto_actions && data.gto_actions.length > 0) {
+        const sortedActions = [...data.gto_actions].sort((a, b) => b.frequency - a.frequency);
+        setSelectedActionTab(sortedActions[0].action);
+      }
     } catch (error) {
       console.error('Error matching scenario:', error);
       setMatchedScenario({
@@ -227,10 +235,51 @@ const GTOBrowser: React.FC = () => {
               </div>
             </div>
 
-            {/* TODO: Add RangeGrid component here */}
-            <div className="bg-gray-50 rounded-lg p-6 text-center text-gray-500">
-              Range visualization coming soon...
-            </div>
+            {/* Action Tabs */}
+            {matchedScenario.gto_actions && matchedScenario.gto_actions.length > 0 && (
+              <div className="mb-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-3">Range Visualization:</h3>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {matchedScenario.gto_actions.map((action) => (
+                    <button
+                      key={action.action}
+                      onClick={() => setSelectedActionTab(action.action)}
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                        selectedActionTab === action.action
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      {action.action.toUpperCase()} ({action.frequency.toFixed(1)}%)
+                    </button>
+                  ))}
+                </div>
+
+                {/* Show RangeGrid for selected action */}
+                {selectedActionTab && (
+                  <RangeGrid
+                    rangeString={
+                      matchedScenario.gto_actions.find(a => a.action === selectedActionTab)?.range_string
+                    }
+                    rangeMatrix={
+                      matchedScenario.gto_actions.find(a => a.action === selectedActionTab)?.range_matrix
+                    }
+                    title={`${selectedActionTab.toUpperCase()} Range`}
+                  />
+                )}
+
+                {/* Message if no range data available */}
+                {selectedActionTab &&
+                 !matchedScenario.gto_actions.find(a => a.action === selectedActionTab)?.range_string &&
+                 !matchedScenario.gto_actions.find(a => a.action === selectedActionTab)?.range_matrix && (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
+                    <p className="text-yellow-800">
+                      Range data not available for this action in the database.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
