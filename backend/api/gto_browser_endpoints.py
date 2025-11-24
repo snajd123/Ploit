@@ -9,7 +9,7 @@ from typing import List, Dict, Optional, Any
 from pydantic import BaseModel
 
 from ..database import get_db
-from ..models.gto_models import GTOScenario, PlayerGTOStat
+from ..models.gto_models import GTOScenario, PlayerGTOStat, GTOFrequency
 
 router = APIRouter(prefix="/api/gto", tags=["gto_browser"])
 
@@ -70,6 +70,49 @@ def parse_range_to_matrix(range_string: str) -> Dict[str, float]:
     # This would need to handle: "22+", "A2s+", "KTo+", etc.
 
     return matrix
+
+
+def get_range_from_frequencies(db: Session, scenario_id: int) -> Dict[str, float]:
+    """
+    Fetch hand frequencies from gto_frequencies table and build range matrix.
+    Returns dict mapping hand notation (e.g., 'AKo', 'JTs', '22') to frequency (0.0-1.0).
+    """
+    frequencies = db.query(GTOFrequency).filter(
+        GTOFrequency.scenario_id == scenario_id
+    ).all()
+
+    if not frequencies:
+        return {}
+
+    # Build range matrix from frequency data
+    range_matrix = {}
+    for freq in frequencies:
+        # Convert Decimal to float for JSON serialization
+        range_matrix[freq.hand] = float(freq.frequency)
+
+    return range_matrix
+
+
+def calculate_combos_from_matrix(range_matrix: Dict[str, float]) -> int:
+    """
+    Calculate total combos from a range matrix.
+    Pairs have 6 combos, unsuited hands have 12 combos, suited hands have 4 combos.
+    """
+    if not range_matrix:
+        return 0
+
+    total_combos = 0
+    for hand, frequency in range_matrix.items():
+        if len(hand) == 2:  # Pairs like "AA"
+            total_combos += 6 * frequency
+        elif hand.endswith('s'):  # Suited like "AKs"
+            total_combos += 4 * frequency
+        elif hand.endswith('o'):  # Offsuit like "AKo"
+            total_combos += 12 * frequency
+        else:  # Generic notation without s/o (treat as all combos)
+            total_combos += 4 * frequency
+
+    return int(round(total_combos))
 
 
 def determine_scenario_type(actions: List[ActionStep], hero_position: str, hero_action: str) -> Dict[str, Any]:
@@ -196,12 +239,16 @@ def match_scenario(request: MatchScenarioRequest, db: Session = Depends(get_db))
         if stats:
             action_name = scen.action or scen.scenario_name.split('_')[-1]
 
+            # Fetch range data from gto_frequencies table
+            range_matrix = get_range_from_frequencies(db, scen.scenario_id)
+            combos = calculate_combos_from_matrix(range_matrix) if range_matrix else None
+
             gto_actions.append(GTOAction(
                 action=action_name,
                 frequency=float(stats.gto_frequency * 100) if stats.gto_frequency else 0.0,
-                range_string=None,  # TODO: Get from database if available
-                range_matrix=None,  # TODO: Parse range string
-                combos=None
+                range_string=None,
+                range_matrix=range_matrix if range_matrix else None,
+                combos=combos
             ))
 
     # If we only found one scenario (the matched one), get its stats
@@ -211,12 +258,16 @@ def match_scenario(request: MatchScenarioRequest, db: Session = Depends(get_db))
         ).first()
 
         if stats:
+            # Fetch range data from gto_frequencies table
+            range_matrix = get_range_from_frequencies(db, scenario.scenario_id)
+            combos = calculate_combos_from_matrix(range_matrix) if range_matrix else None
+
             gto_actions.append(GTOAction(
                 action=scenario.action or request.hero_action,
                 frequency=float(stats.gto_frequency * 100) if stats.gto_frequency else 0.0,
                 range_string=None,
-                range_matrix=None,
-                combos=None
+                range_matrix=range_matrix if range_matrix else None,
+                combos=combos
             ))
 
     return MatchScenarioResponse(

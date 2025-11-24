@@ -47,24 +47,21 @@ const GTOBrowser: React.FC = () => {
       // No one has acted yet, can fold or raise (open)
       return [
         { label: 'Fold', action: 'fold' },
-        { label: 'Raise 2.5bb', action: 'raise', size_bb: 2.5 },
-        { label: 'Raise 3bb', action: 'raise', size_bb: 3.0 },
+        { label: 'Raise', action: 'raise', size_bb: 2.5 },
       ];
     } else if (hasOpen && !has3Bet) {
       // Facing an open, can fold/call/3bet
       return [
         { label: 'Fold', action: 'fold' },
         { label: 'Call', action: 'call' },
-        { label: '3-Bet 8bb', action: '3bet', size_bb: 8 },
-        { label: '3-Bet 10bb', action: '3bet', size_bb: 10 },
+        { label: '3-Bet', action: '3bet', size_bb: 10 },
       ];
     } else if (has3Bet) {
       // Facing a 3-bet, can fold/call/4bet
       return [
         { label: 'Fold', action: 'fold' },
         { label: 'Call', action: 'call' },
-        { label: '4-Bet 22bb', action: '4bet', size_bb: 22 },
-        { label: 'All-in', action: 'allin' },
+        { label: '4-Bet', action: '4bet', size_bb: 22 },
       ];
     }
 
