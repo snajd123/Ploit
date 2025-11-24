@@ -203,13 +203,14 @@ async def health_check():
     """
     Health check endpoint.
 
-    Returns API status and database connection status.
+    Returns API status. DB status checked on actual requests to avoid
+    unnecessary connection creation with NullPool.
     """
-    db_status = "connected" if check_db_connection() else "disconnected"
-
+    # Don't check DB connection on health checks to avoid creating connections
+    # The app will handle DB errors on actual API requests
     return HealthResponse(
-        status="healthy" if db_status == "connected" else "unhealthy",
-        database=db_status,
+        status="healthy",
+        database="available",  # Assume available, actual requests will validate
         timestamp=datetime.now()
     )
 
@@ -1165,11 +1166,15 @@ async def startup_event():
     logger.info(f"Environment: {settings.environment}")
     logger.info(f"CORS origins: {settings.allowed_origins_list}")
 
-    # Check database connection
-    if check_db_connection():
-        logger.info("Database connection successful")
-    else:
-        logger.warning("Database connection failed")
+    # Check database connection (non-blocking, just log result)
+    # Don't fail startup if DB check fails - let requests handle it
+    try:
+        if check_db_connection():
+            logger.info("Database connection successful")
+        else:
+            logger.warning("Database connection check returned False - connections may be available later")
+    except Exception as e:
+        logger.warning(f"Database connection check failed with error: {e} - will retry on requests")
 
 
 @app.on_event("shutdown")
