@@ -7,7 +7,7 @@ for FastAPI endpoints.
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.pool import QueuePool
+from sqlalchemy.pool import NullPool
 from typing import Generator
 import logging
 
@@ -19,15 +19,12 @@ logger = logging.getLogger(__name__)
 # Get configuration
 settings = get_settings()
 
-# Create SQLAlchemy engine with connection pooling
+# Create SQLAlchemy engine with NullPool for Supabase Session mode
+# NullPool creates/destroys connections on demand, avoiding pool exhaustion
 engine = create_engine(
     settings.database_url,
-    poolclass=QueuePool,
-    pool_size=settings.database_pool_size,
-    max_overflow=settings.database_pool_max_overflow,
+    poolclass=NullPool,  # No connection pooling - create/destroy on demand
     pool_pre_ping=True,  # Verify connections before using
-    pool_recycle=300,  # Recycle connections after 5 minutes
-    pool_timeout=30,  # Wait up to 30 seconds for available connection
     echo=not settings.is_production  # Log SQL in development
 )
 
