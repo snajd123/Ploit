@@ -47,6 +47,9 @@ interface GTOAnalysis {
     gto_action: string;
     ev_loss_bb: number;
     mistake_severity: string;
+    opponents?: string;
+    gto_frequency?: number;
+    timestamp?: string;
   }>;
 }
 
