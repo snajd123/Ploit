@@ -12,6 +12,7 @@ from datetime import datetime
 from ..database import get_db
 from ..services.session_detector import SessionDetector
 from ..services.hero_gto_analyzer import HeroGTOAnalyzer
+from ..services.opponent_analyzer import OpponentAnalyzer
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 
@@ -344,3 +345,27 @@ def get_session_gto_analysis(session_id: int, db: Session = Depends(get_db)):
     analysis = analyzer.analyze_session(session_id)
 
     return analysis
+
+
+@router.get("/{session_id}/opponents")
+def get_session_opponents_analysis(session_id: int, db: Session = Depends(get_db)):
+    """
+    Get opponent frequency analysis for a session.
+
+    Returns opponent stats, tendencies, and recommended exploits.
+    """
+    # Check if session exists
+    session_query = text("SELECT session_id FROM sessions WHERE session_id = :session_id")
+    result = db.execute(session_query, {"session_id": session_id})
+    if not result.first():
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Run opponent analysis
+    analyzer = OpponentAnalyzer(db)
+    analysis = analyzer.analyze_session_opponents(session_id)
+
+    return {
+        "session_id": session_id,
+        "opponents_analyzed": len(analysis),
+        "opponents": analysis
+    }
