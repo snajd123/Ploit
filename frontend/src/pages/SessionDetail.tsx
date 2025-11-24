@@ -50,6 +50,8 @@ interface GTOAnalysis {
     opponents?: string;
     gto_frequency?: number;
     timestamp?: string;
+    position?: string;
+    scenario?: string;
   }>;
 }
 
@@ -401,6 +403,11 @@ const SessionDetail: React.FC = () => {
                               <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-center gap-3">
                                   <span className="font-mono font-bold text-blue-600">{mistake.hero_hand}</span>
+                                  {mistake.scenario && (
+                                    <span className="text-sm font-medium text-purple-600 bg-purple-50 px-2 py-0.5 rounded">
+                                      {mistake.scenario}
+                                    </span>
+                                  )}
                                   <span className="text-sm text-gray-600">{mistake.street}</span>
                                   <span className="text-sm">
                                     <span className="text-red-600">{mistake.action_taken}</span>

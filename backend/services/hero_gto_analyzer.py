@@ -185,7 +185,9 @@ class HeroGTOAnalyzer:
                 "hand_in_gto_range": True,
                 "mistake_severity": self._classify_severity(ev_loss),
                 "opponents": ", ".join(opponents) if opponents else "None",
-                "timestamp": str(hand.get('timestamp', ''))
+                "timestamp": str(hand.get('timestamp', '')),
+                "position": position,
+                "scenario": f"{position} open"
             }
         elif not gto_recommends_open and vpip:
             # Should have folded but opened
@@ -203,7 +205,9 @@ class HeroGTOAnalyzer:
                 "hand_in_gto_range": False,
                 "mistake_severity": self._classify_severity(ev_loss),
                 "opponents": ", ".join(opponents) if opponents else "None",
-                "timestamp": str(hand.get('timestamp', ''))
+                "timestamp": str(hand.get('timestamp', '')),
+                "position": position,
+                "scenario": f"{position} open"
             }
 
         return None
@@ -261,6 +265,10 @@ class HeroGTOAnalyzer:
         if gto_action != hero_action and gto_freq > 0.40:
             # Clear mistake: GTO recommends different action with >40% frequency
             ev_loss = gto_freq * bb * 0.25
+            # Build scenario description
+            opponent_str = opponents[0] if opponents else "Unknown"
+            scenario_desc = f"{position} vs {opponent_str} open"
+
             return {
                 "hand_id": hand['hand_id'],
                 "session_id": session_id,
@@ -273,7 +281,9 @@ class HeroGTOAnalyzer:
                 "hand_in_gto_range": gto_freq > 0.20,
                 "mistake_severity": self._classify_severity(ev_loss),
                 "opponents": ", ".join(opponents) if opponents else "None",
-                "timestamp": str(hand.get('timestamp', ''))
+                "timestamp": str(hand.get('timestamp', '')),
+                "position": position,
+                "scenario": scenario_desc
             }
 
         return None
@@ -331,6 +341,10 @@ class HeroGTOAnalyzer:
         if gto_action != hero_action and gto_freq > 0.35:
             # Clear mistake facing 3-bet
             ev_loss = gto_freq * bb * 3 * 0.30  # Bigger pot
+            # Build scenario description
+            opponent_str = opponents[0] if opponents else "Unknown"
+            scenario_desc = f"{position} vs {opponent_str} 3-bet"
+
             return {
                 "hand_id": hand['hand_id'],
                 "session_id": session_id,
@@ -343,7 +357,9 @@ class HeroGTOAnalyzer:
                 "hand_in_gto_range": gto_freq > 0.15,
                 "mistake_severity": self._classify_severity(ev_loss),
                 "opponents": ", ".join(opponents) if opponents else "None",
-                "timestamp": str(hand.get('timestamp', ''))
+                "timestamp": str(hand.get('timestamp', '')),
+                "position": position,
+                "scenario": scenario_desc
             }
 
         return None
