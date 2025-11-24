@@ -42,6 +42,7 @@ const GTOBrowser: React.FC = () => {
     // Check if there's an open before current position
     const hasOpen = actionSequence.some(a => a.action === 'raise' || a.action === 'open');
     const has3Bet = actionSequence.filter(a => a.action === '3bet').length > 0;
+    const has4Bet = actionSequence.filter(a => a.action === '4bet').length > 0;
 
     if (!hasOpen) {
       // No one has acted yet, can fold or raise (open)
@@ -49,12 +50,13 @@ const GTOBrowser: React.FC = () => {
         { label: 'Fold', action: 'fold' },
         { label: 'Raise', action: 'raise', size_bb: 2.5 },
       ];
-    } else if (hasOpen && !has3Bet) {
-      // Facing an open, can fold/call/3bet
+    } else if (has4Bet) {
+      // Facing a 4-bet, can fold/call/5bet/allin
       return [
         { label: 'Fold', action: 'fold' },
         { label: 'Call', action: 'call' },
-        { label: '3-Bet', action: '3bet', size_bb: 10 },
+        { label: '5-Bet', action: '5bet' },
+        { label: 'All-in', action: 'allin' },
       ];
     } else if (has3Bet) {
       // Facing a 3-bet, can fold/call/4bet
@@ -62,6 +64,13 @@ const GTOBrowser: React.FC = () => {
         { label: 'Fold', action: 'fold' },
         { label: 'Call', action: 'call' },
         { label: '4-Bet', action: '4bet', size_bb: 22 },
+      ];
+    } else if (hasOpen) {
+      // Facing an open, can fold/call/3bet
+      return [
+        { label: 'Fold', action: 'fold' },
+        { label: 'Call', action: 'call' },
+        { label: '3-Bet', action: '3bet', size_bb: 10 },
       ];
     }
 

@@ -121,46 +121,81 @@ def determine_scenario_type(actions: List[ActionStep], hero_position: str, hero_
     Returns dict with category, scenario_name, and search criteria.
     """
 
-    # Count folds before hero
-    folds_before = [a for a in actions if a.action == "fold" and a.position != hero_position]
-
-    # Find if there's an open raise before hero
+    # Find the opener (first raise/open action)
     opener = None
     for action in actions:
         if action.action in ["raise", "open"] and action.position != hero_position:
             opener = action.position
             break
 
-    # Find if there's a 3-bet before hero
+    # Find the 3-bettor (first 3bet action)
     three_bettor = None
-    raise_count = sum(1 for a in actions if a.action in ["raise", "open", "3bet"])
-    if raise_count >= 2:
-        for action in actions:
-            if action.action == "3bet" and action.position != hero_position:
-                three_bettor = action.position
-                break
+    for action in actions:
+        if action.action == "3bet" and action.position != hero_position:
+            three_bettor = action.position
+            break
 
-    # Determine category
+    # Find the 4-bettor (first 4bet action)
+    four_bettor = None
+    for action in actions:
+        if action.action == "4bet" and action.position != hero_position:
+            four_bettor = action.position
+            break
+
+    # Find callers between opener and hero (for multiway scenarios)
+    callers = []
+    if opener:
+        found_opener = False
+        for action in actions:
+            if action.position == opener and action.action in ["raise", "open"]:
+                found_opener = True
+            elif found_opener and action.position == hero_position:
+                break
+            elif found_opener and action.action == "call":
+                callers.append(action.position)
+
+    # Determine category and scenario name
     if hero_action in ["raise", "open"] and not opener:
-        # Hero is opening
+        # Hero is opening (e.g., UTG_open)
         category = "opening"
         scenario_name = f"{hero_position}_open"
 
-    elif hero_action in ["fold", "call"] and opener and not three_bettor:
-        # Hero is defending against open
-        category = "defense"
-        action_suffix = hero_action
-        scenario_name = f"{hero_position}_vs_{opener}_{action_suffix}"
+    elif hero_action in ["5bet", "allin"] and four_bettor:
+        # Hero is facing a 4-bet (e.g., BB_vs_BTN_4bet_5bet, BB_vs_BTN_4bet_allin)
+        category = "facing_4bet"
+        scenario_name = f"{hero_position}_vs_{four_bettor}_4bet_{hero_action}"
+
+    elif hero_action in ["fold", "call"] and four_bettor:
+        # Hero is facing a 4-bet (e.g., BB_vs_BTN_4bet_fold, BB_vs_BTN_4bet_call)
+        category = "facing_4bet"
+        scenario_name = f"{hero_position}_vs_{four_bettor}_4bet_{hero_action}"
+
+    elif hero_action in ["fold", "call", "4bet", "allin"] and three_bettor:
+        # Hero is facing a 3-bet (e.g., BTN_vs_SB_3bet_fold, BTN_vs_SB_3bet_4bet)
+        category = "facing_3bet"
+        scenario_name = f"{hero_position}_vs_{three_bettor}_3bet_{hero_action}"
+
+    elif hero_action == "3bet" and opener and callers:
+        # Hero is 3-betting in a multiway pot (e.g., BB_vs_UTG_BTN_3bet)
+        callers_str = "_".join(callers)
+        category = "facing_3bet"
+        scenario_name = f"{hero_position}_vs_{opener}_{callers_str}_3bet"
 
     elif hero_action == "3bet" and opener and not three_bettor:
-        # Hero is 3-betting vs open
+        # Hero is 3-betting heads-up (e.g., BB_vs_UTG_3bet)
         category = "facing_3bet"
         scenario_name = f"{hero_position}_vs_{opener}_3bet"
 
-    elif hero_action in ["fold", "call", "4bet", "allin"] and three_bettor:
-        # Hero is facing a 3-bet
-        category = "facing_3bet"
-        scenario_name = f"{hero_position}_vs_{three_bettor}_3bet_{hero_action}"
+    elif hero_action in ["fold", "call"] and opener and callers:
+        # Hero is defending in a multiway pot (e.g., BB_vs_UTG_BTN_call)
+        callers_str = "_".join(callers)
+        category = "multiway"
+        scenario_name = f"{hero_position}_vs_{opener}_{callers_str}_{hero_action}"
+
+    elif hero_action in ["fold", "call"] and opener and not three_bettor:
+        # Hero is defending heads-up (e.g., BB_vs_UTG_fold, BB_vs_UTG_call)
+        category = "defense"
+        scenario_name = f"{hero_position}_vs_{opener}_{hero_action}"
 
     else:
         return {
