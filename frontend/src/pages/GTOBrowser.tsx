@@ -93,7 +93,8 @@ const GTOBrowser: React.FC = () => {
   const matchScenario = async (sequence: ActionStep[], heroPosition: string, heroAction: string) => {
     setLoading(true);
     try {
-      const response = await fetch('/api/gto/match-scenario', {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${apiUrl}/api/gto/match-scenario`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
