@@ -11,6 +11,7 @@ from datetime import datetime
 
 from ..database import get_db
 from ..services.session_detector import SessionDetector
+from ..services.hero_gto_analyzer import HeroGTOAnalyzer
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 
@@ -326,3 +327,20 @@ def get_session_stats(session_id: int, db: Session = Depends(get_db)):
         "saw_flop_pct": round(float(stats["saw_flop_pct"] or 0), 1),
         "cbet_flop_pct": round(float(stats["cbet_flop_pct"] or 0), 1)
     }
+
+@router.get("/{session_id}/gto-analysis")
+def get_session_gto_analysis(session_id: int, db: Session = Depends(get_db)):
+    """
+    Get GTO analysis for a session - hero's mistakes and EV loss.
+    """
+    # Check if session exists
+    session_query = text("SELECT session_id FROM sessions WHERE session_id = :session_id")
+    result = db.execute(session_query, {"session_id": session_id})
+    if not result.first():
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Run GTO analysis
+    analyzer = HeroGTOAnalyzer(db)
+    analysis = analyzer.analyze_session(session_id)
+
+    return analysis
