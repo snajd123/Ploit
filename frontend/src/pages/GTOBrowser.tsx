@@ -174,6 +174,22 @@ const GTOBrowser: React.FC = () => {
 
     const isExpanded = expandedGroups.has(groupKey);
 
+    // Group scenarios by opponent within this category
+    const scenariosByOpponent: Record<string, Scenario[]> = {};
+    scenarios.forEach(scenario => {
+      const opponent = scenario.opponent_position || 'no_opponent';
+      if (!scenariosByOpponent[opponent]) {
+        scenariosByOpponent[opponent] = [];
+      }
+      scenariosByOpponent[opponent].push(scenario);
+    });
+
+    // Sort opponent keys by position order
+    const opponentOrder = ['UTG', 'MP', 'CO', 'BTN', 'SB', 'BB', 'no_opponent'];
+    const sortedOpponents = Object.keys(scenariosByOpponent).sort((a, b) => {
+      return opponentOrder.indexOf(a) - opponentOrder.indexOf(b);
+    });
+
     return (
       <div key={groupKey} className="mb-4">
         <button
@@ -188,101 +204,123 @@ const GTOBrowser: React.FC = () => {
         </button>
 
         {isExpanded && (
-          <div className="mt-2 space-y-2 pl-4">
-            {scenarios.map((scenario) => (
-              <div key={scenario.scenario_id}>
-                <button
-                  onClick={() => handleScenarioClick(scenario)}
-                  className={`
-                    w-full text-left p-3 rounded-lg border transition-all
-                    ${selectedScenario?.scenario_id === scenario.scenario_id
-                      ? 'border-blue-500 bg-blue-50 shadow-md'
-                      : 'border-gray-200 bg-white hover:border-blue-300 hover:shadow-sm'
-                    }
-                  `}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className={`
-                        px-2 py-1 text-xs font-medium rounded border
-                        ${getActionBadgeColor(scenario.action)}
-                      `}>
-                        {scenario.action.toUpperCase()}
-                      </span>
-                      <span className="text-sm font-medium text-gray-700">
-                        {scenario.scenario_name}
-                      </span>
-                    </div>
-                    {scenario.opponent_position && (
-                      <span className="text-xs text-gray-500">
-                        vs <span className="font-medium text-orange-600">{scenario.opponent_position}</span>
-                      </span>
-                    )}
-                  </div>
-                </button>
+          <div className="mt-2 space-y-3 pl-4">
+            {sortedOpponents.map((opponent) => {
+              const opponentScenarios = scenariosByOpponent[opponent];
+              const opponentKey = `${groupKey}_${opponent}`;
+              const isOpponentExpanded = expandedGroups.has(opponentKey);
 
-                {/* Expanded Details */}
-                {selectedScenario?.scenario_id === scenario.scenario_id && (
-                  <div className="mt-2 ml-4 bg-white rounded-lg border-2 border-blue-500 p-6">
-                    {detailsLoading ? (
-                      <div className="text-center py-8">
-                        <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                        <p className="mt-2 text-sm text-gray-600">Loading range data...</p>
-                      </div>
-                    ) : selectedScenario.gto_action ? (
-                      <div>
-                        <div className="mb-4">
-                          <h4 className="text-lg font-semibold text-gray-900 mb-2">
-                            {selectedScenario.scenario_name}
-                          </h4>
-                          <div className="flex items-center gap-4 text-sm text-gray-600">
-                            <span>
-                              <span className="font-medium">Frequency:</span>{' '}
-                              <span className="text-blue-600 font-bold">
-                                {selectedScenario.gto_action.frequency.toFixed(1)}%
+              return (
+                <div key={opponent}>
+                  {/* Opponent Sub-group Header */}
+                  {opponent !== 'no_opponent' ? (
+                    <button
+                      onClick={() => toggleGroup(opponentKey)}
+                      className="w-full flex items-center gap-2 p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+                    >
+                      {isOpponentExpanded ? <ChevronDown className="w-4 h-4 text-gray-500" /> : <ChevronRight className="w-4 h-4 text-gray-500" />}
+                      <span className="text-sm font-semibold text-gray-700">
+                        vs <span className="text-orange-600">{opponent}</span>
+                      </span>
+                      <span className="text-xs text-gray-500">({opponentScenarios.length})</span>
+                    </button>
+                  ) : null}
+
+                  {/* Scenarios for this opponent */}
+                  {(opponent === 'no_opponent' || isOpponentExpanded) && (
+                    <div className="space-y-2 pl-2">
+                      {opponentScenarios.map((scenario) => (
+                        <div key={scenario.scenario_id}>
+                          <button
+                            onClick={() => handleScenarioClick(scenario)}
+                            className={`
+                              w-full text-left p-3 rounded-lg border transition-all
+                              ${selectedScenario?.scenario_id === scenario.scenario_id
+                                ? 'border-blue-500 bg-blue-50 shadow-md'
+                                : 'border-gray-200 bg-white hover:border-blue-300 hover:shadow-sm'
+                              }
+                            `}
+                          >
+                            <div className="flex items-center gap-3">
+                              <span className={`
+                                px-2 py-1 text-xs font-medium rounded border
+                                ${getActionBadgeColor(scenario.action)}
+                              `}>
+                                {scenario.action.toUpperCase()}
                               </span>
-                            </span>
-                            {selectedScenario.gto_action.combos && (
-                              <span>
-                                <span className="font-medium">Combos:</span>{' '}
-                                <span className="text-gray-900 font-bold">
-                                  {selectedScenario.gto_action.combos}
-                                </span>
+                              <span className="text-sm font-medium text-gray-700">
+                                {scenario.scenario_name}
                               </span>
-                            )}
-                          </div>
+                            </div>
+                          </button>
+
+                          {/* Expanded Details */}
+                          {selectedScenario?.scenario_id === scenario.scenario_id && (
+                            <div className="mt-2 ml-4 bg-white rounded-lg border-2 border-blue-500 p-6">
+                              {detailsLoading ? (
+                                <div className="text-center py-8">
+                                  <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                                  <p className="mt-2 text-sm text-gray-600">Loading range data...</p>
+                                </div>
+                              ) : selectedScenario.gto_action ? (
+                                <div>
+                                  <div className="mb-4">
+                                    <h4 className="text-lg font-semibold text-gray-900 mb-2">
+                                      {selectedScenario.scenario_name}
+                                    </h4>
+                                    <div className="flex items-center gap-4 text-sm text-gray-600">
+                                      <span>
+                                        <span className="font-medium">Frequency:</span>{' '}
+                                        <span className="text-blue-600 font-bold">
+                                          {selectedScenario.gto_action.frequency.toFixed(1)}%
+                                        </span>
+                                      </span>
+                                      {selectedScenario.gto_action.combos && (
+                                        <span>
+                                          <span className="font-medium">Combos:</span>{' '}
+                                          <span className="text-gray-900 font-bold">
+                                            {selectedScenario.gto_action.combos}
+                                          </span>
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {selectedScenario.gto_action.range_matrix ? (
+                                    <RangeGrid
+                                      rangeMatrix={selectedScenario.gto_action.range_matrix}
+                                      title={`${selectedScenario.action.toUpperCase()} Range`}
+                                    />
+                                  ) : (
+                                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
+                                      <p className="text-yellow-800">Range data not available for this scenario</p>
+                                    </div>
+                                  )}
+
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedScenario(null);
+                                    }}
+                                    className="mt-4 w-full px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
+                                  >
+                                    Close
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
+                                  <p className="text-red-800">No GTO data available for this scenario</p>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
-
-                        {selectedScenario.gto_action.range_matrix ? (
-                          <RangeGrid
-                            rangeMatrix={selectedScenario.gto_action.range_matrix}
-                            title={`${selectedScenario.action.toUpperCase()} Range`}
-                          />
-                        ) : (
-                          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
-                            <p className="text-yellow-800">Range data not available for this scenario</p>
-                          </div>
-                        )}
-
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedScenario(null);
-                          }}
-                          className="mt-4 w-full px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
-                        >
-                          Close
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
-                        <p className="text-red-800">No GTO data available for this scenario</p>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
