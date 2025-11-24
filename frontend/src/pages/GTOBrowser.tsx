@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Filter, X } from 'lucide-react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import RangeGrid from '../components/RangeGrid';
 
 interface Scenario {
@@ -21,62 +21,100 @@ interface ScenarioDetails extends Scenario {
   };
 }
 
-const CATEGORIES = [
-  { id: 'opening', label: 'Opening', description: 'Open raises from each position' },
-  { id: 'defense', label: 'Defense', description: 'Defending against opens heads-up' },
-  { id: 'facing_3bet', label: 'Facing 3-Bet', description: '3-betting and facing 3-bets' },
-  { id: 'facing_4bet', label: 'Facing 4-Bet', description: 'Facing 4-bets' },
-  { id: 'multiway', label: 'Multiway', description: 'Multiple players in the pot' },
+interface GroupedScenarios {
+  opening: Scenario[];
+  facingOpen: Scenario[];
+  facing3Bet: Scenario[];
+  facing4Bet: Scenario[];
+  multiway: Scenario[];
+}
+
+const POSITIONS = [
+  { id: 'UTG', label: 'UTG', description: 'Under the Gun' },
+  { id: 'MP', label: 'MP', description: 'Middle Position' },
+  { id: 'CO', label: 'CO', description: 'Cutoff' },
+  { id: 'BTN', label: 'BTN', description: 'Button' },
+  { id: 'SB', label: 'SB', description: 'Small Blind' },
+  { id: 'BB', label: 'BB', description: 'Big Blind' },
 ];
 
-const POSITIONS = ['UTG', 'MP', 'CO', 'BTN', 'SB', 'BB'];
-
 const GTOBrowser: React.FC = () => {
-  const [selectedCategory, setSelectedCategory] = useState('opening');
-  const [scenarios, setScenarios] = useState<Scenario[]>([]);
-  const [filteredScenarios, setFilteredScenarios] = useState<Scenario[]>([]);
+  const [selectedPosition, setSelectedPosition] = useState('UTG');
+  const [allScenarios, setAllScenarios] = useState<Scenario[]>([]);
+  const [groupedScenarios, setGroupedScenarios] = useState<GroupedScenarios>({
+    opening: [],
+    facingOpen: [],
+    facing3Bet: [],
+    facing4Bet: [],
+    multiway: [],
+  });
   const [selectedScenario, setSelectedScenario] = useState<ScenarioDetails | null>(null);
   const [loading, setLoading] = useState(false);
   const [detailsLoading, setDetailsLoading] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(['opening', 'facingOpen']));
 
-  // Filters
-  const [positionFilter, setPositionFilter] = useState<string>('');
-  const [opponentFilter, setOpponentFilter] = useState<string>('');
-  const [showFilters, setShowFilters] = useState(false);
-
-  // Fetch scenarios for selected category
+  // Fetch all scenarios on mount
   useEffect(() => {
-    fetchScenarios();
-  }, [selectedCategory]);
+    fetchAllScenarios();
+  }, []);
 
-  // Apply filters
+  // Group scenarios when position changes
   useEffect(() => {
-    let filtered = [...scenarios];
+    groupScenariosByType();
+  }, [selectedPosition, allScenarios]);
 
-    if (positionFilter) {
-      filtered = filtered.filter(s => s.position === positionFilter);
-    }
-
-    if (opponentFilter) {
-      filtered = filtered.filter(s => s.opponent_position === opponentFilter);
-    }
-
-    setFilteredScenarios(filtered);
-  }, [scenarios, positionFilter, opponentFilter]);
-
-  const fetchScenarios = async () => {
+  const fetchAllScenarios = async () => {
     setLoading(true);
     try {
       const apiUrl = import.meta.env.VITE_API_URL || '';
-      const response = await fetch(`${apiUrl}/api/gto/scenarios?category=${selectedCategory}`);
+      const response = await fetch(`${apiUrl}/api/gto/scenarios`);
       const data = await response.json();
-      setScenarios(data);
-      setFilteredScenarios(data);
+      setAllScenarios(data);
     } catch (error) {
       console.error('Error fetching scenarios:', error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const groupScenariosByType = () => {
+    const positionScenarios = allScenarios.filter(s => s.position === selectedPosition);
+
+    const grouped: GroupedScenarios = {
+      opening: [],
+      facingOpen: [],
+      facing3Bet: [],
+      facing4Bet: [],
+      multiway: [],
+    };
+
+    positionScenarios.forEach(scenario => {
+      if (scenario.category === 'opening') {
+        grouped.opening.push(scenario);
+      } else if (scenario.category === 'defense' || (scenario.category === 'facing_3bet' && scenario.action === '3bet' && !scenario.scenario_name.includes('3bet_'))) {
+        // Defense (fold/call) OR 3-betting vs open (not facing a 3-bet)
+        grouped.facingOpen.push(scenario);
+      } else if (scenario.category === 'facing_3bet' && scenario.action !== '3bet') {
+        // Facing a 3-bet (responding with fold/call/4bet/allin)
+        grouped.facing3Bet.push(scenario);
+      } else if (scenario.category === 'facing_4bet') {
+        grouped.facing4Bet.push(scenario);
+      } else if (scenario.category === 'multiway') {
+        grouped.multiway.push(scenario);
+      }
+    });
+
+    // Sort scenarios within each group by opponent position
+    Object.keys(grouped).forEach(key => {
+      grouped[key as keyof GroupedScenarios].sort((a, b) => {
+        const opponentOrder = ['UTG', 'MP', 'CO', 'BTN', 'SB', 'BB'];
+        const aIndex = a.opponent_position ? opponentOrder.indexOf(a.opponent_position) : 999;
+        const bIndex = b.opponent_position ? opponentOrder.indexOf(b.opponent_position) : 999;
+        return aIndex - bIndex;
+      });
+    });
+
+    setGroupedScenarios(grouped);
   };
 
   const fetchScenarioDetails = async (scenarioId: number) => {
@@ -101,9 +139,14 @@ const GTOBrowser: React.FC = () => {
     }
   };
 
-  const clearFilters = () => {
-    setPositionFilter('');
-    setOpponentFilter('');
+  const toggleGroup = (groupKey: string) => {
+    const newExpanded = new Set(expandedGroups);
+    if (newExpanded.has(groupKey)) {
+      newExpanded.delete(groupKey);
+    } else {
+      newExpanded.add(groupKey);
+    }
+    setExpandedGroups(newExpanded);
   };
 
   const getActionBadgeColor = (action: string) => {
@@ -126,158 +169,61 @@ const GTOBrowser: React.FC = () => {
     }
   };
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* Header */}
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">GTO Scenario Browser</h1>
-          <p className="text-gray-600">Browse and study all {scenarios.length} GTO scenarios with range visualization</p>
-        </div>
+  const renderScenarioGroup = (title: string, groupKey: keyof GroupedScenarios, scenarios: Scenario[]) => {
+    if (scenarios.length === 0) return null;
 
-        {/* Category Tabs */}
-        <div className="bg-white rounded-lg shadow-sm mb-6">
-          <div className="border-b border-gray-200">
-            <nav className="flex -mb-px overflow-x-auto">
-              {CATEGORIES.map((category) => (
-                <button
-                  key={category.id}
-                  onClick={() => {
-                    setSelectedCategory(category.id);
-                    setSelectedScenario(null);
-                    clearFilters();
-                  }}
-                  className={`
-                    px-6 py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap
-                    ${selectedCategory === category.id
-                      ? 'border-blue-600 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    }
-                  `}
-                >
-                  <div>{category.label}</div>
-                  <div className="text-xs font-normal mt-1 text-gray-500">{category.description}</div>
-                </button>
-              ))}
-            </nav>
+    const isExpanded = expandedGroups.has(groupKey);
+
+    return (
+      <div key={groupKey} className="mb-4">
+        <button
+          onClick={() => toggleGroup(groupKey)}
+          className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            {isExpanded ? <ChevronDown className="w-5 h-5 text-gray-500" /> : <ChevronRight className="w-5 h-5 text-gray-500" />}
+            <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+            <span className="text-sm text-gray-500">({scenarios.length})</span>
           </div>
+        </button>
 
-          {/* Filters */}
-          <div className="p-4 border-b border-gray-200">
-            <div className="flex items-center justify-between mb-3">
-              <button
-                onClick={() => setShowFilters(!showFilters)}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
-              >
-                <Filter className="w-4 h-4" />
-                Filters
-                {(positionFilter || opponentFilter) && (
-                  <span className="ml-1 px-2 py-0.5 bg-blue-600 text-white text-xs rounded-full">
-                    {[positionFilter, opponentFilter].filter(Boolean).length}
-                  </span>
-                )}
-              </button>
-
-              {(positionFilter || opponentFilter) && (
-                <button
-                  onClick={clearFilters}
-                  className="text-sm text-blue-600 hover:text-blue-700"
-                >
-                  Clear filters
-                </button>
-              )}
-            </div>
-
-            {showFilters && (
-              <div className="flex flex-wrap gap-4 pt-3 border-t border-gray-200">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Position</label>
-                  <select
-                    value={positionFilter}
-                    onChange={(e) => setPositionFilter(e.target.value)}
-                    className="px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                  >
-                    <option value="">All Positions</option>
-                    {POSITIONS.map((pos) => (
-                      <option key={pos} value={pos}>{pos}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Opponent</label>
-                  <select
-                    value={opponentFilter}
-                    onChange={(e) => setOpponentFilter(e.target.value)}
-                    className="px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                  >
-                    <option value="">All Opponents</option>
-                    {POSITIONS.map((pos) => (
-                      <option key={pos} value={pos}>{pos}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Scenario Count */}
-          <div className="px-4 py-3 bg-gray-50 text-sm text-gray-600">
-            Showing {filteredScenarios.length} of {scenarios.length} scenarios
-          </div>
-        </div>
-
-        {/* Loading State */}
-        {loading && (
-          <div className="bg-white rounded-lg shadow-sm p-12 text-center">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-            <p className="mt-4 text-gray-600">Loading scenarios...</p>
-          </div>
-        )}
-
-        {/* Scenario Cards Grid */}
-        {!loading && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredScenarios.map((scenario) => (
+        {isExpanded && (
+          <div className="mt-2 space-y-2 pl-4">
+            {scenarios.map((scenario) => (
               <div key={scenario.scenario_id}>
                 <button
                   onClick={() => handleScenarioClick(scenario)}
                   className={`
-                    w-full text-left p-4 rounded-lg border-2 transition-all
+                    w-full text-left p-3 rounded-lg border transition-all
                     ${selectedScenario?.scenario_id === scenario.scenario_id
-                      ? 'border-blue-600 bg-blue-50 shadow-lg'
-                      : 'border-gray-200 bg-white hover:border-blue-300 hover:shadow-md'
+                      ? 'border-blue-500 bg-blue-50 shadow-md'
+                      : 'border-gray-200 bg-white hover:border-blue-300 hover:shadow-sm'
                     }
                   `}
                 >
-                  <div className="flex items-start justify-between mb-2">
-                    <div className="font-semibold text-gray-900">{scenario.scenario_name}</div>
-                    <span className={`
-                      px-2 py-1 text-xs font-medium rounded border
-                      ${getActionBadgeColor(scenario.action)}
-                    `}>
-                      {scenario.action.toUpperCase()}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-2 text-sm text-gray-600">
-                    <span className="font-medium text-blue-600">{scenario.position}</span>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className={`
+                        px-2 py-1 text-xs font-medium rounded border
+                        ${getActionBadgeColor(scenario.action)}
+                      `}>
+                        {scenario.action.toUpperCase()}
+                      </span>
+                      <span className="text-sm font-medium text-gray-700">
+                        {scenario.scenario_name}
+                      </span>
+                    </div>
                     {scenario.opponent_position && (
-                      <>
-                        <span>vs</span>
-                        <span className="font-medium text-orange-600">{scenario.opponent_position}</span>
-                      </>
+                      <span className="text-xs text-gray-500">
+                        vs <span className="font-medium text-orange-600">{scenario.opponent_position}</span>
+                      </span>
                     )}
                   </div>
-
-                  {scenario.description && (
-                    <p className="mt-2 text-xs text-gray-500">{scenario.description}</p>
-                  )}
                 </button>
 
                 {/* Expanded Details */}
                 {selectedScenario?.scenario_id === scenario.scenario_id && (
-                  <div className="mt-4 bg-white rounded-lg border-2 border-blue-600 p-6">
+                  <div className="mt-2 ml-4 bg-white rounded-lg border-2 border-blue-500 p-6">
                     {detailsLoading ? (
                       <div className="text-center py-8">
                         <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -286,9 +232,9 @@ const GTOBrowser: React.FC = () => {
                     ) : selectedScenario.gto_action ? (
                       <div>
                         <div className="mb-4">
-                          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                          <h4 className="text-lg font-semibold text-gray-900 mb-2">
                             {selectedScenario.scenario_name}
-                          </h3>
+                          </h4>
                           <div className="flex items-center gap-4 text-sm text-gray-600">
                             <span>
                               <span className="font-medium">Frequency:</span>{' '}
@@ -319,10 +265,12 @@ const GTOBrowser: React.FC = () => {
                         )}
 
                         <button
-                          onClick={() => setSelectedScenario(null)}
-                          className="mt-4 w-full px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors flex items-center justify-center gap-2"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedScenario(null);
+                          }}
+                          className="mt-4 w-full px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
                         >
-                          <X className="w-4 h-4" />
                           Close
                         </button>
                       </div>
@@ -337,17 +285,77 @@ const GTOBrowser: React.FC = () => {
             ))}
           </div>
         )}
+      </div>
+    );
+  };
 
-        {/* Empty State */}
-        {!loading && filteredScenarios.length === 0 && (
+  const totalScenarios = Object.values(groupedScenarios).reduce((sum, arr) => sum + arr.length, 0);
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* Header */}
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">GTO Scenario Browser</h1>
+          <p className="text-gray-600">Study GTO ranges by position - select your position below</p>
+        </div>
+
+        {/* Position Selector */}
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+          <h2 className="text-sm font-medium text-gray-700 mb-4">Select Position:</h2>
+          <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+            {POSITIONS.map((position) => (
+              <button
+                key={position.id}
+                onClick={() => {
+                  setSelectedPosition(position.id);
+                  setSelectedScenario(null);
+                }}
+                className={`
+                  px-6 py-4 rounded-lg border-2 font-semibold transition-all
+                  ${selectedPosition === position.id
+                    ? 'border-blue-600 bg-blue-600 text-white shadow-lg scale-105'
+                    : 'border-gray-300 bg-white text-gray-700 hover:border-blue-300 hover:shadow-md'
+                  }
+                `}
+              >
+                <div className="text-lg">{position.label}</div>
+                <div className="text-xs font-normal opacity-75">{position.description}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Loading State */}
+        {loading && (
           <div className="bg-white rounded-lg shadow-sm p-12 text-center">
-            <p className="text-gray-600">No scenarios found matching your filters</p>
-            <button
-              onClick={clearFilters}
-              className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-            >
-              Clear Filters
-            </button>
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+            <p className="mt-4 text-gray-600">Loading scenarios...</p>
+          </div>
+        )}
+
+        {/* Scenarios */}
+        {!loading && (
+          <div className="bg-white rounded-lg shadow-sm p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold text-gray-900">
+                {selectedPosition} Scenarios ({totalScenarios})
+              </h2>
+            </div>
+
+            {totalScenarios === 0 ? (
+              <div className="text-center py-12 text-gray-500">
+                No scenarios available for {selectedPosition}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {renderScenarioGroup('Opening', 'opening', groupedScenarios.opening)}
+                {renderScenarioGroup('Facing an Open', 'facingOpen', groupedScenarios.facingOpen)}
+                {renderScenarioGroup('Facing a 3-Bet', 'facing3Bet', groupedScenarios.facing3Bet)}
+                {renderScenarioGroup('Facing a 4-Bet', 'facing4Bet', groupedScenarios.facing4Bet)}
+                {renderScenarioGroup('Multiway', 'multiway', groupedScenarios.multiway)}
+              </div>
+            )}
           </div>
         )}
       </div>
