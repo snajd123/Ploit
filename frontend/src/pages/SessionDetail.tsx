@@ -66,6 +66,8 @@ const SessionDetail: React.FC = () => {
     try {
       const apiUrl = import.meta.env.VITE_API_URL || '';
 
+      console.log('Fetching session data for ID:', sessionId);
+
       // Fetch session details, stats, and hands in parallel
       const [sessionRes, statsRes, handsRes] = await Promise.all([
         fetch(`${apiUrl}/api/sessions/${sessionId}`),
@@ -73,9 +75,21 @@ const SessionDetail: React.FC = () => {
         fetch(`${apiUrl}/api/sessions/${sessionId}/hands`)
       ]);
 
+      console.log('Response statuses:', {
+        session: sessionRes.status,
+        stats: statsRes.status,
+        hands: handsRes.status
+      });
+
+      if (!sessionRes.ok || !statsRes.ok || !handsRes.ok) {
+        throw new Error(`HTTP errors - session: ${sessionRes.status}, stats: ${statsRes.status}, hands: ${handsRes.status}`);
+      }
+
       const sessionData = await sessionRes.json();
       const statsData = await statsRes.json();
       const handsData = await handsRes.json();
+
+      console.log('Fetched data:', { sessionData, statsData, handsData });
 
       setSession(sessionData);
       setStats(statsData);
@@ -83,6 +97,7 @@ const SessionDetail: React.FC = () => {
       setNotes(sessionData.notes || '');
     } catch (error) {
       console.error('Error fetching session data:', error);
+      alert(`Error loading session: ${error}`);
     } finally {
       setLoading(false);
     }
