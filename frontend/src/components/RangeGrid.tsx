@@ -132,8 +132,8 @@ const RangeGrid: React.FC<RangeGridProps> = ({ rangeString, rangeMatrix, title }
       <div className="bg-white rounded-lg border border-gray-200 p-4 overflow-x-auto">
         <div className="inline-block min-w-full">
           <div className="grid grid-cols-13 gap-1" style={{ gridTemplateColumns: 'repeat(13, minmax(0, 1fr))' }}>
-            {RANKS.map((rank1, i) => (
-              RANKS.map((rank2, j) => {
+            {RANKS.map((rank1) => (
+              RANKS.map((rank2) => {
                 const frequency = getHandFrequency(rank1, rank2, matrix);
                 const handLabel = getHandLabel(rank1, rank2);
                 const combos = getHandCombos(rank1, rank2);
