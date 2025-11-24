@@ -414,8 +414,12 @@ const SessionDetail: React.FC = () => {
                                 <div className="flex items-center gap-2 text-xs text-gray-500">
                                   <span>vs:</span>
                                   <span className="font-medium">{mistake.opponents}</span>
-                                  <span className="mx-1">•</span>
-                                  <span>GTO freq: {(mistake.gto_frequency * 100).toFixed(1)}%</span>
+                                  {mistake.gto_frequency !== undefined && (
+                                    <>
+                                      <span className="mx-1">•</span>
+                                      <span>GTO freq: {(mistake.gto_frequency * 100).toFixed(1)}%</span>
+                                    </>
+                                  )}
                                 </div>
                               )}
                             </div>
