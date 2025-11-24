@@ -137,7 +137,6 @@ def get_session_hands(
             phs.hand_id,
             phs.player_name,
             phs.position,
-            phs.hole_cards,
             phs.profit_loss,
             rh.timestamp,
             rh.table_name

@@ -36,7 +36,7 @@ interface Hand {
   hand_id: number;
   player_name: string;
   position: string;
-  hole_cards: string;
+  hole_cards?: string;
   profit_loss: number;
   timestamp: string;
   table_name: string;
@@ -330,10 +330,12 @@ const SessionDetail: React.FC = () => {
                           <span className="text-sm text-gray-600">Position:</span>
                           <span className="ml-2 font-medium text-gray-900">{hand.position}</span>
                         </div>
-                        <div>
-                          <span className="text-sm text-gray-600">Cards:</span>
-                          <span className="ml-2 font-mono font-bold text-blue-600">{hand.hole_cards}</span>
-                        </div>
+                        {hand.hole_cards && (
+                          <div>
+                            <span className="text-sm text-gray-600">Cards:</span>
+                            <span className="ml-2 font-mono font-bold text-blue-600">{hand.hole_cards}</span>
+                          </div>
+                        )}
                         <div className="text-xs text-gray-500">
                           {formatTime(hand.timestamp)}
                         </div>
