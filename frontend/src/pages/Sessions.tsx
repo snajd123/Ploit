@@ -31,11 +31,19 @@ const Sessions: React.FC = () => {
     setLoading(true);
     try {
       const apiUrl = import.meta.env.VITE_API_URL || '';
+      console.log('Fetching sessions from:', `${apiUrl}/api/sessions`);
       const response = await fetch(`${apiUrl}/api/sessions`);
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
       const data = await response.json();
+      console.log('Fetched sessions:', data);
       setSessions(data);
     } catch (error) {
       console.error('Error fetching sessions:', error);
+      alert(`Error fetching sessions: ${error}`);
     } finally {
       setLoading(false);
     }
@@ -45,15 +53,25 @@ const Sessions: React.FC = () => {
     setDetecting(true);
     try {
       const apiUrl = import.meta.env.VITE_API_URL || '';
+      console.log('Detecting sessions at:', `${apiUrl}/api/sessions/detect-all`);
       const response = await fetch(`${apiUrl}/api/sessions/detect-all`, {
         method: 'POST',
       });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
       const result = await response.json();
+      console.log('Detection result:', result);
       alert(`Detected ${result.total_sessions_created} new sessions for ${result.players_processed} players`);
-      fetchSessions();
+
+      // Wait a moment for database to commit, then refresh
+      await new Promise(resolve => setTimeout(resolve, 500));
+      await fetchSessions();
     } catch (error) {
       console.error('Error detecting sessions:', error);
-      alert('Failed to detect sessions');
+      alert(`Failed to detect sessions: ${error}`);
     } finally {
       setDetecting(false);
     }
