@@ -59,7 +59,7 @@ class SessionDetector:
                 rh.table_name,
                 rh.stake_level,
                 phs.position,
-                phs.hole_cards,
+                rh.hole_cards,
                 phs.profit_loss
             FROM player_hand_summary phs
             JOIN raw_hands rh ON phs.hand_id = rh.hand_id
