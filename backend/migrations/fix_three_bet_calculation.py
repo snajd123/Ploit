@@ -19,8 +19,6 @@ from sqlalchemy.orm import sessionmaker
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from models.database_models import PlayerHandSummary, PlayerStats, RawHand, HandAction
-from parser.flag_calculator import FlagCalculator
-from parser.data_structures import Hand, Action, Street, ActionType
 from decimal import Decimal
 
 
@@ -67,64 +65,45 @@ def recalculate_three_bet_opportunities(session):
     updated = 0
 
     for (hand_id,) in hand_ids:
-        # Get raw hand data
-        raw_hand = session.query(RawHand).filter_by(hand_id=hand_id).first()
-        if not raw_hand:
+        # Get all preflop actions for this hand
+        preflop_actions = session.query(HandAction).filter_by(
+            hand_id=hand_id,
+            street='PREFLOP'
+        ).order_by(HandAction.action_id).all()
+
+        # Find all preflop raises
+        raises = [a for a in preflop_actions
+                 if a.action_type == 'RAISE' and a.is_aggressive]
+
+        if not raises:
+            # No raises in this hand, no 3-bet opportunities
+            processed += 1
             continue
 
-        # Get all actions for this hand
-        actions = session.query(HandAction).filter_by(hand_id=hand_id).order_by(HandAction.action_id).all()
-
-        # Convert to parser format
-        hand_actions = []
-        for action in actions:
-            hand_actions.append(Action(
-                player_name=action.player_name,
-                action_type=ActionType(action.action_type.lower()) if action.action_type else ActionType.FOLD,
-                amount=float(action.amount) if action.amount else 0.0,
-                street=Street(action.street.lower()) if action.street else Street.PREFLOP,
-                facing_bet=action.facing_bet or False,
-                is_aggressive=action.is_aggressive or False,
-                position=action.position
-            ))
-
-        hand = Hand(
-            hand_id=hand_id,
-            actions=hand_actions
-        )
-
-        calculator = FlagCalculator(hand)
+        # First raise
+        first_raise = raises[0]
+        first_raise_idx = preflop_actions.index(first_raise)
 
         # Get all summaries for this hand
         summaries = session.query(PlayerHandSummary).filter_by(hand_id=hand_id).all()
 
         for summary in summaries:
-            # Count preflop raises
-            preflop_actions = [a for a in hand.actions if a.street == Street.PREFLOP]
-            raises = [a for a in preflop_actions
-                     if a.action_type == ActionType.RAISE and a.is_aggressive]
-            raise_count = len(raises)
+            # Check if player made the first raise
+            made_first_raise = (first_raise.player_name == summary.player_name)
 
-            if raise_count >= 1:
-                # Check if player made first raise
-                made_first_raise = (raises[0].player_name == summary.player_name if raises else False)
+            # Check if player had actions after the first raise
+            player_actions_after = [a for a in preflop_actions[first_raise_idx + 1:]
+                                  if a.player_name == summary.player_name
+                                  and a.action_type not in ['POST_SB', 'POST_BB', 'POST_ANTE']]
+            faced_first_raise = len(player_actions_after) > 0
 
-                # Check if player faced first raise
-                if raises:
-                    first_raise_idx = preflop_actions.index(raises[0])
-                    player_actions_after = [a for a in preflop_actions[first_raise_idx + 1:]
-                                          if a.player_name == summary.player_name]
-                    faced_first_raise = len(player_actions_after) > 0
-                else:
-                    faced_first_raise = False
+            # Set three_bet_opportunity
+            old_value = summary.three_bet_opportunity
+            new_value = faced_first_raise and not made_first_raise
+            summary.three_bet_opportunity = new_value
 
-                # Set three_bet_opportunity
-                old_value = summary.three_bet_opportunity
-                new_value = faced_first_raise and not made_first_raise
-                summary.three_bet_opportunity = new_value
-
-                if old_value != new_value:
-                    updated += 1
+            if old_value != new_value:
+                updated += 1
 
         processed += 1
         if processed % 100 == 0:
