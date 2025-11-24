@@ -31,8 +31,8 @@ const Sessions: React.FC = () => {
     setLoading(true);
     try {
       const apiUrl = import.meta.env.VITE_API_URL || '';
-      console.log('Fetching sessions from:', `${apiUrl}/api/sessions`);
-      const response = await fetch(`${apiUrl}/api/sessions`);
+      console.log('Fetching sessions from:', `${apiUrl}/api/sessions/`);
+      const response = await fetch(`${apiUrl}/api/sessions/`);
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
