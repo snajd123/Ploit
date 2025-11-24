@@ -68,7 +68,8 @@ class HeroGTOAnalyzer:
                 phs.faced_three_bet,
                 phs.folded_to_three_bet,
                 phs.called_three_bet,
-                rh.stake_level
+                rh.stake_level,
+                rh.timestamp
             FROM player_hand_summary phs
             JOIN raw_hands rh ON phs.hand_id = rh.hand_id
             WHERE phs.session_id = :session_id
@@ -97,26 +98,44 @@ class HeroGTOAnalyzer:
         if not normalized_hand:
             return mistakes
 
+        # Get opponents for this hand
+        opponents = self._get_opponents_in_hand(hand['hand_id'], hand['player_name'])
+
         # Analyze preflop decisions based on what hero faced
         if hand['faced_three_bet']:
             # Hero faced a 3-bet (category: facing_4bet in database)
-            mistake = self._analyze_vs_three_bet(hand, normalized_hand, bb, session_id)
+            mistake = self._analyze_vs_three_bet(hand, normalized_hand, bb, session_id, opponents)
             if mistake:
                 mistakes.append(mistake)
         elif hand['faced_raise']:
             # Hero faced an open (category: defense + facing_3bet in database)
-            mistake = self._analyze_vs_open(hand, normalized_hand, bb, session_id)
+            mistake = self._analyze_vs_open(hand, normalized_hand, bb, session_id, opponents)
             if mistake:
                 mistakes.append(mistake)
         else:
             # Hero was first to act (category: opening in database)
-            mistake = self._analyze_opening(hand, normalized_hand, bb, session_id)
+            mistake = self._analyze_opening(hand, normalized_hand, bb, session_id, opponents)
             if mistake:
                 mistakes.append(mistake)
 
         return mistakes
 
-    def _analyze_opening(self, hand: Dict[str, Any], normalized_hand: str, bb: float, session_id: int) -> Optional[Dict[str, Any]]:
+    def _get_opponents_in_hand(self, hand_id: int, hero_name: str) -> List[str]:
+        """
+        Get list of opponent names in this hand.
+        """
+        query = text("""
+            SELECT DISTINCT player_name
+            FROM player_hand_summary
+            WHERE hand_id = :hand_id
+            AND player_name != :hero_name
+            ORDER BY player_name
+        """)
+
+        result = self.db.execute(query, {"hand_id": hand_id, "hero_name": hero_name})
+        return [row[0] for row in result]
+
+    def _analyze_opening(self, hand: Dict[str, Any], normalized_hand: str, bb: float, session_id: int, opponents: List[str]) -> Optional[Dict[str, Any]]:
         """
         Analyze preflop opening decision using real GTO database.
         """
@@ -164,7 +183,9 @@ class HeroGTOAnalyzer:
                 "gto_frequency": round(gto_freq, 3),
                 "ev_loss_bb": round(ev_loss, 2),
                 "hand_in_gto_range": True,
-                "mistake_severity": self._classify_severity(ev_loss)
+                "mistake_severity": self._classify_severity(ev_loss),
+                "opponents": ", ".join(opponents) if opponents else "None",
+                "timestamp": str(hand.get('timestamp', ''))
             }
         elif not gto_recommends_open and vpip:
             # Should have folded but opened
@@ -180,12 +201,14 @@ class HeroGTOAnalyzer:
                 "gto_frequency": round(gto_freq, 3),
                 "ev_loss_bb": round(ev_loss, 2),
                 "hand_in_gto_range": False,
-                "mistake_severity": self._classify_severity(ev_loss)
+                "mistake_severity": self._classify_severity(ev_loss),
+                "opponents": ", ".join(opponents) if opponents else "None",
+                "timestamp": str(hand.get('timestamp', ''))
             }
 
         return None
 
-    def _analyze_vs_open(self, hand: Dict[str, Any], normalized_hand: str, bb: float, session_id: int) -> Optional[Dict[str, Any]]:
+    def _analyze_vs_open(self, hand: Dict[str, Any], normalized_hand: str, bb: float, session_id: int, opponents: List[str]) -> Optional[Dict[str, Any]]:
         """
         Analyze decision when facing an open.
         Need to check both "defense" (fold/call) and "facing_3bet" (3bet) categories.
@@ -248,12 +271,14 @@ class HeroGTOAnalyzer:
                 "gto_frequency": round(gto_freq, 3),
                 "ev_loss_bb": round(ev_loss, 2),
                 "hand_in_gto_range": gto_freq > 0.20,
-                "mistake_severity": self._classify_severity(ev_loss)
+                "mistake_severity": self._classify_severity(ev_loss),
+                "opponents": ", ".join(opponents) if opponents else "None",
+                "timestamp": str(hand.get('timestamp', ''))
             }
 
         return None
 
-    def _analyze_vs_three_bet(self, hand: Dict[str, Any], normalized_hand: str, bb: float, session_id: int) -> Optional[Dict[str, Any]]:
+    def _analyze_vs_three_bet(self, hand: Dict[str, Any], normalized_hand: str, bb: float, session_id: int, opponents: List[str]) -> Optional[Dict[str, Any]]:
         """
         Analyze decision when facing a 3-bet.
         Category "facing_4bet" in database (confusing naming).
@@ -316,7 +341,9 @@ class HeroGTOAnalyzer:
                 "gto_frequency": round(gto_freq, 3),
                 "ev_loss_bb": round(ev_loss, 2),
                 "hand_in_gto_range": gto_freq > 0.15,
-                "mistake_severity": self._classify_severity(ev_loss)
+                "mistake_severity": self._classify_severity(ev_loss),
+                "opponents": ", ".join(opponents) if opponents else "None",
+                "timestamp": str(hand.get('timestamp', ''))
             }
 
         return None
