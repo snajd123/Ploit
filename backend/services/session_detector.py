@@ -112,7 +112,7 @@ class SessionDetector:
         total_hands = len(hands)
 
         # Calculate profit/loss
-        total_profit_loss = sum(h.get('profit_loss', 0) or 0 for h in hands)
+        total_profit_loss = sum(float(h.get('profit_loss', 0) or 0) for h in hands)
 
         # Get table info from most common table
         table_name = self._get_most_common_table(hands)
@@ -232,13 +232,16 @@ class SessionDetector:
 
     def detect_all_sessions(self) -> Dict[str, List[Dict[str, Any]]]:
         """
-        Detect sessions for all players who have hands without session_id.
+        Detect sessions for all hero players (players with hole cards visible).
+        Only creates sessions for players who have "Dealt to" in their hand history.
         """
-        # Get all players with unassigned hands
+        # Get hero players - those who have "Dealt to [PlayerName]" in raw hand text
         query = text("""
-            SELECT DISTINCT player_name
-            FROM player_hand_summary
-            WHERE session_id IS NULL
+            SELECT DISTINCT phs.player_name
+            FROM player_hand_summary phs
+            JOIN raw_hands rh ON phs.hand_id = rh.hand_id
+            WHERE phs.session_id IS NULL
+            AND rh.raw_hand_text LIKE '%Dealt to ' || phs.player_name || '%'
         """)
 
         result = self.db.execute(query)
