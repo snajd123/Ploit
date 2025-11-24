@@ -135,6 +135,41 @@ class HeroGTOAnalyzer:
         result = self.db.execute(query, {"hand_id": hand_id, "hero_name": hero_name})
         return [row[0] for row in result]
 
+    def _get_raiser_position(self, hand_id: int, hero_name: str) -> Optional[str]:
+        """
+        Get position of the player who opened (pfr but not 3-bet).
+        """
+        query = text("""
+            SELECT position
+            FROM player_hand_summary
+            WHERE hand_id = :hand_id
+            AND player_name != :hero_name
+            AND pfr = true
+            AND made_three_bet = false
+            LIMIT 1
+        """)
+
+        result = self.db.execute(query, {"hand_id": hand_id, "hero_name": hero_name})
+        row = result.fetchone()
+        return row[0] if row else None
+
+    def _get_three_bettor_position(self, hand_id: int, hero_name: str) -> Optional[str]:
+        """
+        Get position of the player who 3-bet.
+        """
+        query = text("""
+            SELECT position
+            FROM player_hand_summary
+            WHERE hand_id = :hand_id
+            AND player_name != :hero_name
+            AND made_three_bet = true
+            LIMIT 1
+        """)
+
+        result = self.db.execute(query, {"hand_id": hand_id, "hero_name": hero_name})
+        row = result.fetchone()
+        return row[0] if row else None
+
     def _analyze_opening(self, hand: Dict[str, Any], normalized_hand: str, bb: float, session_id: int, opponents: List[str]) -> Optional[Dict[str, Any]]:
         """
         Analyze preflop opening decision using real GTO database.
@@ -265,9 +300,9 @@ class HeroGTOAnalyzer:
         if gto_action != hero_action and gto_freq > 0.40:
             # Clear mistake: GTO recommends different action with >40% frequency
             ev_loss = gto_freq * bb * 0.25
-            # Build scenario description
-            opponent_str = opponents[0] if opponents else "Unknown"
-            scenario_desc = f"{position} vs {opponent_str} open"
+            # Build scenario description with raiser's position
+            raiser_pos = self._get_raiser_position(hand['hand_id'], hand['player_name'])
+            scenario_desc = f"{position} vs {raiser_pos or 'Unknown'} open"
 
             return {
                 "hand_id": hand['hand_id'],
@@ -341,9 +376,9 @@ class HeroGTOAnalyzer:
         if gto_action != hero_action and gto_freq > 0.35:
             # Clear mistake facing 3-bet
             ev_loss = gto_freq * bb * 3 * 0.30  # Bigger pot
-            # Build scenario description
-            opponent_str = opponents[0] if opponents else "Unknown"
-            scenario_desc = f"{position} vs {opponent_str} 3-bet"
+            # Build scenario description with 3-bettor's position
+            three_bettor_pos = self._get_three_bettor_position(hand['hand_id'], hand['player_name'])
+            scenario_desc = f"{position} vs {three_bettor_pos or 'Unknown'} 3-bet"
 
             return {
                 "hand_id": hand['hand_id'],
