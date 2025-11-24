@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     # Backend Server
     backend_port: int = 8000
     backend_host: str = "0.0.0.0"
-    backend_workers: int = 4
+    backend_workers: int = 1  # Single worker for Supabase Session mode limits
 
     # Frontend URL (for CORS)
     frontend_url: str = "http://localhost:3000"
