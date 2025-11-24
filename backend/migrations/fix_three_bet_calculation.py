@@ -68,12 +68,12 @@ def recalculate_three_bet_opportunities(session):
         # Get all preflop actions for this hand
         preflop_actions = session.query(HandAction).filter_by(
             hand_id=hand_id,
-            street='PREFLOP'
+            street='preflop'
         ).order_by(HandAction.action_id).all()
 
         # Find all preflop raises
         raises = [a for a in preflop_actions
-                 if a.action_type == 'RAISE' and a.is_aggressive]
+                 if a.action_type == 'raise' and a.is_aggressive]
 
         if not raises:
             # No raises in this hand, no 3-bet opportunities
@@ -94,7 +94,7 @@ def recalculate_three_bet_opportunities(session):
             # Check if player had actions after the first raise
             player_actions_after = [a for a in preflop_actions[first_raise_idx + 1:]
                                   if a.player_name == summary.player_name
-                                  and a.action_type not in ['POST_SB', 'POST_BB', 'POST_ANTE']]
+                                  and a.action_type not in ['post_sb', 'post_bb', 'post_ante']]
             faced_first_raise = len(player_actions_after) > 0
 
             # Set three_bet_opportunity
