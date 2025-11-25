@@ -17,6 +17,8 @@ import type {
   ConversationListItem,
   ConversationDetail,
   LeakAnalysisResponse,
+  ResetPreviewResponse,
+  ClearDatabaseResponse,
 } from '../types';
 
 class ApiClient {
@@ -125,18 +127,15 @@ class ApiClient {
     return response.data;
   }
 
-  // Clear all database data
-  async clearDatabase(): Promise<{
-    message: string;
-    deleted: {
-      raw_hands: number;
-      hand_actions: number;
-      player_hand_summary: number;
-      player_stats: number;
-      upload_sessions: number;
-    };
-  }> {
-    const response = await this.client.delete('/api/database/clear');
+  // Get preview of what would be deleted in a reset
+  async getResetPreview(): Promise<ResetPreviewResponse> {
+    const response = await this.client.get<ResetPreviewResponse>('/api/database/reset-preview');
+    return response.data;
+  }
+
+  // Clear all player data (preserves GTO reference data)
+  async clearDatabase(): Promise<ClearDatabaseResponse> {
+    const response = await this.client.delete<ClearDatabaseResponse>('/api/database/clear');
     return response.data;
   }
 

@@ -924,70 +924,145 @@ async def test_stats_calculation(player_name: str, db: Session = Depends(get_db)
 @app.delete(
     "/api/database/clear",
     tags=["Database"],
-    summary="Clear all database data",
-    description="Delete all data from all tables (USE WITH CAUTION). Requires API key."
+    summary="Clear all player data (preserves GTO data)",
+    description="Delete all player/hand data but preserve GTO reference data. Requires API key."
 )
 async def clear_database(
     db: Session = Depends(get_db),
     api_key: str = Depends(verify_api_key)
 ):
     """
-    Clear all data from the database.
+    Clear all player data from the database while preserving GTO reference data.
 
     WARNING: This is a destructive operation that cannot be undone.
 
     Deletes all data from:
-    - player_stats
-    - player_hand_summary
     - hand_actions
+    - player_preflop_actions
+    - player_scenario_stats
     - raw_hands
+    - player_stats
     - upload_sessions
+
+    Preserves:
+    - gto_scenarios (188 preflop scenarios)
+    - gto_frequencies (53,532 combo-level frequencies)
 
     Returns:
         Confirmation message with counts of deleted records
     """
     try:
-        from backend.models.database_models import (
-            PlayerStats, PlayerHandSummary, HandAction, RawHand, UploadSession
-        )
+        from sqlalchemy import text
 
         # Count records before deletion
-        stats_count = db.query(PlayerStats).count()
-        summary_count = db.query(PlayerHandSummary).count()
-        actions_count = db.query(HandAction).count()
-        hands_count = db.query(RawHand).count()
-        sessions_count = db.query(UploadSession).count()
+        counts_before = {}
+        tables_to_clear = [
+            'hand_actions',
+            'player_preflop_actions',
+            'player_scenario_stats',
+            'raw_hands',
+            'player_stats',
+            'upload_sessions'
+        ]
 
-        logger.warning("Starting database clear operation")
+        for table in tables_to_clear:
+            try:
+                result = db.execute(text(f'SELECT COUNT(*) FROM {table}'))
+                counts_before[table] = result.scalar()
+            except:
+                counts_before[table] = 0
+
+        # Get preserved counts
+        gto_scenarios = db.execute(text('SELECT COUNT(*) FROM gto_scenarios')).scalar()
+        gto_frequencies = db.execute(text('SELECT COUNT(*) FROM gto_frequencies')).scalar()
+
+        logger.warning("Starting database reset operation (preserving GTO data)")
 
         # Delete in order respecting foreign keys
-        db.query(PlayerStats).delete()
-        db.query(PlayerHandSummary).delete()
-        db.query(HandAction).delete()
-        db.query(RawHand).delete()
-        db.query(UploadSession).delete()
+        for table in tables_to_clear:
+            try:
+                db.execute(text(f'DELETE FROM {table}'))
+            except Exception as e:
+                logger.warning(f"Could not clear {table}: {e}")
 
         db.commit()
 
-        logger.warning(f"Database cleared: {hands_count} hands, {actions_count} actions, {summary_count} summaries, {stats_count} player stats, {sessions_count} sessions")
+        total_deleted = sum(counts_before.values())
+        logger.warning(f"Database reset complete: {total_deleted} total rows deleted, GTO data preserved")
 
         return {
-            "message": "Database cleared successfully",
-            "deleted": {
-                "raw_hands": hands_count,
-                "hand_actions": actions_count,
-                "player_hand_summary": summary_count,
-                "player_stats": stats_count,
-                "upload_sessions": sessions_count
+            "message": "Database reset successfully (GTO data preserved)",
+            "deleted": counts_before,
+            "total_deleted": total_deleted,
+            "preserved": {
+                "gto_scenarios": gto_scenarios,
+                "gto_frequencies": gto_frequencies
             }
         }
 
     except Exception as e:
         db.rollback()
-        logger.error(f"Error clearing database: {str(e)}")
+        logger.error(f"Error resetting database: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error clearing database: {str(e)}"
+            detail=f"Error resetting database: {str(e)}"
+        )
+
+
+@app.get(
+    "/api/database/reset-preview",
+    tags=["Database"],
+    summary="Preview what would be deleted in a reset",
+    description="Shows counts of data that would be deleted vs preserved"
+)
+async def reset_preview(db: Session = Depends(get_db)):
+    """
+    Preview what data would be deleted in a reset operation.
+
+    Returns counts for both data that would be deleted and data that would be preserved.
+    """
+    try:
+        from sqlalchemy import text
+
+        # Tables to delete
+        tables_to_delete = [
+            ('raw_hands', 'Hand histories'),
+            ('hand_actions', 'Hand actions'),
+            ('player_preflop_actions', 'Player preflop actions'),
+            ('player_scenario_stats', 'Player scenario stats'),
+            ('player_stats', 'Player stats'),
+            ('upload_sessions', 'Upload sessions'),
+        ]
+
+        to_delete = {}
+        total_to_delete = 0
+        for table, description in tables_to_delete:
+            try:
+                count = db.execute(text(f'SELECT COUNT(*) FROM {table}')).scalar()
+                to_delete[table] = {"description": description, "count": count}
+                total_to_delete += count
+            except:
+                to_delete[table] = {"description": description, "count": 0}
+
+        # Tables to preserve
+        gto_scenarios = db.execute(text('SELECT COUNT(*) FROM gto_scenarios')).scalar()
+        gto_frequencies = db.execute(text('SELECT COUNT(*) FROM gto_frequencies')).scalar()
+
+        return {
+            "to_delete": to_delete,
+            "total_to_delete": total_to_delete,
+            "to_preserve": {
+                "gto_scenarios": {"description": "GTO scenarios", "count": gto_scenarios},
+                "gto_frequencies": {"description": "GTO frequencies", "count": gto_frequencies}
+            },
+            "total_to_preserve": gto_scenarios + gto_frequencies
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting reset preview: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error getting reset preview: {str(e)}"
         )
 
 

@@ -298,3 +298,35 @@ export interface PlayerScenarioStats {
   abs_deviation?: number;
   is_hero: boolean;  // TRUE=hero (combo GTO), FALSE=villain (aggregate GTO)
 }
+
+// Database Reset Types
+export interface ResetPreviewResponse {
+  to_delete: {
+    raw_hands: number;
+    hand_actions: number;
+    player_preflop_actions: number;
+    player_scenario_stats: number;
+    player_stats: number;
+    upload_sessions: number;
+  };
+  to_preserve: {
+    gto_scenarios: number;
+    gto_frequencies: number;
+  };
+}
+
+export interface ClearDatabaseResponse {
+  message: string;
+  deleted: {
+    raw_hands: number;
+    hand_actions: number;
+    player_preflop_actions: number;
+    player_scenario_stats: number;
+    player_stats: number;
+    upload_sessions: number;
+  };
+  preserved: {
+    gto_scenarios: number;
+    gto_frequencies: number;
+  };
+}

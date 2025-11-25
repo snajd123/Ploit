@@ -1,14 +1,36 @@
-import { useState } from 'react';
-import { RefreshCw, Trash2, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { RefreshCw, Trash2, AlertTriangle, CheckCircle, XCircle, Database, Shield } from 'lucide-react';
 import { api } from '../services/api';
+import type { ResetPreviewResponse, ClearDatabaseResponse } from '../types';
 
 const Settings = () => {
   const [recalculating, setRecalculating] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [loadingPreview, setLoadingPreview] = useState(false);
   const [recalcResult, setRecalcResult] = useState<any>(null);
-  const [clearResult, setClearResult] = useState<any>(null);
+  const [clearResult, setClearResult] = useState<ClearDatabaseResponse | null>(null);
+  const [resetPreview, setResetPreview] = useState<ResetPreviewResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+
+  // Load reset preview when user opens the confirm dialog
+  const loadResetPreview = async () => {
+    setLoadingPreview(true);
+    setError(null);
+    try {
+      const preview = await api.getResetPreview();
+      setResetPreview(preview);
+    } catch (err) {
+      setError((err as Error).message || 'Failed to load preview');
+    } finally {
+      setLoadingPreview(false);
+    }
+  };
+
+  // Load preview on mount
+  useEffect(() => {
+    loadResetPreview();
+  }, []);
 
   const handleRecalculate = async () => {
     if (recalculating) return;
@@ -38,12 +60,21 @@ const Settings = () => {
       const result = await api.clearDatabase();
       setClearResult(result);
       setShowClearConfirm(false);
+      // Refresh preview after clear
+      loadResetPreview();
     } catch (err) {
       setError((err as Error).message || 'Failed to clear database');
     } finally {
       setClearing(false);
     }
   };
+
+  const handleShowConfirm = () => {
+    setShowClearConfirm(true);
+    loadResetPreview();
+  };
+
+  const formatNumber = (n: number) => n.toLocaleString();
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -104,33 +135,70 @@ const Settings = () => {
         </div>
       </div>
 
-      {/* Clear Database */}
+      {/* Reset Player Data */}
       <div className="card border-2 border-red-200">
         <div className="flex items-start space-x-4">
           <div className="p-3 bg-red-100 rounded-lg">
             <Trash2 className="text-red-600" size={24} />
           </div>
           <div className="flex-1">
-            <h2 className="text-xl font-semibold text-gray-900">Clear Database</h2>
+            <h2 className="text-xl font-semibold text-gray-900">Reset Player Data</h2>
             <p className="mt-2 text-sm text-gray-600">
-              Delete all data from the database including hands, actions, summaries, and player statistics.
-              <span className="font-semibold text-red-600"> This action cannot be undone.</span>
+              Delete all imported hand histories, player stats, and calculated data.
+              <span className="font-semibold text-green-600"> GTO reference data will be preserved.</span>
             </p>
 
+            {/* Current data preview */}
+            {resetPreview && !showClearConfirm && (
+              <div className="mt-4 grid grid-cols-2 gap-4">
+                <div className="p-3 bg-red-50 rounded-lg border border-red-100">
+                  <div className="flex items-center space-x-2 mb-2">
+                    <Database className="text-red-500" size={16} />
+                    <span className="text-sm font-medium text-red-800">Will be deleted</span>
+                  </div>
+                  <ul className="text-xs text-red-700 space-y-1">
+                    <li>• {formatNumber(resetPreview.to_delete.raw_hands)} hands</li>
+                    <li>• {formatNumber(resetPreview.to_delete.hand_actions)} actions</li>
+                    <li>• {formatNumber(resetPreview.to_delete.player_stats)} player stats</li>
+                  </ul>
+                </div>
+                <div className="p-3 bg-green-50 rounded-lg border border-green-100">
+                  <div className="flex items-center space-x-2 mb-2">
+                    <Shield className="text-green-500" size={16} />
+                    <span className="text-sm font-medium text-green-800">Will be preserved</span>
+                  </div>
+                  <ul className="text-xs text-green-700 space-y-1">
+                    <li>• {formatNumber(resetPreview.to_preserve.gto_scenarios)} GTO scenarios</li>
+                    <li>• {formatNumber(resetPreview.to_preserve.gto_frequencies)} GTO frequencies</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+
             {clearResult && (
-              <div className="mt-4 p-4 bg-red-50 rounded-lg border border-red-200">
+              <div className="mt-4 p-4 bg-green-50 rounded-lg border border-green-200">
                 <div className="flex items-start space-x-3">
-                  <CheckCircle className="text-red-500 flex-shrink-0" size={20} />
+                  <CheckCircle className="text-green-500 flex-shrink-0" size={20} />
                   <div>
-                    <p className="text-sm font-medium text-red-800">{clearResult.message}</p>
-                    <p className="text-sm text-red-700 mt-2">Deleted:</p>
-                    <ul className="text-sm text-red-700 mt-1 space-y-1">
-                      <li>• Raw hands: {clearResult.deleted.raw_hands}</li>
-                      <li>• Hand actions: {clearResult.deleted.hand_actions}</li>
-                      <li>• Player hand summaries: {clearResult.deleted.player_hand_summary}</li>
-                      <li>• Player stats: {clearResult.deleted.player_stats}</li>
-                      <li>• Upload sessions: {clearResult.deleted.upload_sessions}</li>
-                    </ul>
+                    <p className="text-sm font-medium text-green-800">{clearResult.message}</p>
+                    <div className="mt-2 grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-xs font-medium text-red-700">Deleted:</p>
+                        <ul className="text-xs text-red-600 mt-1 space-y-0.5">
+                          <li>• {formatNumber(clearResult.deleted.raw_hands)} hands</li>
+                          <li>• {formatNumber(clearResult.deleted.hand_actions)} actions</li>
+                          <li>• {formatNumber(clearResult.deleted.player_stats)} player stats</li>
+                          <li>• {formatNumber(clearResult.deleted.upload_sessions)} upload sessions</li>
+                        </ul>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-green-700">Preserved:</p>
+                        <ul className="text-xs text-green-600 mt-1 space-y-0.5">
+                          <li>• {formatNumber(clearResult.preserved.gto_scenarios)} GTO scenarios</li>
+                          <li>• {formatNumber(clearResult.preserved.gto_frequencies)} GTO frequencies</li>
+                        </ul>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -138,38 +206,69 @@ const Settings = () => {
 
             {!showClearConfirm ? (
               <button
-                onClick={() => setShowClearConfirm(true)}
-                className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center space-x-2"
+                onClick={handleShowConfirm}
+                disabled={loadingPreview}
+                className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center space-x-2 disabled:opacity-50"
               >
                 <Trash2 size={16} />
-                <span>Clear Database</span>
+                <span>Reset Player Data</span>
               </button>
             ) : (
               <div className="mt-4 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
                 <div className="flex items-start space-x-3 mb-4">
                   <AlertTriangle className="text-yellow-600 flex-shrink-0" size={20} />
-                  <div>
-                    <p className="text-sm font-medium text-yellow-800">Are you absolutely sure?</p>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-yellow-800">Confirm Reset</p>
                     <p className="text-sm text-yellow-700 mt-1">
-                      This will permanently delete all data. This action cannot be undone.
+                      This will permanently delete all player data. GTO reference data will be preserved.
                     </p>
+
+                    {loadingPreview ? (
+                      <div className="mt-3 flex items-center text-yellow-700">
+                        <RefreshCw className="animate-spin mr-2" size={14} />
+                        <span className="text-xs">Loading preview...</span>
+                      </div>
+                    ) : resetPreview && (
+                      <div className="mt-3 p-3 bg-white rounded border border-yellow-200">
+                        <div className="grid grid-cols-2 gap-3 text-xs">
+                          <div>
+                            <p className="font-medium text-red-700 mb-1">Will delete:</p>
+                            <ul className="text-red-600 space-y-0.5">
+                              <li>• {formatNumber(resetPreview.to_delete.raw_hands)} hands</li>
+                              <li>• {formatNumber(resetPreview.to_delete.hand_actions)} actions</li>
+                              <li>• {formatNumber(resetPreview.to_delete.player_preflop_actions)} preflop actions</li>
+                              <li>• {formatNumber(resetPreview.to_delete.player_scenario_stats)} scenario stats</li>
+                              <li>• {formatNumber(resetPreview.to_delete.player_stats)} player stats</li>
+                              <li>• {formatNumber(resetPreview.to_delete.upload_sessions)} upload sessions</li>
+                            </ul>
+                          </div>
+                          <div>
+                            <p className="font-medium text-green-700 mb-1">Will preserve:</p>
+                            <ul className="text-green-600 space-y-0.5">
+                              <li>• {formatNumber(resetPreview.to_preserve.gto_scenarios)} GTO scenarios</li>
+                              <li>• {formatNumber(resetPreview.to_preserve.gto_frequencies)} GTO frequencies</li>
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="flex space-x-3">
                   <button
                     onClick={handleClearDatabase}
-                    disabled={clearing}
+                    disabled={clearing || loadingPreview}
                     className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
                   >
                     {clearing ? (
                       <>
                         <RefreshCw className="animate-spin" size={16} />
-                        <span>Clearing...</span>
+                        <span>Resetting...</span>
                       </>
                     ) : (
                       <>
                         <Trash2 size={16} />
-                        <span>Yes, Clear Everything</span>
+                        <span>Yes, Reset Data</span>
                       </>
                     )}
                   </button>
@@ -212,12 +311,12 @@ const Settings = () => {
             </ul>
           </div>
           <div>
-            <p className="font-semibold text-red-900">Clear Database:</p>
+            <p className="font-semibold text-red-900">Reset Player Data:</p>
             <ul className="mt-1 space-y-1 ml-4">
-              <li>• When you want to start completely fresh</li>
+              <li>• When you want to start fresh with hand analysis</li>
               <li>• To remove test data before production use</li>
               <li>• When database has corrupted or inconsistent data</li>
-              <li>• <span className="font-semibold">Warning:</span> All data will be permanently lost</li>
+              <li>• <span className="text-green-700 font-medium">GTO reference data (188 scenarios, 53K+ frequencies) is always preserved</span></li>
             </ul>
           </div>
         </div>
