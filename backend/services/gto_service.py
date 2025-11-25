@@ -743,10 +743,10 @@ class GTOService:
 
     def compare_player_to_gto(self, player_name: Optional[str] = None, player_stats: Optional[Dict[str, Optional[float]]] = None) -> Dict:
         """
-        Compare player to GTO using REAL GTO data from player_gto_stats table.
+        Compare player to GTO using data from player_scenario_stats table.
 
         Args:
-            player_name: Player name to look up in player_gto_stats
+            player_name: Player name to look up in player_scenario_stats
             player_stats: Traditional stats as fallback (vpip_pct, pfr_pct, etc.)
 
         Returns:
@@ -754,86 +754,71 @@ class GTOService:
         """
         deviations = []
 
-        # First, try to get REAL GTO data from player_gto_stats
+        # First, try to get GTO data from player_scenario_stats
         if player_name:
             # Query actual GTO deviations from database
-            gto_stats = self.db.query(PlayerGTOStat, GTOScenario).join(
+            gto_stats = self.db.query(PlayerScenarioStats, GTOScenario).join(
                 GTOScenario,
-                PlayerGTOStat.scenario_id == GTOScenario.scenario_id
+                PlayerScenarioStats.scenario_id == GTOScenario.scenario_id
             ).filter(
-                PlayerGTOStat.player_name == player_name,
-                PlayerGTOStat.total_hands >= 10,  # Minimum sample size
-                PlayerGTOStat.leak_severity.in_(['minor', 'moderate', 'major', 'critical'])
+                PlayerScenarioStats.player_name == player_name,
+                PlayerScenarioStats.total_occurrences >= 10,  # Minimum sample size
+                PlayerScenarioStats.abs_deviation >= 0.05  # At least 5% deviation
             ).order_by(
-                PlayerGTOStat.total_ev_loss_bb.desc()  # Sort by EV loss (most costly first)
+                PlayerScenarioStats.abs_deviation.desc()  # Sort by largest deviation first
             ).limit(10).all()
 
             # Convert GTO stats to deviations format
             for stat, scenario in gto_stats:
-                # Determine exploit direction based on leak type
-                if stat.leak_type:
-                    if 'over' in stat.leak_type.lower():
-                        if 'fold' in stat.leak_type:
-                            direction = "Over-folding"
-                        elif '3bet' in stat.leak_type:
-                            direction = "Over-3betting"
-                        elif 'call' in stat.leak_type:
-                            direction = "Over-calling"
-                        else:
-                            direction = "Over-" + scenario.action if scenario.action else "Over-acting"
-                    elif 'under' in stat.leak_type.lower():
-                        if 'fold' in stat.leak_type:
-                            direction = "Under-folding"
-                        elif '3bet' in stat.leak_type:
-                            direction = "Under-3betting"
-                        elif 'call' in stat.leak_type:
-                            direction = "Under-calling"
-                        else:
-                            direction = "Under-" + scenario.action if scenario.action else "Under-acting"
-                    else:
-                        direction = stat.leak_type.replace('_', ' ').title()
+                # Get frequencies (handle Decimal conversion)
+                player_freq = float(stat.player_frequency) if stat.player_frequency else 0
+                gto_freq = float(stat.gto_frequency) if stat.gto_frequency else 0
+                freq_diff = float(stat.deviation) if stat.deviation else 0
+
+                # Determine direction based on deviation
+                action = scenario.action or ""
+                if freq_diff > 0:
+                    direction = f"Over-{action}ing" if action else "Over-acting"
                 else:
-                    direction = "Deviation"
+                    direction = f"Under-{action}ing" if action else "Under-acting"
 
                 # Build exploit recommendation
                 position = scenario.position or ""
                 opponent = scenario.opponent_position or ""
-                action = scenario.action or ""
 
                 # Create specific, actionable exploit recommendations
-                if stat.frequency_diff > 0.1:  # Over-doing the action
+                if freq_diff > 0.1:  # Over-doing the action
                     if action == 'open':
-                        exploit = f"Player opens {stat.player_frequency*100:.1f}% from {position} (GTO: {stat.gto_frequency*100:.1f}%). ACTION: 3-bet them to 10BB with any broadway cards, suited connectors, and pocket pairs. They fold too often to aggression. Call their opens wider in position with speculative hands."
+                        exploit = f"Player opens {player_freq*100:.1f}% from {position} (GTO: {gto_freq*100:.1f}%). 3-bet them wider."
                     elif action == '3bet':
-                        exploit = f"Player 3-bets {stat.player_frequency*100:.1f}% from {position} vs {opponent} (GTO: {stat.gto_frequency*100:.1f}%). ACTION: Call their 3-bets with medium pairs (77-TT), suited broadway hands. 4-bet bluff with blockers (A5s, K9s). They're over-bluffing."
+                        exploit = f"Player 3-bets {player_freq*100:.1f}% from {position} vs {opponent} (GTO: {gto_freq*100:.1f}%). Call wider, 4-bet bluff with blockers."
                     elif action == 'fold':
-                        exploit = f"Player folds {stat.player_frequency*100:.1f}% in {position} vs {opponent} (GTO: {stat.gto_frequency*100:.1f}%). ACTION: C-bet 75% pot on all dry boards. Double barrel on any turn card. They give up too easily - attack relentlessly."
+                        exploit = f"Player folds {player_freq*100:.1f}% in {position} (GTO: {gto_freq*100:.1f}%). Attack with more aggression."
                     elif action == 'call':
-                        exploit = f"Player calls {stat.player_frequency*100:.1f}% in {position} vs {opponent} (GTO: {stat.gto_frequency*100:.1f}%). ACTION: Bluff less on later streets. Check back marginal hands. Value bet thinly with top pair+ as they call too wide."
+                        exploit = f"Player calls {player_freq*100:.1f}% in {position} (GTO: {gto_freq*100:.1f}%). Value bet thinner, bluff less."
                     else:
-                        exploit = f"{scenario.scenario_name}: Player acts {stat.player_frequency*100:.1f}% (GTO: {stat.gto_frequency*100:.1f}%). ACTION: Exploit this {stat.frequency_diff*100:+.1f}% deviation aggressively. EV gain: {stat.total_ev_loss_bb:.1f}BB"
-                elif stat.frequency_diff < -0.1:  # Under-doing the action
+                        exploit = f"{scenario.scenario_name}: Player acts {player_freq*100:.1f}% (GTO: {gto_freq*100:.1f}%). Exploit this deviation."
+                elif freq_diff < -0.1:  # Under-doing the action
                     if action == 'open':
-                        exploit = f"Player only opens {stat.player_frequency*100:.1f}% from {position} (GTO: {stat.gto_frequency*100:.1f}%). ACTION: Steal their blinds relentlessly. Open 100% of buttons when they're in blinds. 3-bet them less - their range is stronger than normal."
+                        exploit = f"Player only opens {player_freq*100:.1f}% from {position} (GTO: {gto_freq*100:.1f}%). Steal more, respect their opens."
                     elif action == '3bet':
-                        exploit = f"Player only 3-bets {stat.player_frequency*100:.1f}% from {position} vs {opponent} (GTO: {stat.gto_frequency*100:.1f}%). ACTION: Open 2.5x instead of 3x to induce calls. Flat their rare 3-bets with strong hands only (JJ+, AK). They have it when they 3-bet."
+                        exploit = f"Player only 3-bets {player_freq*100:.1f}% from {position} (GTO: {gto_freq*100:.1f}%). Open smaller, respect their 3-bets."
                     elif action == 'fold':
-                        exploit = f"Player only folds {stat.player_frequency*100:.1f}% in {position} vs {opponent} (GTO: {stat.gto_frequency*100:.1f}%). ACTION: Stop bluffing completely. Only bet for value with strong hands (two pair+). Check-fold weak holdings. They don't fold."
+                        exploit = f"Player only folds {player_freq*100:.1f}% in {position} (GTO: {gto_freq*100:.1f}%). Stop bluffing, value bet heavily."
                     elif action == 'call':
-                        exploit = f"Player only calls {stat.player_frequency*100:.1f}% in {position} vs {opponent} (GTO: {stat.gto_frequency*100:.1f}%). ACTION: Increase opening size to 3.5x. Bet larger for value (80-100% pot). They fold too much preflop - punish with aggression."
+                        exploit = f"Player only calls {player_freq*100:.1f}% in {position} (GTO: {gto_freq*100:.1f}%). Bet larger for value."
                     else:
-                        exploit = f"{scenario.scenario_name}: Player acts {stat.player_frequency*100:.1f}% (GTO: {stat.gto_frequency*100:.1f}%). ACTION: Adjust for their {stat.frequency_diff*100:+.1f}% under-deviation. EV gain: {stat.total_ev_loss_bb:.1f}BB"
+                        exploit = f"{scenario.scenario_name}: Player acts {player_freq*100:.1f}% (GTO: {gto_freq*100:.1f}%). Adjust for under-deviation."
                 else:
-                    exploit = f"Minor deviation in {scenario.scenario_name} ({stat.frequency_diff*100:+.1f}%). Play standard."
+                    exploit = f"Minor deviation in {scenario.scenario_name} ({freq_diff*100:+.1f}%). Play standard."
 
                 deviations.append({
                     'stat': scenario.scenario_name,
-                    'player_value': stat.player_frequency * 100,
-                    'gto_baseline': stat.gto_frequency * 100,
-                    'deviation': stat.frequency_diff * 100,
-                    'abs_deviation': abs(stat.frequency_diff * 100),
-                    'ev_loss': stat.total_ev_loss_bb,
-                    'exploitable': True,
+                    'player_value': player_freq * 100,
+                    'gto_baseline': gto_freq * 100,
+                    'deviation': freq_diff * 100,
+                    'abs_deviation': abs(freq_diff * 100),
+                    'exploitable': abs(freq_diff) >= 0.05,
                     'exploit_direction': direction,
                     'exploit_recommendation': exploit,
                     'is_gto_based': True  # Flag to indicate this is from real GTO data
