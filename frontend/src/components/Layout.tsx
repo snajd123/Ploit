@@ -1,23 +1,56 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Outlet, NavLink } from 'react-router-dom';
-import { LayoutDashboard, Upload, Users, MessageSquare, Target, Settings, Search, Menu, X, BookOpen, Crosshair, Grid3x3, BarChart2 } from 'lucide-react';
+import { LayoutDashboard, Upload, Users, MessageSquare, Target, Search, Menu, X, BookOpen, Crosshair, Grid3x3, BarChart2 } from 'lucide-react';
 import QuickLookupModal from './QuickLookupModal';
+import OnboardingModal, { shouldShowOnboarding } from './OnboardingModal';
+
+interface NavSection {
+  label: string;
+  items: { to: string; icon: React.ElementType; label: string; tooltip?: string }[];
+}
 
 const Layout = () => {
   const [isQuickLookupOpen, setIsQuickLookupOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
-  const navItems = [
-    { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-    { to: '/upload', icon: Upload, label: 'Upload' },
-    { to: '/players', icon: Users, label: 'Players' },
-    { to: '/strategy', icon: Target, label: 'Strategy' },
-    { to: '/gto', icon: Crosshair, label: 'GTO Analysis' },
-    { to: '/gto-browser', icon: Grid3x3, label: 'GTO Browser' },
-    { to: '/sessions', icon: BarChart2, label: 'Sessions' },
-    { to: '/claude', icon: MessageSquare, label: 'Claude AI' },
-    { to: '/glossary', icon: BookOpen, label: 'Stats Guide' },
-    { to: '/settings', icon: Settings, label: 'Settings' },
+  // Check for onboarding on mount
+  useEffect(() => {
+    if (shouldShowOnboarding()) {
+      setShowOnboarding(true);
+    }
+  }, []);
+
+  const navSections: NavSection[] = [
+    {
+      label: 'Prepare',
+      items: [
+        { to: '/strategy', icon: Target, label: 'Strategy', tooltip: 'Pre-game opponent strategy' },
+        { to: '/gto-browser', icon: Grid3x3, label: 'GTO Ranges', tooltip: 'Browse GTO opening ranges' },
+      ]
+    },
+    {
+      label: 'Review',
+      items: [
+        { to: '/sessions', icon: BarChart2, label: 'Sessions', tooltip: 'Your session history' },
+        { to: '/gto', icon: Crosshair, label: 'GTO Analysis', tooltip: 'Compare play vs GTO' },
+        { to: '/claude', icon: MessageSquare, label: 'Claude AI', tooltip: 'AI-powered analysis' },
+      ]
+    },
+    {
+      label: 'Research',
+      items: [
+        { to: '/players', icon: Users, label: 'Players', tooltip: 'Player stats database' },
+        { to: '/glossary', icon: BookOpen, label: 'Stats Guide', tooltip: 'Stats glossary' },
+      ]
+    },
+    {
+      label: 'Data',
+      items: [
+        { to: '/upload', icon: Upload, label: 'Upload', tooltip: 'Import hand histories' },
+        { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', tooltip: 'Database overview' },
+      ]
+    },
   ];
 
   return (
@@ -57,22 +90,36 @@ const Layout = () => {
       {/* Desktop Navigation */}
       <nav className="hidden lg:block bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex space-x-8">
-            {navItems.map(({ to, icon: Icon, label }) => (
-              <NavLink
-                key={to}
-                to={to}
-                className={({ isActive }) =>
-                  `flex items-center space-x-2 py-4 px-2 border-b-2 font-medium text-sm transition-colors ${
-                    isActive
-                      ? 'border-blue-600 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`
-                }
-              >
-                <Icon size={18} />
-                <span>{label}</span>
-              </NavLink>
+          <div className="flex items-center">
+            {navSections.map((section, sectionIndex) => (
+              <div key={section.label} className="flex items-center">
+                {/* Section divider (except first) */}
+                {sectionIndex > 0 && (
+                  <div className="h-6 w-px bg-gray-200 mx-2" />
+                )}
+                {/* Section label */}
+                <span className="text-xs font-medium text-gray-400 uppercase tracking-wider px-2">
+                  {section.label}
+                </span>
+                {/* Section items */}
+                {section.items.map(({ to, icon: Icon, label, tooltip }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    title={tooltip}
+                    className={({ isActive }) =>
+                      `flex items-center space-x-1.5 py-4 px-3 border-b-2 font-medium text-sm transition-colors ${
+                        isActive
+                          ? 'border-blue-600 text-blue-600'
+                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      }`
+                    }
+                  >
+                    <Icon size={16} />
+                    <span>{label}</span>
+                  </NavLink>
+                ))}
+              </div>
             ))}
           </div>
         </div>
@@ -80,24 +127,31 @@ const Layout = () => {
 
       {/* Mobile Navigation */}
       {isMobileMenuOpen && (
-        <nav className="lg:hidden bg-white border-b border-gray-200 shadow-lg">
+        <nav className="lg:hidden bg-white border-b border-gray-200 shadow-lg max-h-[70vh] overflow-y-auto">
           <div className="px-4 py-2">
-            {navItems.map(({ to, icon: Icon, label }) => (
-              <NavLink
-                key={to}
-                to={to}
-                onClick={() => setIsMobileMenuOpen(false)}
-                className={({ isActive }) =>
-                  `flex items-center space-x-3 py-3 px-4 rounded-lg font-medium text-sm transition-colors ${
-                    isActive
-                      ? 'bg-blue-50 text-blue-600'
-                      : 'text-gray-700 hover:bg-gray-50'
-                  }`
-                }
-              >
-                <Icon size={20} />
-                <span>{label}</span>
-              </NavLink>
+            {navSections.map((section) => (
+              <div key={section.label} className="mb-2">
+                <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-4 py-2 border-b border-gray-100">
+                  {section.label}
+                </div>
+                {section.items.map(({ to, icon: Icon, label }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className={({ isActive }) =>
+                      `flex items-center space-x-3 py-3 px-4 rounded-lg font-medium text-sm transition-colors ${
+                        isActive
+                          ? 'bg-blue-50 text-blue-600'
+                          : 'text-gray-700 hover:bg-gray-50'
+                      }`
+                    }
+                  >
+                    <Icon size={20} />
+                    <span>{label}</span>
+                  </NavLink>
+                ))}
+              </div>
             ))}
           </div>
         </nav>
@@ -123,6 +177,12 @@ const Layout = () => {
       <QuickLookupModal
         isOpen={isQuickLookupOpen}
         onClose={() => setIsQuickLookupOpen(false)}
+      />
+
+      {/* Onboarding Modal */}
+      <OnboardingModal
+        isOpen={showOnboarding}
+        onClose={() => setShowOnboarding(false)}
       />
     </div>
   );
