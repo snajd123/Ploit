@@ -9,9 +9,8 @@ Multi-level categorization:
 - Level 3: ~100+ fine categories (Ace-high-rainbow-dry, etc.)
 """
 
-from typing import Dict, List, Tuple, Optional
+from typing import List
 from dataclasses import dataclass
-import re
 
 
 @dataclass

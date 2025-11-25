@@ -107,12 +107,6 @@ class ApiClient {
     return response.data;
   }
 
-  // Get database schema (for developers)
-  async getDatabaseSchema(): Promise<any> {
-    const response = await this.client.get('/api/database/schema');
-    return response.data;
-  }
-
   // Recalculate all player statistics
   async recalculateStats(): Promise<{
     message: string;

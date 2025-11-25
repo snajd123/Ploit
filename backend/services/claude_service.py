@@ -908,18 +908,19 @@ Remember: You're helping players make MORE MONEY by exploiting opponent weakness
             Dictionary with query results or error
         """
         try:
-            # Clean the query: remove transaction control statements
-            import re
-            # Remove COMMIT, BEGIN, ROLLBACK statements (case-insensitive)
-            cleaned_query = re.sub(r';\s*(COMMIT|BEGIN|ROLLBACK|START\s+TRANSACTION)\s*;?\s*$', '', query, flags=re.IGNORECASE)
-            cleaned_query = cleaned_query.strip()
+            # Import SQL validator
+            from backend.auth import SQLValidator
 
-            # Security: Only allow SELECT statements
-            query_upper = cleaned_query.upper()
-            if not query_upper.startswith("SELECT"):
+            # Sanitize the query first
+            cleaned_query = SQLValidator.sanitize_query(query)
+
+            # Validate the query for safety
+            is_valid, error_message = SQLValidator.validate_query(cleaned_query)
+            if not is_valid:
+                logger.warning(f"Query validation failed: {error_message}")
                 return {
                     "success": False,
-                    "error": "Only SELECT queries are allowed for security reasons. Do not use COMMIT, BEGIN, ROLLBACK, or other transaction control statements."
+                    "error": f"Query not allowed: {error_message}. Only safe SELECT queries are permitted."
                 }
 
             # Special handling for pool analysis queries
@@ -928,7 +929,8 @@ Remember: You're helping players make MORE MONEY by exploiting opponent weakness
                 logger.info("Detected pool analysis query, using optimized endpoint")
                 return self._get_pool_analysis_data()
 
-            # Execute query
+            # Execute query with query logging for monitoring
+            logger.info(f"Executing validated query: {cleaned_query[:200]}...")
             result = self.db.execute(text(cleaned_query))
 
             # Fetch results

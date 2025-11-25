@@ -2,6 +2,7 @@
 API endpoints for Claude conversation history management.
 """
 
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
@@ -10,7 +11,9 @@ from pydantic import BaseModel
 from datetime import datetime
 
 from backend.database import get_db
-from backend.models.conversation_models import ClaudeConversation, ClaudeMessage
+from backend.models.conversation_models import ClaudeConversation
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/conversations", tags=["Conversations"])
 
@@ -65,21 +68,25 @@ async def list_conversations(
     db: Session = Depends(get_db)
 ):
     """Get list of all conversations, most recent first."""
-    conversations = db.query(ClaudeConversation).order_by(
-        desc(ClaudeConversation.updated_at)
-    ).limit(limit).all()
+    try:
+        conversations = db.query(ClaudeConversation).order_by(
+            desc(ClaudeConversation.updated_at)
+        ).limit(limit).all()
 
-    result = []
-    for conv in conversations:
-        result.append(ConversationListItem(
-            conversation_id=conv.conversation_id,
-            title=conv.title,
-            created_at=conv.created_at,
-            updated_at=conv.updated_at,
-            message_count=len(conv.messages)
-        ))
+        result = []
+        for conv in conversations:
+            result.append(ConversationListItem(
+                conversation_id=conv.conversation_id,
+                title=conv.title,
+                created_at=conv.created_at,
+                updated_at=conv.updated_at,
+                message_count=len(conv.messages)
+            ))
 
-    return result
+        return result
+    except Exception as e:
+        logger.error(f"Error listing conversations: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve conversations")
 
 
 @router.get("/{conversation_id}", response_model=ConversationDetail)
@@ -117,18 +124,23 @@ async def create_conversation(
     db: Session = Depends(get_db)
 ):
     """Create a new conversation."""
-    conversation = ClaudeConversation(title=request.title)
-    db.add(conversation)
-    db.commit()
-    db.refresh(conversation)
+    try:
+        conversation = ClaudeConversation(title=request.title)
+        db.add(conversation)
+        db.commit()
+        db.refresh(conversation)
 
-    return ConversationDetail(
-        conversation_id=conversation.conversation_id,
-        title=conversation.title,
-        created_at=conversation.created_at,
-        updated_at=conversation.updated_at,
-        messages=[]
-    )
+        return ConversationDetail(
+            conversation_id=conversation.conversation_id,
+            title=conversation.title,
+            created_at=conversation.created_at,
+            updated_at=conversation.updated_at,
+            messages=[]
+        )
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error creating conversation: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to create conversation")
 
 
 @router.patch("/{conversation_id}")
@@ -138,18 +150,25 @@ async def update_conversation(
     db: Session = Depends(get_db)
 ):
     """Update conversation title."""
-    conversation = db.query(ClaudeConversation).filter(
-        ClaudeConversation.conversation_id == conversation_id
-    ).first()
+    try:
+        conversation = db.query(ClaudeConversation).filter(
+            ClaudeConversation.conversation_id == conversation_id
+        ).first()
 
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+        if not conversation:
+            raise HTTPException(status_code=404, detail="Conversation not found")
 
-    conversation.title = request.title
-    conversation.updated_at = datetime.utcnow()
-    db.commit()
+        conversation.title = request.title
+        conversation.updated_at = datetime.utcnow()
+        db.commit()
 
-    return {"success": True, "message": "Conversation updated"}
+        return {"success": True, "message": "Conversation updated"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error updating conversation {conversation_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update conversation")
 
 
 @router.delete("/{conversation_id}")
@@ -158,14 +177,21 @@ async def delete_conversation(
     db: Session = Depends(get_db)
 ):
     """Delete a conversation and all its messages."""
-    conversation = db.query(ClaudeConversation).filter(
-        ClaudeConversation.conversation_id == conversation_id
-    ).first()
+    try:
+        conversation = db.query(ClaudeConversation).filter(
+            ClaudeConversation.conversation_id == conversation_id
+        ).first()
 
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+        if not conversation:
+            raise HTTPException(status_code=404, detail="Conversation not found")
 
-    db.delete(conversation)
-    db.commit()
+        db.delete(conversation)
+        db.commit()
 
-    return {"success": True, "message": "Conversation deleted"}
+        return {"success": True, "message": "Conversation deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error deleting conversation {conversation_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to delete conversation")

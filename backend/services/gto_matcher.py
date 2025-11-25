@@ -12,10 +12,8 @@ Matching strategy:
 5. Use aggregated category data as fallback (20-35% confidence)
 """
 
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional
 from dataclasses import dataclass
-from decimal import Decimal
-import json
 
 # Try relative import first, fall back to absolute for testing
 try:

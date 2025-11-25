@@ -8,10 +8,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime
-from decimal import Decimal
 
 from backend.models.gto_models import (
-    GTOScenario, GTOFrequency, PlayerAction, PlayerGTOStat, HandType
+    GTOScenario, GTOFrequency, PlayerAction, PlayerGTOStat
 )
 
 

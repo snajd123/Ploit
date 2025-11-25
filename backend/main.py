@@ -31,6 +31,7 @@ from backend.api.strategy_endpoints import router as strategy_router
 from backend.api.conversation_endpoints import router as conversation_router
 from backend.api.pool_analysis_endpoints import router as pool_analysis_router
 from backend.models.conversation_models import ClaudeConversation, ClaudeMessage
+from backend.auth import verify_api_key, InputValidator
 
 # Configure logging
 logging.basicConfig(
@@ -51,13 +52,13 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
-# Configure CORS
+# Configure CORS - restrict to specific methods and headers
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins_list,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-API-Key", "Accept"],
 )
 
 # Include verification router
@@ -99,29 +100,6 @@ class UploadResponse(BaseModel):
     message: str
 
 
-class PlayerStatsResponse(BaseModel):
-    """Response model for player statistics"""
-    player_name: str
-    total_hands: int
-
-    # Traditional stats
-    vpip_pct: Optional[float] = None
-    pfr_pct: Optional[float] = None
-    three_bet_pct: Optional[float] = None
-    cbet_flop_pct: Optional[float] = None
-    wtsd_pct: Optional[float] = None
-    wsd_pct: Optional[float] = None
-
-    # Composite metrics
-    exploitability_index: Optional[float] = None
-    pressure_vulnerability_score: Optional[float] = None
-    player_type: Optional[str] = None
-
-    # Dates
-    first_hand_date: Optional[datetime] = None
-    last_hand_date: Optional[datetime] = None
-
-
 class PlayerListItem(BaseModel):
     """List item for players"""
     player_name: str
@@ -144,12 +122,6 @@ class HealthResponse(BaseModel):
     """Health check response"""
     status: str
     database: str
-    timestamp: datetime
-
-
-class ErrorResponse(BaseModel):
-    """Error response model"""
-    detail: str
     timestamp: datetime
 
 
@@ -257,6 +229,10 @@ async def upload_hand_history(
         # Save uploaded file temporarily
         with tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.txt') as tmp_file:
             content = await file.read()
+
+            # Validate file size
+            InputValidator.validate_file_size(content, file.filename)
+
             tmp_file.write(content)
             tmp_path = tmp_file.name
 
@@ -372,6 +348,10 @@ async def upload_hand_history_batch(
             # Save uploaded file temporarily
             with tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.txt') as tmp_file:
                 content = await file.read()
+
+                # Validate file size
+                InputValidator.validate_file_size(content, file.filename)
+
                 tmp_file.write(content)
                 tmp_path = tmp_file.name
 
@@ -512,8 +492,11 @@ async def get_player_profile(
         Complete player statistics including traditional stats and composite metrics
     """
     try:
+        # Validate player name input
+        validated_name = InputValidator.validate_player_name(player_name)
+
         service = DatabaseService(db)
-        stats = service.get_player_stats(player_name)
+        stats = service.get_player_stats(validated_name)
 
         if not stats:
             raise HTTPException(
@@ -607,9 +590,12 @@ async def get_database_schema():
     "/api/database/recalculate-stats",
     tags=["Database"],
     summary="Recalculate all player statistics",
-    description="Recalculate statistics for all players using the latest flag calculation logic"
+    description="Recalculate statistics for all players using the latest flag calculation logic. Requires API key."
 )
-async def recalculate_all_stats(db: Session = Depends(get_db)):
+async def recalculate_all_stats(
+    db: Session = Depends(get_db),
+    api_key: str = Depends(verify_api_key)
+):
     """
     Recalculate statistics for all players.
 
@@ -877,9 +863,12 @@ async def test_stats_calculation(player_name: str, db: Session = Depends(get_db)
     "/api/database/clear",
     tags=["Database"],
     summary="Clear all database data",
-    description="Delete all data from all tables (USE WITH CAUTION)"
+    description="Delete all data from all tables (USE WITH CAUTION). Requires API key."
 )
-async def clear_database(db: Session = Depends(get_db)):
+async def clear_database(
+    db: Session = Depends(get_db),
+    api_key: str = Depends(verify_api_key)
+):
     """
     Clear all data from the database.
 
@@ -1067,9 +1056,12 @@ async def query_claude(
     "/api/admin/run-migration",
     tags=["Admin"],
     summary="Run pending database migrations",
-    description="Runs the conversation tables migration. Safe to call multiple times."
+    description="Runs the conversation tables migration. Safe to call multiple times. Requires API key."
 )
-async def run_migration(db: Session = Depends(get_db)):
+async def run_migration(
+    db: Session = Depends(get_db),
+    api_key: str = Depends(verify_api_key)
+):
     """
     Run database migrations for conversation tables.
 

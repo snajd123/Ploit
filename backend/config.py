@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     # Security
     secret_key: str
     allowed_origins: str = "http://localhost:3000"
+    api_key: Optional[str] = None  # Optional API key for protecting sensitive endpoints
 
     class Config:
         """Pydantic configuration"""

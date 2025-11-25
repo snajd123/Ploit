@@ -598,6 +598,287 @@ async def get_gto_dashboard(
         )
 
 
+# ============================================================================
+# ANALYZE ENDPOINT (Missing - needed by frontend)
+# ============================================================================
+
+class AnalyzeRequest(BaseModel):
+    """Request for player exploit analysis"""
+    scenarios: Optional[List[str]] = Field(None, description="Specific scenarios to analyze")
+
+
+class DeviationItem(BaseModel):
+    """A single deviation from baseline/GTO"""
+    stat: str
+    player: float
+    baseline: Optional[float] = None
+    gto: Optional[float] = None
+    deviation: float
+    abs_deviation: float
+    severity: str  # negligible, minor, moderate, severe, extreme
+    exploitable: bool
+    direction: str  # over, under
+    exploit_direction: Optional[str] = None
+    exploit: Optional[str] = None
+    estimated_ev: Optional[float] = None
+
+
+class ScenarioAnalysis(BaseModel):
+    """Analysis for a single scenario"""
+    comparison_type: Optional[str] = 'gto'
+    scenario: str
+    baseline_type: Optional[str] = None
+    baseline_source: Optional[str] = None
+    position: Optional[str] = None
+    gto_baseline: Optional[Dict[str, Any]] = None
+    deviations: List[DeviationItem]
+    exploitable_count: int
+    total_estimated_ev: float
+    summary: str
+
+
+class PlayerExploitAnalysisResponse(BaseModel):
+    """Complete exploit analysis response"""
+    player_name: str
+    scenarios_analyzed: int
+    total_estimated_ev: float
+    analyses: List[ScenarioAnalysis]
+    summary: str
+
+
+@router.post("/analyze/{player_name}", response_model=PlayerExploitAnalysisResponse)
+async def analyze_player_exploits(
+    player_name: str,
+    request: Optional[AnalyzeRequest] = None,
+    gto_service: GTOService = Depends(get_gto_service)
+):
+    """
+    Comprehensive exploit analysis for a player.
+
+    Analyzes player against GTO baselines and returns exploitable patterns.
+
+    Example: POST /api/gto/analyze/Villain1
+
+    Returns:
+    - All scenario analyses
+    - Deviation details
+    - Exploit recommendations
+    - Total expected value
+    """
+    from backend.models.gto_models import PlayerGTOStat, GTOScenario
+    from sqlalchemy import desc
+
+    try:
+        analyses = []
+        total_ev = 0.0
+
+        # Get all player's GTO stats
+        query = gto_service.db.query(PlayerGTOStat, GTOScenario).join(
+            GTOScenario,
+            PlayerGTOStat.scenario_id == GTOScenario.scenario_id
+        ).filter(
+            PlayerGTOStat.player_name == player_name,
+            PlayerGTOStat.total_hands >= 10
+        )
+
+        # Filter by specific scenarios if provided
+        if request and request.scenarios:
+            query = query.filter(GTOScenario.scenario_name.in_(request.scenarios))
+
+        results = query.order_by(desc(PlayerGTOStat.total_ev_loss_bb)).all()
+
+        for stat, scenario in results:
+            player_freq = float(stat.player_frequency) * 100 if stat.player_frequency else 0
+            gto_freq = float(stat.gto_frequency) * 100 if stat.gto_frequency else 0
+            freq_diff = float(stat.frequency_diff) * 100 if stat.frequency_diff else 0
+            ev_loss = float(stat.total_ev_loss_bb) if stat.total_ev_loss_bb else 0
+
+            # Determine severity
+            abs_diff = abs(freq_diff)
+            if abs_diff < 5:
+                severity = 'negligible'
+            elif abs_diff < 10:
+                severity = 'minor'
+            elif abs_diff < 20:
+                severity = 'moderate'
+            elif abs_diff < 35:
+                severity = 'severe'
+            else:
+                severity = 'extreme'
+
+            # Determine direction
+            direction = 'over' if freq_diff > 0 else 'under'
+
+            # Generate exploit recommendation
+            exploit = None
+            exploit_direction = None
+            if abs_diff >= 10:
+                if stat.leak_type and 'over' in stat.leak_type:
+                    exploit = f"Counter by calling/raising lighter when they {scenario.action or 'act'}"
+                    exploit_direction = "call down lighter"
+                elif stat.leak_type and 'under' in stat.leak_type:
+                    exploit = f"Apply pressure - they fold too much in this spot"
+                    exploit_direction = "bluff more"
+                else:
+                    exploit = stat.exploit_description
+
+            deviation = DeviationItem(
+                stat=f"{scenario.scenario_name} ({scenario.action or 'action'})",
+                player=player_freq,
+                gto=gto_freq,
+                deviation=freq_diff,
+                abs_deviation=abs_diff,
+                severity=severity,
+                exploitable=abs_diff >= 10,
+                direction=direction,
+                exploit_direction=exploit_direction,
+                exploit=exploit,
+                estimated_ev=ev_loss
+            )
+
+            scenario_analysis = ScenarioAnalysis(
+                comparison_type='gto',
+                scenario=scenario.scenario_name,
+                position=scenario.position,
+                gto_baseline={
+                    'scenario_type': scenario.category,
+                    'description': scenario.description,
+                    'gto_frequency': gto_freq
+                },
+                deviations=[deviation],
+                exploitable_count=1 if abs_diff >= 10 else 0,
+                total_estimated_ev=ev_loss,
+                summary=f"{severity.capitalize()} deviation ({freq_diff:+.1f}%)" if abs_diff >= 5 else "Within GTO range"
+            )
+
+            analyses.append(scenario_analysis)
+            total_ev += ev_loss
+
+        # Generate overall summary
+        severe_count = sum(1 for a in analyses if any(d.severity in ['severe', 'extreme'] for d in a.deviations))
+        if severe_count == 0:
+            summary = f"Player {player_name} plays relatively close to GTO with minor leaks"
+        elif severe_count <= 3:
+            summary = f"Player {player_name} has {severe_count} significant leaks to exploit"
+        else:
+            summary = f"Player {player_name} is highly exploitable with {severe_count} major deviations from GTO"
+
+        return PlayerExploitAnalysisResponse(
+            player_name=player_name,
+            scenarios_analyzed=len(analyses),
+            total_estimated_ev=total_ev,
+            analyses=analyses,
+            summary=summary
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to analyze player: {str(e)}"
+        )
+
+
+# ============================================================================
+# BOARD MATCH ENDPOINT (Missing - needed by GTOBoardMatch component)
+# ============================================================================
+
+class GTOMatchResponse(BaseModel):
+    """GTO match response for board matching"""
+    board: str
+    matches: List[Dict[str, Any]]
+    best_match: Optional[Dict[str, Any]] = None
+    board_category: Optional[str] = None
+
+
+@router.get("/match")
+async def match_board_to_gto(
+    board: str = Query(..., description="Board cards (e.g., 'Ks7c3d')"),
+    top_n: int = Query(5, ge=1, le=20, description="Number of matches to return"),
+    gto_service: GTOService = Depends(get_gto_service)
+):
+    """
+    Match a board to GTO solutions.
+
+    Example: GET /api/gto/match?board=Ks7c3d&top_n=5
+
+    Returns GTO solutions that match or are similar to the given board texture.
+    """
+    from backend.models.gto_models import GTOScenario
+    from backend.services.board_categorizer import BoardCategorizer
+
+    try:
+        # Categorize the input board
+        categorizer = BoardCategorizer()
+        board_clean = board.replace(' ', '')
+
+        # Get board category
+        category_l1, category_l2, category_l3 = categorizer.categorize_board(board_clean)
+
+        # Find matching GTO solutions
+        # First try exact board match
+        matches = []
+
+        # Query gto_solutions table for similar boards
+        from sqlalchemy import text
+
+        # Search for boards with similar category
+        query = text("""
+            SELECT scenario_name, board, board_category_l1, board_category_l2, board_category_l3,
+                   gto_bet_frequency, gto_check_frequency, gto_fold_frequency,
+                   position_oop, position_ip, scenario_type
+            FROM gto_solutions
+            WHERE board_category_l1 = :cat1
+            ORDER BY
+                CASE
+                    WHEN board = :board THEN 0
+                    WHEN board_category_l2 = :cat2 THEN 1
+                    WHEN board_category_l3 = :cat3 THEN 2
+                    ELSE 3
+                END
+            LIMIT :limit
+        """)
+
+        result = gto_service.db.execute(query, {
+            'board': board_clean,
+            'cat1': category_l1,
+            'cat2': category_l2,
+            'cat3': category_l3,
+            'limit': top_n
+        })
+
+        rows = result.fetchall()
+
+        for row in rows:
+            match = {
+                'scenario_name': row[0],
+                'board': row[1],
+                'board_category_l1': row[2],
+                'board_category_l2': row[3],
+                'board_category_l3': row[4],
+                'gto_bet_frequency': float(row[5]) if row[5] else None,
+                'gto_check_frequency': float(row[6]) if row[6] else None,
+                'gto_fold_frequency': float(row[7]) if row[7] else None,
+                'position_oop': row[8],
+                'position_ip': row[9],
+                'scenario_type': row[10],
+                'match_quality': 'exact' if row[1] == board_clean else 'similar'
+            }
+            matches.append(match)
+
+        return GTOMatchResponse(
+            board=board_clean,
+            matches=matches,
+            best_match=matches[0] if matches else None,
+            board_category=f"{category_l1} / {category_l2} / {category_l3}"
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to match board: {str(e)}"
+        )
+
+
 @router.get("/health")
 async def health_check(gto_service: GTOService = Depends(get_gto_service)):
     """

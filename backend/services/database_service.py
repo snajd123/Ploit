@@ -10,7 +10,7 @@ Handles all database operations including:
 
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy import func, and_, or_, text
+from sqlalchemy import func, text
 from typing import List, Dict, Optional, Any
 from datetime import datetime
 from decimal import Decimal
@@ -19,8 +19,7 @@ import logging
 from backend.models.database_models import (
     RawHand, HandAction, PlayerHandSummary, PlayerStats, UploadSession
 )
-from backend.parser.data_structures import Hand, Action, PlayerHandSummaryFlags
-from backend.database import get_db
+from backend.parser.data_structures import Hand, PlayerHandSummaryFlags
 from backend.services.stats_calculator import StatsCalculator
 from backend.services.board_categorizer import BoardCategorizer
 
@@ -704,30 +703,6 @@ class DatabaseService:
         }
 
         return stats
-
-    def update_all_player_stats(self) -> Dict[str, int]:
-        """
-        Recalculate stats for all players.
-
-        Returns:
-            Dictionary with 'players_updated' count
-        """
-        try:
-            # Get all unique player names
-            player_names = self.session.query(PlayerHandSummary.player_name).distinct().all()
-            player_names = [name[0] for name in player_names]
-
-            count = 0
-            for player_name in player_names:
-                if self.update_player_stats(player_name):
-                    count += 1
-
-            logger.info(f"Updated stats for {count} players")
-            return {'players_updated': count}
-
-        except Exception as e:
-            logger.error(f"Error updating all player stats: {str(e)}")
-            return {'players_updated': 0}
 
     # ========================================
     # Query Functions
