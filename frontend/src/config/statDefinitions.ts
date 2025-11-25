@@ -312,6 +312,69 @@ export function getStatDefinition(statKey: string): StatDefinition | undefined {
 }
 
 /**
+ * GTO optimal range from API
+ */
+export interface GTOOptimalRange {
+  stat_key: string;
+  optimal_low: number;
+  optimal_high: number;
+  gto_value?: number;
+  source: string;
+}
+
+/**
+ * Get stat definition with GTO optimal range override
+ * If gtoRanges is provided and has data for this stat, use those values
+ */
+export function getStatDefinitionWithGTO(
+  statKey: string,
+  gtoRanges?: Record<string, GTOOptimalRange>
+): StatDefinition | undefined {
+  const baseDef = STAT_DEFINITIONS[statKey];
+  if (!baseDef) return undefined;
+
+  // If we have GTO data for this stat, override the optimal range
+  if (gtoRanges && gtoRanges[statKey]) {
+    const gtoRange = gtoRanges[statKey];
+    return {
+      ...baseDef,
+      optimalRange: [gtoRange.optimal_low, gtoRange.optimal_high],
+      tooltip: gtoRange.gto_value
+        ? `${baseDef.tooltip} (GTO: ${gtoRange.gto_value.toFixed(1)}%)`
+        : baseDef.tooltip,
+    };
+  }
+
+  return baseDef;
+}
+
+/**
+ * Get all stat definitions with GTO overrides applied
+ */
+export function getStatDefinitionsWithGTO(
+  gtoRanges?: Record<string, GTOOptimalRange>
+): Record<string, StatDefinition> {
+  if (!gtoRanges) return STAT_DEFINITIONS;
+
+  const merged: Record<string, StatDefinition> = {};
+  for (const [key, def] of Object.entries(STAT_DEFINITIONS)) {
+    const gtoRange = gtoRanges[key];
+    if (gtoRange) {
+      merged[key] = {
+        ...def,
+        optimalRange: [gtoRange.optimal_low, gtoRange.optimal_high],
+        tooltip: gtoRange.gto_value
+          ? `${def.tooltip} (GTO: ${gtoRange.gto_value.toFixed(1)}%)`
+          : def.tooltip,
+      };
+    } else {
+      merged[key] = def;
+    }
+  }
+  return merged;
+}
+
+/**
  * Get tooltip text for a stat
  */
 export function getStatTooltip(statKey: string): string {

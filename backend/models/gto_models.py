@@ -17,7 +17,7 @@ Base = declarative_base()
 
 class GTOScenario(Base):
     """
-    Stores metadata for each GTO scenario (preflop or postflop).
+    Stores metadata for each GTO scenario (preflop).
 
     Table: gto_scenarios
     """
@@ -37,17 +37,14 @@ class GTOScenario(Base):
     action = Column(String(20))  # 'open', 'call', 'fold', '3bet', '4bet', 'allin'
     opponent_position = Column(String(10))  # 'UTG', NULL for opens
 
-    # Postflop specific (for future use)
-    board = Column(String(20))  # e.g., 'AsKsQs', 'PREFLOP'
-    board_texture = Column(String(50))  # e.g., 'monotone', 'dry', 'wet'
-    position_context = Column(String(20))  # 'IP', 'OOP'
-    action_node = Column(String(50))  # 'facing_cbet', 'facing_raise'
-
     # Metadata
     data_source = Column(String(50), default='gtowizard')
     description = Column(Text)
     created_at = Column(TIMESTAMP, default=func.current_timestamp())
     updated_at = Column(TIMESTAMP, default=func.current_timestamp())
+
+    # Aggregate GTO frequency for this scenario
+    gto_aggregate_freq = Column(DECIMAL(10, 4))
 
     def __repr__(self) -> str:
         return f"<GTOScenario(id={self.scenario_id}, name={self.scenario_name}, street={self.street})>"
@@ -62,12 +59,9 @@ class GTOScenario(Base):
             'position': self.position,
             'action': self.action,
             'opponent_position': self.opponent_position,
-            'board': self.board,
-            'board_texture': self.board_texture,
-            'position_context': self.position_context,
-            'action_node': self.action_node,
             'data_source': self.data_source,
-            'description': self.description
+            'description': self.description,
+            'gto_aggregate_freq': float(self.gto_aggregate_freq) if self.gto_aggregate_freq else None
         }
 
 

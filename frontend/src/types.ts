@@ -351,3 +351,28 @@ export interface ClearDatabaseResponse {
     gto_frequencies: number;
   };
 }
+
+// GTO Optimal Ranges Types
+export interface GTOOptimalRangeItem {
+  stat_key: string;
+  optimal_low: number;
+  optimal_high: number;
+  gto_value?: number;
+  source: string;
+  description?: string;
+}
+
+export interface GTOPositionalRange {
+  position: string;
+  vpip_pct: number;
+  three_bet_pct?: number;
+  fold_to_3bet_pct?: number;
+}
+
+export interface GTOOptimalRangesResponse {
+  overall: Record<string, GTOOptimalRangeItem>;
+  positional: GTOPositionalRange[];
+  scenarios_count: number;
+  frequencies_count: number;
+  last_updated?: string;
+}

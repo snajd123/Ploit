@@ -20,6 +20,7 @@ import type {
   ResetPreviewResponse,
   ClearDatabaseResponse,
   UploadHistoryResponse,
+  GTOOptimalRangesResponse,
 } from '../types';
 
 class ApiClient {
@@ -202,6 +203,12 @@ class ApiClient {
     const response = await this.client.post('/api/sessions/detect-all', null, {
       params: { session_gap_minutes: sessionGapMinutes }
     });
+    return response.data;
+  }
+
+  // Get GTO optimal ranges from database
+  async getGTOOptimalRanges(): Promise<GTOOptimalRangesResponse> {
+    const response = await this.client.get<GTOOptimalRangesResponse>('/api/gto/optimal-ranges');
     return response.data;
   }
 }

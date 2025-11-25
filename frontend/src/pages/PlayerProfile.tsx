@@ -1,6 +1,6 @@
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { useRef } from 'react';
+import { useRef, useMemo } from 'react';
 import { ArrowLeft, TrendingUp, Target, Shield, Crosshair, AlertTriangle } from 'lucide-react';
 import { api } from '../services/api';
 import PlayerBadge from '../components/PlayerBadge';
@@ -13,11 +13,12 @@ import ExploitDashboard from '../components/ExploitDashboard';
 import BaselineComparison from '../components/BaselineComparison';
 import DeviationHeatmap from '../components/DeviationHeatmap';
 import { LeakSummary, LeaksList } from '../components/LeakCard';
-import { STAT_DEFINITIONS } from '../config/statDefinitions';
+import { STAT_DEFINITIONS, getStatDefinitionsWithGTO, GTOOptimalRange } from '../config/statDefinitions';
 
 // Helper function to generate tooltip content for a statistic
-const getStatTooltip = (statKey: string, value?: number) => {
-  const def = STAT_DEFINITIONS[statKey];
+// Now accepts statDefinitions as parameter for GTO-enhanced definitions
+const createStatTooltip = (statDefinitions: Record<string, any>) => (statKey: string, value?: number) => {
+  const def = statDefinitions[statKey];
   if (!def) return null;
 
   return (
@@ -36,7 +37,7 @@ const getStatTooltip = (statKey: string, value?: number) => {
 
       {def.optimalRange && (
         <div className="text-xs border-t border-gray-700 pt-2">
-          <div className="text-gray-400">Optimal Range:</div>
+          <div className="text-gray-400">Optimal Range (GTO):</div>
           <div className="text-green-300 font-medium">
             {def.optimalRange[0]}{def.unit} - {def.optimalRange[1]}{def.unit}
           </div>
@@ -86,6 +87,25 @@ const PlayerProfile = () => {
     queryFn: () => api.getPlayerLeaks(playerName!),
     enabled: !!playerName,
   });
+
+  // Fetch GTO optimal ranges from database
+  const { data: gtoRanges } = useQuery({
+    queryKey: ['gtoOptimalRanges'],
+    queryFn: () => api.getGTOOptimalRanges(),
+    staleTime: 1000 * 60 * 60, // Cache for 1 hour - GTO data rarely changes
+  });
+
+  // Merge GTO ranges with default stat definitions
+  const statDefinitions = useMemo(() => {
+    if (!gtoRanges?.overall) return STAT_DEFINITIONS;
+    return getStatDefinitionsWithGTO(gtoRanges.overall as unknown as Record<string, GTOOptimalRange>);
+  }, [gtoRanges]);
+
+  // Create tooltip function using merged definitions
+  const getStatTooltipGTO = useMemo(
+    () => createStatTooltip(statDefinitions),
+    [statDefinitions]
+  );
 
   // Scroll to baseline comparison table
   const scrollToBaselineTable = () => {
@@ -154,7 +174,7 @@ const PlayerProfile = () => {
             <div className="text-right">
               <div className="flex items-center justify-end gap-1">
                 <p className="text-sm text-gray-600">Exploitability Index</p>
-                <Tooltip content={getStatTooltip('exploitability_index', player.exploitability_index)} position="bottom" iconSize={14} />
+                <Tooltip content={getStatTooltipGTO('exploitability_index', player.exploitability_index)} position="bottom" iconSize={14} />
               </div>
               <p className="text-4xl font-bold text-gray-900 mt-1">
                 {player.exploitability_index.toFixed(1)}
@@ -186,56 +206,56 @@ const PlayerProfile = () => {
             value={player.vpip_pct !== null && player.vpip_pct !== undefined ? `${player.vpip_pct.toFixed(1)}%` : 'N/A'}
             subtitle="Voluntarily Put $ In Pot"
             color="blue"
-            tooltip={getStatTooltip('vpip_pct', player.vpip_pct ?? undefined)}
+            tooltip={getStatTooltipGTO('vpip_pct', player.vpip_pct ?? undefined)}
           />
           <StatCard
             title="PFR%"
             value={player.pfr_pct !== null && player.pfr_pct !== undefined ? `${player.pfr_pct.toFixed(1)}%` : 'N/A'}
             subtitle="Pre-Flop Raise"
             color="green"
-            tooltip={getStatTooltip('pfr_pct', player.pfr_pct ?? undefined)}
+            tooltip={getStatTooltipGTO('pfr_pct', player.pfr_pct ?? undefined)}
           />
           <StatCard
             title="3-Bet%"
             value={player.three_bet_pct !== null && player.three_bet_pct !== undefined ? `${player.three_bet_pct.toFixed(1)}%` : 'N/A'}
             subtitle="3-Bet Percentage"
             color="yellow"
-            tooltip={getStatTooltip('three_bet_pct', player.three_bet_pct ?? undefined)}
+            tooltip={getStatTooltipGTO('three_bet_pct', player.three_bet_pct ?? undefined)}
           />
           <StatCard
             title="Fold to 3-Bet%"
             value={player.fold_to_three_bet_pct !== null && player.fold_to_three_bet_pct !== undefined ? `${player.fold_to_three_bet_pct.toFixed(1)}%` : 'N/A'}
             subtitle="Fold to 3-Bet"
             color="red"
-            tooltip={getStatTooltip('fold_to_three_bet_pct', player.fold_to_three_bet_pct ?? undefined)}
+            tooltip={getStatTooltipGTO('fold_to_three_bet_pct', player.fold_to_three_bet_pct ?? undefined)}
           />
           <StatCard
             title="4-Bet%"
             value={player.four_bet_pct !== null && player.four_bet_pct !== undefined ? `${player.four_bet_pct.toFixed(1)}%` : 'N/A'}
             subtitle="4-Bet Percentage"
             color="blue"
-            tooltip={getStatTooltip('four_bet_pct', player.four_bet_pct ?? undefined)}
+            tooltip={getStatTooltipGTO('four_bet_pct', player.four_bet_pct ?? undefined)}
           />
           <StatCard
             title="Cold Call%"
             value={player.cold_call_pct !== null && player.cold_call_pct !== undefined ? `${player.cold_call_pct.toFixed(1)}%` : 'N/A'}
             subtitle="Cold Call Percentage"
             color="green"
-            tooltip={getStatTooltip('cold_call_pct', player.cold_call_pct ?? undefined)}
+            tooltip={getStatTooltipGTO('cold_call_pct', player.cold_call_pct ?? undefined)}
           />
           <StatCard
             title="Limp%"
             value={player.limp_pct !== null && player.limp_pct !== undefined ? `${player.limp_pct.toFixed(1)}%` : 'N/A'}
             subtitle="Limp Percentage"
             color="yellow"
-            tooltip={getStatTooltip('limp_pct', player.limp_pct ?? undefined)}
+            tooltip={getStatTooltipGTO('limp_pct', player.limp_pct ?? undefined)}
           />
           <StatCard
             title="BB/100"
             value={player.bb_per_100 !== null && player.bb_per_100 !== undefined ? `${player.bb_per_100.toFixed(1)}` : 'N/A'}
             subtitle="Big Blinds per 100 Hands"
             color={player.bb_per_100 !== null && player.bb_per_100 !== undefined && player.bb_per_100 > 0 ? 'green' : player.bb_per_100 !== null && player.bb_per_100 !== undefined && player.bb_per_100 < 0 ? 'red' : 'gray'}
-            tooltip={getStatTooltip('bb_per_100', player.bb_per_100 ?? undefined)}
+            tooltip={getStatTooltipGTO('bb_per_100', player.bb_per_100 ?? undefined)}
           />
         </div>
       </div>
@@ -443,7 +463,7 @@ const PlayerProfile = () => {
             subtitle="Position-specific play quality"
             icon={<Target size={24} />}
             color="yellow"
-            tooltip={getStatTooltip('positional_awareness_index', player.positional_awareness_index ?? undefined)}
+            tooltip={getStatTooltipGTO('positional_awareness_index', player.positional_awareness_index ?? undefined)}
           />
           <StatCard
             title="Blind Defense Efficiency"
@@ -451,7 +471,7 @@ const PlayerProfile = () => {
             subtitle="Quality of blind defense"
             icon={<Shield size={24} />}
             color="blue"
-            tooltip={getStatTooltip('blind_defense_efficiency', player.blind_defense_efficiency ?? undefined)}
+            tooltip={getStatTooltipGTO('blind_defense_efficiency', player.blind_defense_efficiency ?? undefined)}
           />
           <StatCard
             title="Optimal Stake Rating"
@@ -459,7 +479,7 @@ const PlayerProfile = () => {
             subtitle="Skill level assessment"
             icon={<TrendingUp size={24} />}
             color="green"
-            tooltip={getStatTooltip('optimal_stake_skill_rating', player.optimal_stake_skill_rating ?? undefined)}
+            tooltip={getStatTooltipGTO('optimal_stake_skill_rating', player.optimal_stake_skill_rating ?? undefined)}
           />
         </div>
       </div>
