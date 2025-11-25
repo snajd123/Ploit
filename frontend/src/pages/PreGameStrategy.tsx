@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
 import { Target, Users, TrendingUp, Lightbulb, Focus, AlertCircle } from 'lucide-react';
 import { api } from '../services/api';
@@ -23,10 +24,27 @@ interface StrategyResponse {
 }
 
 const PreGameStrategy = () => {
+  const [searchParams] = useSearchParams();
   const [opponentNames, setOpponentNames] = useState('');
   const [heroName, setHeroName] = useState('');
   const [stakes, setStakes] = useState('');
   const [gameType, setGameType] = useState('6-max Cash');
+
+  // Load opponent from URL query parameter
+  useEffect(() => {
+    const opponentFromUrl = searchParams.get('opponent');
+    if (opponentFromUrl) {
+      setOpponentNames(prev => {
+        // If there are already opponents, append; otherwise set
+        if (prev && !prev.includes(opponentFromUrl)) {
+          return `${prev}, ${opponentFromUrl}`;
+        } else if (!prev) {
+          return opponentFromUrl;
+        }
+        return prev;
+      });
+    }
+  }, [searchParams]);
 
   // Load saved hero name from localStorage on mount
   useEffect(() => {

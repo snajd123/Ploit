@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
-import { Upload as UploadIcon, FileText, CheckCircle, XCircle, AlertCircle, X } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Upload as UploadIcon, FileText, CheckCircle, XCircle, AlertCircle, X, Users, Calendar, Target, ArrowRight } from 'lucide-react';
 import { api } from '../services/api';
 import type { UploadResponse } from '../types';
 
@@ -246,6 +247,63 @@ const Upload = () => {
                 </div>
               </div>
             )}
+
+            {/* What's Next? Section */}
+            <div className="mt-6 p-5 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
+              <h3 className="text-lg font-semibold text-gray-900 mb-3">What's Next?</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Your data is ready for analysis. Choose where to go:
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <Link
+                  to="/players"
+                  className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200 hover:border-blue-300 hover:shadow-md transition-all group"
+                >
+                  <div className="flex items-center space-x-3">
+                    <div className="p-2 bg-blue-100 rounded-lg group-hover:bg-blue-200 transition-colors">
+                      <Users className="text-blue-600" size={20} />
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-900">Browse Players</p>
+                      <p className="text-xs text-gray-500">View opponent stats</p>
+                    </div>
+                  </div>
+                  <ArrowRight className="text-gray-400 group-hover:text-blue-500 transition-colors" size={18} />
+                </Link>
+
+                <Link
+                  to="/sessions"
+                  className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200 hover:border-green-300 hover:shadow-md transition-all group"
+                >
+                  <div className="flex items-center space-x-3">
+                    <div className="p-2 bg-green-100 rounded-lg group-hover:bg-green-200 transition-colors">
+                      <Calendar className="text-green-600" size={20} />
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-900">View Sessions</p>
+                      <p className="text-xs text-gray-500">Analyze your play</p>
+                    </div>
+                  </div>
+                  <ArrowRight className="text-gray-400 group-hover:text-green-500 transition-colors" size={18} />
+                </Link>
+
+                <Link
+                  to="/strategy"
+                  className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200 hover:border-purple-300 hover:shadow-md transition-all group"
+                >
+                  <div className="flex items-center space-x-3">
+                    <div className="p-2 bg-purple-100 rounded-lg group-hover:bg-purple-200 transition-colors">
+                      <Target className="text-purple-600" size={20} />
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-900">Generate Strategy</p>
+                      <p className="text-xs text-gray-500">Exploit opponents</p>
+                    </div>
+                  </div>
+                  <ArrowRight className="text-gray-400 group-hover:text-purple-500 transition-colors" size={18} />
+                </Link>
+              </div>
+            </div>
           </div>
         )}
       </div>

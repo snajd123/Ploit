@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Target,
@@ -69,6 +69,15 @@ interface GTODashboardData {
 const GTOAnalysis = () => {
   const [selectedPlayer, setSelectedPlayer] = useState<string>('');
   const [searchValue, setSearchValue] = useState<string>('');
+
+  // Auto-load hero name from localStorage on mount
+  useEffect(() => {
+    const savedHeroName = localStorage.getItem('poker-hero-name');
+    if (savedHeroName && !selectedPlayer) {
+      setSelectedPlayer(savedHeroName);
+      setSearchValue(savedHeroName);
+    }
+  }, []);
 
   const formatScenarioName = (scenarioName: string): string => {
     // Convert "SB_vs_BTN_fold" to "SB vs BTN - Fold"

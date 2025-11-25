@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Calendar, Clock, TrendingUp, TrendingDown, Target, History, MessageSquare, FileText } from 'lucide-react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import { ArrowLeft, Calendar, Clock, TrendingUp, TrendingDown, Target, History, MessageSquare, FileText, Crosshair } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 
 interface Session {
@@ -504,8 +504,18 @@ const SessionDetail: React.FC = () => {
                                 <h4 className="font-semibold text-gray-900">{opp.opponent_name}</h4>
                                 <p className="text-sm text-gray-500">{opp.hands_observed} hands observed</p>
                               </div>
-                              <div className="text-sm text-gray-600">
-                                VPIP: {opp.vpip_pct?.toFixed(1)}% | PFR: {opp.pfr_pct?.toFixed(1)}%
+                              <div className="flex items-center gap-4">
+                                <div className="text-sm text-gray-600">
+                                  VPIP: {opp.vpip_pct?.toFixed(1)}% | PFR: {opp.pfr_pct?.toFixed(1)}%
+                                </div>
+                                <Link
+                                  to={`/strategy?opponent=${encodeURIComponent(opp.opponent_name)}`}
+                                  className="inline-flex items-center space-x-1 px-3 py-1.5 text-xs font-medium text-purple-700 bg-purple-100 rounded-md hover:bg-purple-200 transition-colors"
+                                  title="Generate strategy against this opponent"
+                                >
+                                  <Crosshair size={14} />
+                                  <span>Strategy</span>
+                                </Link>
                               </div>
                             </div>
 

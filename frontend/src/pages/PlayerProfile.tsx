@@ -1,7 +1,7 @@
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useRef } from 'react';
-import { ArrowLeft, TrendingUp, Target, Shield } from 'lucide-react';
+import { ArrowLeft, TrendingUp, Target, Shield, Crosshair } from 'lucide-react';
 import { api } from '../services/api';
 import PlayerBadge from '../components/PlayerBadge';
 import StatCard from '../components/StatCard';
@@ -137,6 +137,14 @@ const PlayerProfile = () => {
                 {player.total_hands.toLocaleString()} hands
               </span>
             </div>
+            {/* Generate Strategy Button */}
+            <Link
+              to={`/strategy?opponent=${encodeURIComponent(player.player_name)}`}
+              className="inline-flex items-center space-x-2 mt-4 px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 transition-all shadow-md hover:shadow-lg"
+            >
+              <Crosshair size={18} />
+              <span>Generate Strategy</span>
+            </Link>
           </div>
           {player.exploitability_index !== null && player.exploitability_index !== undefined && (
             <div className="text-right">

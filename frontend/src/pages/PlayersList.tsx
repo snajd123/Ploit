@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
-import { Search, Filter, X } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
+import { Search, Filter, X, Crosshair } from 'lucide-react';
 import { api } from '../services/api';
 import PlayerBadge from '../components/PlayerBadge';
 import type { PlayerType } from '../types';
@@ -337,6 +337,9 @@ const PlayersList = () => {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     EI
                   </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -389,6 +392,17 @@ const PlayersList = () => {
                       ) : (
                         <span className="text-sm text-gray-400">-</span>
                       )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <Link
+                        to={`/strategy?opponent=${encodeURIComponent(player.player_name)}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex items-center space-x-1 px-3 py-1.5 text-xs font-medium text-purple-700 bg-purple-100 rounded-md hover:bg-purple-200 transition-colors"
+                        title="Generate strategy against this player"
+                      >
+                        <Crosshair size={14} />
+                        <span>Strategy</span>
+                      </Link>
                     </td>
                   </tr>
                 ))}
