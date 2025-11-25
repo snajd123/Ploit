@@ -16,6 +16,7 @@ import type {
   PlayerExploitAnalysisResponse,
   ConversationListItem,
   ConversationDetail,
+  LeakAnalysisResponse,
 } from '../types';
 
 class ApiClient {
@@ -92,6 +93,12 @@ class ApiClient {
   // Get player profile
   async getPlayerProfile(playerName: string): Promise<PlayerStats> {
     const response = await this.client.get<PlayerStats>(`/api/players/${encodeURIComponent(playerName)}`);
+    return response.data;
+  }
+
+  // Get player leak analysis
+  async getPlayerLeaks(playerName: string): Promise<LeakAnalysisResponse> {
+    const response = await this.client.get<LeakAnalysisResponse>(`/api/players/${encodeURIComponent(playerName)}/leaks`);
     return response.data;
   }
 

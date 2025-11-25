@@ -1,7 +1,7 @@
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useRef } from 'react';
-import { ArrowLeft, TrendingUp, Target, Shield, Crosshair } from 'lucide-react';
+import { ArrowLeft, TrendingUp, Target, Shield, Crosshair, AlertTriangle } from 'lucide-react';
 import { api } from '../services/api';
 import PlayerBadge from '../components/PlayerBadge';
 import StatCard from '../components/StatCard';
@@ -14,6 +14,8 @@ import ShowdownChart from '../components/ShowdownChart';
 import ExploitDashboard from '../components/ExploitDashboard';
 import BaselineComparison from '../components/BaselineComparison';
 import DeviationHeatmap from '../components/DeviationHeatmap';
+import { LeakSummary, LeaksList } from '../components/LeakCard';
+import StatWithConfidence, { StatGroup } from '../components/StatWithConfidence';
 import { STAT_DEFINITIONS } from '../config/statDefinitions';
 
 // Helper function to generate tooltip content for a statistic
@@ -78,6 +80,13 @@ const PlayerProfile = () => {
   const { data: exploitAnalysis } = useQuery({
     queryKey: ['playerExploits', playerName],
     queryFn: () => api.analyzePlayerExploits(playerName!),
+    enabled: !!playerName,
+  });
+
+  // Fetch leak analysis with confidence intervals
+  const { data: leakAnalysis } = useQuery({
+    queryKey: ['playerLeaks', playerName],
+    queryFn: () => api.getPlayerLeaks(playerName!),
     enabled: !!playerName,
   });
 
@@ -256,6 +265,89 @@ const PlayerProfile = () => {
           />
         </div>
       </div>
+
+      {/* Leak Analysis Section */}
+      {leakAnalysis && (
+        <div>
+          <div className="flex items-center gap-2 mb-4">
+            <AlertTriangle className="text-orange-500" size={24} />
+            <h2 className="text-xl font-semibold text-gray-900">Leak Analysis</h2>
+          </div>
+
+          {/* Leak Summary */}
+          <div className="mb-6">
+            <LeakSummary
+              totalLeaks={leakAnalysis.leak_summary.total_leaks}
+              criticalLeaks={leakAnalysis.leak_summary.critical_leaks}
+              majorLeaks={leakAnalysis.leak_summary.major_leaks}
+              totalEvOpportunity={leakAnalysis.leak_summary.total_ev_opportunity}
+              reliability={leakAnalysis.leak_summary.reliability}
+            />
+          </div>
+
+          {/* Player Type Exploit Info */}
+          {leakAnalysis.player_type && (
+            <div className="card bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 mb-6">
+              <h3 className="font-semibold text-gray-900 mb-2">
+                Player Profile: {leakAnalysis.player_type.type}
+              </h3>
+              <p className="text-sm text-gray-700 mb-3">{leakAnalysis.player_type.description}</p>
+
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <h4 className="text-xs font-semibold text-gray-600 uppercase mb-1">Key Traits</h4>
+                  <ul className="text-sm text-gray-700 space-y-1">
+                    {leakAnalysis.player_type.key_traits.map((trait, i) => (
+                      <li key={i} className="flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
+                        {trait}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <h4 className="text-xs font-semibold text-gray-600 uppercase mb-1">Primary Exploit</h4>
+                  <p className="text-sm text-purple-700 font-medium mb-2">
+                    {leakAnalysis.player_type.primary_exploit}
+                  </p>
+                  <h4 className="text-xs font-semibold text-gray-600 uppercase mb-1">Secondary Exploits</h4>
+                  <ul className="text-sm text-gray-700 space-y-1">
+                    {leakAnalysis.player_type.secondary_exploits.map((exploit, i) => (
+                      <li key={i}>• {exploit}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Core Metrics with Confidence */}
+          {leakAnalysis.core_metrics && leakAnalysis.core_metrics.length > 0 && (
+            <div className="mb-6">
+              <StatGroup title="Core Stats with Confidence Intervals">
+                {leakAnalysis.core_metrics.map((metric) => (
+                  <StatWithConfidence
+                    key={metric.name}
+                    label={metric.name}
+                    value={metric.value}
+                    sampleSize={metric.sample_size}
+                    ciLower={metric.ci_lower}
+                    ciUpper={metric.ci_upper}
+                    gtoBaseline={metric.gto_baseline}
+                    showDeviation={true}
+                  />
+                ))}
+              </StatGroup>
+            </div>
+          )}
+
+          {/* Detailed Leaks List */}
+          <div className="card">
+            <h3 className="font-semibold text-gray-900 mb-4">Identified Leaks</h3>
+            <LeaksList leaks={leakAnalysis.leaks} maxLeaks={10} />
+          </div>
+        </div>
+      )}
 
       {/* Visual Analytics Section */}
       <div>

@@ -91,7 +91,7 @@ export interface PlayerStats {
   last_updated?: string;
 }
 
-export type PlayerType = 'NIT' | 'TAG' | 'LAG' | 'CALLING_STATION' | 'MANIAC' | 'FISH' | 'LOOSE_PASSIVE' | 'TIGHT' | 'UNKNOWN' | null;
+export type PlayerType = 'NIT' | 'TAG' | 'LAG' | 'CALLING_STATION' | 'MANIAC' | 'FISH' | 'LOOSE_PASSIVE' | 'TIGHT' | 'TIGHT_PASSIVE' | 'UNKNOWN' | null;
 
 export interface PlayerListItem {
   player_name: string;
@@ -219,4 +219,53 @@ export interface PlayerExploitAnalysisResponse {
   total_estimated_ev: number;
   analyses: BaselineComparisonResponse[];
   summary: string;
+}
+
+// Leak Analysis Types
+export interface LeakItem {
+  stat: string;
+  player_value: number;
+  gto_baseline: number;
+  deviation: number;
+  direction: 'high' | 'low';
+  severity: 'minor' | 'moderate' | 'major' | 'critical';
+  tendency: string;
+  exploit: string;
+  ev_impact_bb_100: number;
+}
+
+export interface PlayerTypeInfo {
+  type: string;
+  description: string;
+  key_traits: string[];
+  primary_exploit: string;
+  secondary_exploits: string[];
+}
+
+export interface CoreMetric {
+  name: string;
+  value: number;
+  gto_baseline: number;
+  deviation: number;
+  reliability: 'excellent' | 'good' | 'moderate' | 'low' | 'insufficient';
+  ci_lower: number;
+  ci_upper: number;
+  sample_size: number;
+}
+
+export interface LeakSummary {
+  total_leaks: number;
+  critical_leaks: number;
+  major_leaks: number;
+  total_ev_opportunity: number;
+  reliability: 'high' | 'moderate' | 'low';
+}
+
+export interface LeakAnalysisResponse {
+  player_name: string;
+  total_hands: number;
+  player_type: PlayerTypeInfo;
+  core_metrics: CoreMetric[];
+  leaks: LeakItem[];
+  leak_summary: LeakSummary;
 }

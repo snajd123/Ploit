@@ -47,6 +47,11 @@ const playerTypeConfig: Record<NonNullable<PlayerType>, { color: string; label: 
     label: 'Tight',
     description: 'Tight player - hard to categorize',
   },
+  TIGHT_PASSIVE: {
+    color: 'bg-indigo-100 text-indigo-800 border-indigo-300',
+    label: 'Tight/Passive',
+    description: 'Tight but too passive - bluff more',
+  },
   UNKNOWN: {
     color: 'bg-gray-100 text-gray-600 border-gray-300',
     label: 'Unknown',

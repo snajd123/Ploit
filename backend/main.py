@@ -21,6 +21,7 @@ import logging
 
 from backend.database import get_db, check_db_connection
 from backend.services import DatabaseService, ClaudeService
+from backend.services.stats_calculator import StatsCalculator
 from backend.parser import PokerStarsParser
 from backend.config import get_settings
 from backend.verification_endpoint import router as verification_router
@@ -513,6 +514,64 @@ async def get_player_profile(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error retrieving player profile"
+        )
+
+
+@app.get(
+    "/api/players/{player_name}/leaks",
+    response_model=Dict[str, Any],
+    tags=["Players"],
+    summary="Get player leak analysis",
+    description="Analyze player leaks with confidence intervals and exploit recommendations"
+)
+async def get_player_leaks(
+    player_name: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Get player leak analysis with confidence intervals and exploit recommendations.
+
+    Returns prioritized leaks sorted by severity and EV impact.
+    """
+    try:
+        validated_name = InputValidator.validate_player_name(player_name)
+        service = DatabaseService(db)
+        stats = service.get_player_stats(validated_name)
+
+        if not stats:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Player '{player_name}' not found"
+            )
+
+        # Create StatsCalculator and get leak analysis
+        calculator = StatsCalculator(stats)
+        leaks = calculator.get_leak_analysis()
+        core_metrics = calculator.get_core_metrics()
+        player_type_info = calculator.get_player_type_details()
+
+        return {
+            "player_name": stats.get("player_name"),
+            "total_hands": stats.get("total_hands"),
+            "player_type": player_type_info,
+            "core_metrics": core_metrics,
+            "leaks": leaks,
+            "leak_summary": {
+                "total_leaks": len(leaks),
+                "critical_leaks": len([l for l in leaks if l["severity"] == "critical"]),
+                "major_leaks": len([l for l in leaks if l["severity"] == "major"]),
+                "total_ev_opportunity": sum(l["ev_impact_bb_100"] for l in leaks),
+                "reliability": "high" if stats.get("total_hands", 0) >= 1000 else "moderate" if stats.get("total_hands", 0) >= 300 else "low"
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting player leaks: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error retrieving player leak analysis"
         )
 
 
