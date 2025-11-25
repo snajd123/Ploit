@@ -1,3 +1,0 @@
-# Converted GTOWizard Ranges
-# Format: TexasSolver compatible
-

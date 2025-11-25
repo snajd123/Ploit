@@ -3,6 +3,9 @@ frontend/
 node_modules/
 *.md
 
+# Solver files (large binaries and outputs)
+solver/
+
 # Python cache
 __pycache__/
 *.py[cod]
