@@ -299,6 +299,27 @@ export interface PlayerScenarioStats {
   is_hero: boolean;  // TRUE=hero (combo GTO), FALSE=villain (aggregate GTO)
 }
 
+// Upload Session Types
+export interface UploadSessionItem {
+  session_id: number;
+  filename: string | null;
+  upload_timestamp: string | null;
+  hands_parsed: number;
+  hands_failed: number;
+  players_updated: number;
+  stake_level: string | null;
+  status: string;
+  error_message: string | null;
+  processing_time_seconds: number | null;
+}
+
+export interface UploadHistoryResponse {
+  uploads: UploadSessionItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 // Database Reset Types
 export interface ResetPreviewResponse {
   to_delete: {

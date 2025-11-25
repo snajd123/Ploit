@@ -19,6 +19,7 @@ import type {
   LeakAnalysisResponse,
   ResetPreviewResponse,
   ClearDatabaseResponse,
+  UploadHistoryResponse,
 } from '../types';
 
 class ApiClient {
@@ -136,6 +137,14 @@ class ApiClient {
   // Clear all player data (preserves GTO reference data)
   async clearDatabase(): Promise<ClearDatabaseResponse> {
     const response = await this.client.delete<ClearDatabaseResponse>('/api/database/clear');
+    return response.data;
+  }
+
+  // Get upload history
+  async getUploadHistory(limit: number = 50, offset: number = 0): Promise<UploadHistoryResponse> {
+    const response = await this.client.get<UploadHistoryResponse>('/api/uploads', {
+      params: { limit, offset }
+    });
     return response.data;
   }
 

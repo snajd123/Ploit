@@ -1035,14 +1035,12 @@ async def reset_preview(db: Session = Depends(get_db)):
         ]
 
         to_delete = {}
-        total_to_delete = 0
         for table, description in tables_to_delete:
             try:
                 count = db.execute(text(f'SELECT COUNT(*) FROM {table}')).scalar()
-                to_delete[table] = {"description": description, "count": count}
-                total_to_delete += count
+                to_delete[table] = count
             except:
-                to_delete[table] = {"description": description, "count": 0}
+                to_delete[table] = 0
 
         # Tables to preserve
         gto_scenarios = db.execute(text('SELECT COUNT(*) FROM gto_scenarios')).scalar()
@@ -1050,12 +1048,10 @@ async def reset_preview(db: Session = Depends(get_db)):
 
         return {
             "to_delete": to_delete,
-            "total_to_delete": total_to_delete,
             "to_preserve": {
-                "gto_scenarios": {"description": "GTO scenarios", "count": gto_scenarios},
-                "gto_frequencies": {"description": "GTO frequencies", "count": gto_frequencies}
-            },
-            "total_to_preserve": gto_scenarios + gto_frequencies
+                "gto_scenarios": gto_scenarios,
+                "gto_frequencies": gto_frequencies
+            }
         }
 
     except Exception as e:
@@ -1063,6 +1059,76 @@ async def reset_preview(db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error getting reset preview: {str(e)}"
+        )
+
+
+@app.get(
+    "/api/uploads",
+    tags=["Database"],
+    summary="Get upload history",
+    description="Returns list of all upload sessions with details"
+)
+async def get_upload_sessions(
+    db: Session = Depends(get_db),
+    limit: int = Query(50, ge=1, le=200, description="Maximum number of uploads to return"),
+    offset: int = Query(0, ge=0, description="Number of uploads to skip")
+):
+    """
+    Get upload history showing all hand history file uploads.
+
+    Returns list of uploads with filename, date, hands parsed, and status.
+    """
+    try:
+        from sqlalchemy import text
+
+        # Get upload sessions ordered by most recent first
+        result = db.execute(text('''
+            SELECT
+                session_id,
+                filename,
+                upload_timestamp,
+                hands_parsed,
+                hands_failed,
+                players_updated,
+                stake_level,
+                status,
+                error_message,
+                processing_time_seconds
+            FROM upload_sessions
+            ORDER BY upload_timestamp DESC
+            LIMIT :limit OFFSET :offset
+        '''), {"limit": limit, "offset": offset})
+
+        uploads = []
+        for row in result:
+            uploads.append({
+                "session_id": row[0],
+                "filename": row[1],
+                "upload_timestamp": row[2].isoformat() if row[2] else None,
+                "hands_parsed": row[3],
+                "hands_failed": row[4],
+                "players_updated": row[5],
+                "stake_level": row[6],
+                "status": row[7],
+                "error_message": row[8],
+                "processing_time_seconds": row[9]
+            })
+
+        # Get total count
+        total = db.execute(text('SELECT COUNT(*) FROM upload_sessions')).scalar()
+
+        return {
+            "uploads": uploads,
+            "total": total,
+            "limit": limit,
+            "offset": offset
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting upload sessions: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error getting upload sessions: {str(e)}"
         )
 
 

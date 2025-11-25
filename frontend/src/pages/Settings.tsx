@@ -1,35 +1,52 @@
 import { useState, useEffect } from 'react';
-import { RefreshCw, Trash2, AlertTriangle, CheckCircle, XCircle, Database, Shield } from 'lucide-react';
+import { RefreshCw, Trash2, AlertTriangle, CheckCircle, XCircle, Database, Shield, Upload, Clock, FileText } from 'lucide-react';
 import { api } from '../services/api';
-import type { ResetPreviewResponse, ClearDatabaseResponse } from '../types';
+import type { ResetPreviewResponse, ClearDatabaseResponse, UploadSessionItem } from '../types';
 
 const Settings = () => {
   const [recalculating, setRecalculating] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [loadingPreview, setLoadingPreview] = useState(false);
+  const [loadingUploads, setLoadingUploads] = useState(false);
   const [recalcResult, setRecalcResult] = useState<any>(null);
   const [clearResult, setClearResult] = useState<ClearDatabaseResponse | null>(null);
   const [resetPreview, setResetPreview] = useState<ResetPreviewResponse | null>(null);
+  const [uploadHistory, setUploadHistory] = useState<UploadSessionItem[]>([]);
+  const [totalUploads, setTotalUploads] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
 
-  // Load reset preview when user opens the confirm dialog
+  // Load reset preview
   const loadResetPreview = async () => {
     setLoadingPreview(true);
-    setError(null);
     try {
       const preview = await api.getResetPreview();
       setResetPreview(preview);
     } catch (err) {
-      setError((err as Error).message || 'Failed to load preview');
+      console.error('Failed to load preview:', err);
     } finally {
       setLoadingPreview(false);
     }
   };
 
-  // Load preview on mount
+  // Load upload history
+  const loadUploadHistory = async () => {
+    setLoadingUploads(true);
+    try {
+      const response = await api.getUploadHistory(50, 0);
+      setUploadHistory(response.uploads);
+      setTotalUploads(response.total);
+    } catch (err) {
+      console.error('Failed to load upload history:', err);
+    } finally {
+      setLoadingUploads(false);
+    }
+  };
+
+  // Load data on mount
   useEffect(() => {
     loadResetPreview();
+    loadUploadHistory();
   }, []);
 
   const handleRecalculate = async () => {
@@ -60,8 +77,9 @@ const Settings = () => {
       const result = await api.clearDatabase();
       setClearResult(result);
       setShowClearConfirm(false);
-      // Refresh preview after clear
+      // Refresh data after clear
       loadResetPreview();
+      loadUploadHistory();
     } catch (err) {
       setError((err as Error).message || 'Failed to clear database');
     } finally {
@@ -76,6 +94,31 @@ const Settings = () => {
 
   const formatNumber = (n: number) => n.toLocaleString();
 
+  const formatDate = (dateStr: string | null) => {
+    if (!dateStr) return 'Unknown';
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return 'text-green-600 bg-green-50';
+      case 'failed':
+        return 'text-red-600 bg-red-50';
+      case 'processing':
+        return 'text-yellow-600 bg-yellow-50';
+      default:
+        return 'text-gray-600 bg-gray-50';
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Page header */}
@@ -84,6 +127,89 @@ const Settings = () => {
         <p className="mt-2 text-gray-600">
           Database maintenance and administrative tools
         </p>
+      </div>
+
+      {/* Upload History */}
+      <div className="card">
+        <div className="flex items-start space-x-4">
+          <div className="p-3 bg-purple-100 rounded-lg">
+            <Upload className="text-purple-600" size={24} />
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-gray-900">Upload History</h2>
+              <button
+                onClick={loadUploadHistory}
+                disabled={loadingUploads}
+                className="text-sm text-gray-500 hover:text-gray-700 flex items-center space-x-1"
+              >
+                <RefreshCw className={`${loadingUploads ? 'animate-spin' : ''}`} size={14} />
+                <span>Refresh</span>
+              </button>
+            </div>
+            <p className="mt-2 text-sm text-gray-600">
+              {totalUploads} total uploads
+            </p>
+
+            {loadingUploads ? (
+              <div className="mt-4 flex items-center justify-center py-8">
+                <RefreshCw className="animate-spin text-gray-400" size={24} />
+              </div>
+            ) : uploadHistory.length === 0 ? (
+              <div className="mt-4 p-6 bg-gray-50 rounded-lg text-center">
+                <FileText className="mx-auto text-gray-400 mb-2" size={32} />
+                <p className="text-sm text-gray-500">No uploads yet</p>
+              </div>
+            ) : (
+              <div className="mt-4 space-y-2 max-h-80 overflow-y-auto">
+                {uploadHistory.map((upload) => (
+                  <div
+                    key={upload.session_id}
+                    className="p-3 bg-gray-50 rounded-lg border border-gray-100"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center space-x-2">
+                          <FileText className="text-gray-400 flex-shrink-0" size={16} />
+                          <span className="font-medium text-gray-900 truncate">
+                            {upload.filename || 'Unknown file'}
+                          </span>
+                        </div>
+                        <div className="flex items-center space-x-4 mt-1 text-xs text-gray-500">
+                          <span className="flex items-center space-x-1">
+                            <Clock size={12} />
+                            <span>{formatDate(upload.upload_timestamp)}</span>
+                          </span>
+                          {upload.stake_level && (
+                            <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded">
+                              {upload.stake_level}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end space-y-1 ml-4">
+                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${getStatusColor(upload.status)}`}>
+                          {upload.status}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          {formatNumber(upload.hands_parsed)} hands
+                          {upload.hands_failed > 0 && (
+                            <span className="text-red-500"> ({upload.hands_failed} failed)</span>
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                    {upload.error_message && (
+                      <div className="mt-2 text-xs text-red-600 bg-red-50 p-2 rounded">
+                        {upload.error_message}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Recalculate Statistics */}
