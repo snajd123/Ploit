@@ -1,8 +1,14 @@
 import { useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { Upload as UploadIcon, FileText, CheckCircle, XCircle, AlertCircle, X, Users, Calendar, Target, ArrowRight } from 'lucide-react';
+import { Upload as UploadIcon, FileText, CheckCircle, XCircle, AlertCircle, X, Users, Calendar, Target, ArrowRight, Loader2 } from 'lucide-react';
 import { api } from '../services/api';
 import type { UploadResponse } from '../types';
+
+interface SessionDetectionResult {
+  players_processed: number;
+  total_sessions_created: number;
+  sessions_by_player: Record<string, any[]>;
+}
 
 const Upload = () => {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -11,6 +17,8 @@ const Upload = () => {
   const [result, setResult] = useState<UploadResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
+  const [detectingSessions, setDetectingSessions] = useState(false);
+  const [sessionResult, setSessionResult] = useState<SessionDetectionResult | null>(null);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -63,6 +71,7 @@ const Upload = () => {
     setProgress(0);
     setError(null);
     setResult(null);
+    setSessionResult(null);
 
     try {
       const response = selectedFiles.length === 1
@@ -71,6 +80,18 @@ const Upload = () => {
 
       setResult(response);
       setSelectedFiles([]);
+
+      // Auto-trigger session detection after successful upload
+      setDetectingSessions(true);
+      try {
+        const sessions = await api.detectAllSessions();
+        setSessionResult(sessions);
+      } catch (sessionErr) {
+        // Session detection failure is non-critical, just log it
+        console.warn('Session detection failed:', sessionErr);
+      } finally {
+        setDetectingSessions(false);
+      }
     } catch (err) {
       setError((err as Error).message || 'Upload failed');
     } finally {
@@ -248,6 +269,31 @@ const Upload = () => {
               </div>
             )}
 
+            {/* Session Detection Status */}
+            {detectingSessions && (
+              <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200 flex items-center space-x-3">
+                <Loader2 className="text-blue-500 animate-spin flex-shrink-0" size={20} />
+                <div>
+                  <p className="text-sm font-medium text-blue-800">Detecting Sessions...</p>
+                  <p className="text-sm text-blue-700">Organizing your hands into sessions for analysis</p>
+                </div>
+              </div>
+            )}
+
+            {/* Session Detection Results */}
+            {sessionResult && sessionResult.total_sessions_created > 0 && (
+              <div className="mt-4 p-4 bg-indigo-50 rounded-lg border border-indigo-200">
+                <div className="flex items-center space-x-2 mb-2">
+                  <Calendar className="text-indigo-600" size={18} />
+                  <p className="text-sm font-medium text-indigo-800">Sessions Detected</p>
+                </div>
+                <p className="text-sm text-indigo-700">
+                  Found <span className="font-semibold">{sessionResult.total_sessions_created}</span> sessions across{' '}
+                  <span className="font-semibold">{sessionResult.players_processed}</span> players
+                </p>
+              </div>
+            )}
+
             {/* What's Next? Section */}
             <div className="mt-6 p-5 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
               <h3 className="text-lg font-semibold text-gray-900 mb-3">What's Next?</h3>
@@ -281,7 +327,11 @@ const Upload = () => {
                     </div>
                     <div>
                       <p className="font-medium text-gray-900">View Sessions</p>
-                      <p className="text-xs text-gray-500">Analyze your play</p>
+                      <p className="text-xs text-gray-500">
+                        {sessionResult && sessionResult.total_sessions_created > 0
+                          ? `${sessionResult.total_sessions_created} ready`
+                          : 'Analyze your play'}
+                      </p>
                     </div>
                   </div>
                   <ArrowRight className="text-gray-400 group-hover:text-green-500 transition-colors" size={18} />

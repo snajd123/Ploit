@@ -177,6 +177,18 @@ class ApiClient {
   async deleteConversation(conversationId: number): Promise<void> {
     await this.client.delete(`/api/conversations/${conversationId}`);
   }
+
+  // Detect all sessions from uploaded hands
+  async detectAllSessions(sessionGapMinutes: number = 30): Promise<{
+    players_processed: number;
+    total_sessions_created: number;
+    sessions_by_player: Record<string, any[]>;
+  }> {
+    const response = await this.client.post('/api/sessions/detect-all', null, {
+      params: { session_gap_minutes: sessionGapMinutes }
+    });
+    return response.data;
+  }
 }
 
 // Export singleton instance
