@@ -9,8 +9,6 @@ import { Tooltip } from '../components/Tooltip';
 import MetricChart from '../components/MetricChart';
 import PositionalVPIPChart from '../components/PositionalVPIPChart';
 import PreflopAggressionChart from '../components/PreflopAggressionChart';
-import CBetStreetsChart from '../components/CBetStreetsChart';
-import ShowdownChart from '../components/ShowdownChart';
 import ExploitDashboard from '../components/ExploitDashboard';
 import BaselineComparison from '../components/BaselineComparison';
 import DeviationHeatmap from '../components/DeviationHeatmap';
@@ -113,14 +111,12 @@ const PlayerProfile = () => {
     );
   }
 
-  // Prepare composite metrics for radar chart
+  // Prepare composite metrics for radar chart (preflop-focused)
   const compositeMetrics = [
     { metric: 'EI', value: player.exploitability_index ?? 0, fullMark: 100 },
-    { metric: 'PVS', value: player.pressure_vulnerability_score ?? 0, fullMark: 100 },
-    { metric: 'ACR', value: player.aggression_consistency_ratio ?? 0, fullMark: 100 },
     { metric: 'PAI', value: player.positional_awareness_index ?? 0, fullMark: 100 },
     { metric: 'BDE', value: player.blind_defense_efficiency ?? 0, fullMark: 100 },
-    { metric: 'MPS', value: player.multi_street_persistence_score ?? 0, fullMark: 100 },
+    { metric: 'OSSR', value: player.optimal_stake_skill_rating ?? 0, fullMark: 100 },
   ];
 
   return (
@@ -181,9 +177,9 @@ const PlayerProfile = () => {
         </div>
       </div>
 
-      {/* Traditional stats */}
+      {/* Preflop Statistics */}
       <div>
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">Traditional Statistics</h2>
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">Preflop Statistics</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatCard
             title="VPIP%"
@@ -214,46 +210,25 @@ const PlayerProfile = () => {
             tooltip={getStatTooltip('fold_to_three_bet_pct', player.fold_to_three_bet_pct ?? undefined)}
           />
           <StatCard
-            title="C-Bet Flop%"
-            value={player.cbet_flop_pct !== null && player.cbet_flop_pct !== undefined ? `${player.cbet_flop_pct.toFixed(1)}%` : 'N/A'}
-            subtitle="Continuation Bet"
+            title="4-Bet%"
+            value={player.four_bet_pct !== null && player.four_bet_pct !== undefined ? `${player.four_bet_pct.toFixed(1)}%` : 'N/A'}
+            subtitle="4-Bet Percentage"
             color="blue"
-            tooltip={getStatTooltip('cbet_flop_pct', player.cbet_flop_pct ?? undefined)}
+            tooltip={getStatTooltip('four_bet_pct', player.four_bet_pct ?? undefined)}
           />
           <StatCard
-            title="Fold to C-Bet%"
-            value={player.fold_to_cbet_flop_pct !== null && player.fold_to_cbet_flop_pct !== undefined ? `${player.fold_to_cbet_flop_pct.toFixed(1)}%` : 'N/A'}
-            subtitle="Fold to C-Bet"
+            title="Cold Call%"
+            value={player.cold_call_pct !== null && player.cold_call_pct !== undefined ? `${player.cold_call_pct.toFixed(1)}%` : 'N/A'}
+            subtitle="Cold Call Percentage"
             color="green"
-            tooltip={getStatTooltip('fold_to_cbet_flop_pct', player.fold_to_cbet_flop_pct ?? undefined)}
+            tooltip={getStatTooltip('cold_call_pct', player.cold_call_pct ?? undefined)}
           />
           <StatCard
-            title="WTSD%"
-            value={player.wtsd_pct !== null && player.wtsd_pct !== undefined ? `${player.wtsd_pct.toFixed(1)}%` : 'N/A'}
-            subtitle="Went To Showdown"
+            title="Limp%"
+            value={player.limp_pct !== null && player.limp_pct !== undefined ? `${player.limp_pct.toFixed(1)}%` : 'N/A'}
+            subtitle="Limp Percentage"
             color="yellow"
-            tooltip={getStatTooltip('wtsd_pct', player.wtsd_pct ?? undefined)}
-          />
-          <StatCard
-            title="W$SD%"
-            value={player.wsd_pct !== null && player.wsd_pct !== undefined ? `${player.wsd_pct.toFixed(1)}%` : 'N/A'}
-            subtitle="Won $ at Showdown"
-            color="gray"
-            tooltip={getStatTooltip('wsd_pct', player.wsd_pct ?? undefined)}
-          />
-          <StatCard
-            title="AF"
-            value={player.af !== null && player.af !== undefined ? player.af.toFixed(2) : 'N/A'}
-            subtitle="Aggression Factor"
-            color="blue"
-            tooltip={getStatTooltip('af', player.af ?? undefined)}
-          />
-          <StatCard
-            title="AFQ%"
-            value={player.afq !== null && player.afq !== undefined ? `${player.afq.toFixed(1)}%` : 'N/A'}
-            subtitle="Aggression Frequency"
-            color="green"
-            tooltip={getStatTooltip('afq', player.afq ?? undefined)}
+            tooltip={getStatTooltip('limp_pct', player.limp_pct ?? undefined)}
           />
           <StatCard
             title="BB/100"
@@ -330,7 +305,7 @@ const PlayerProfile = () => {
             <div className="mb-6">
               <div className="card">
                 <h3 className="font-semibold text-gray-900 mb-4">Core Profile Summary</h3>
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   {leakAnalysis.core_metrics.exploitability_score && (
                     <div className="text-center p-3 bg-gray-50 rounded-lg">
                       <div className="text-2xl font-bold text-gray-900">
@@ -347,17 +322,6 @@ const PlayerProfile = () => {
                       </div>
                     </div>
                   )}
-                  {leakAnalysis.core_metrics.aggression_profile && (
-                    <div className="text-center p-3 bg-gray-50 rounded-lg">
-                      <div className="text-2xl font-bold text-gray-900">
-                        {leakAnalysis.core_metrics.aggression_profile.value}
-                      </div>
-                      <div className="text-xs text-gray-600 mt-1">Aggression Ratio</div>
-                      <div className="text-xs text-blue-600 mt-1">
-                        {leakAnalysis.core_metrics.aggression_profile.interpretation}
-                      </div>
-                    </div>
-                  )}
                   {leakAnalysis.core_metrics.positional_awareness && (
                     <div className="text-center p-3 bg-gray-50 rounded-lg">
                       <div className="text-lg font-bold text-gray-900 capitalize">
@@ -366,20 +330,20 @@ const PlayerProfile = () => {
                       <div className="text-xs text-gray-600 mt-1">Position Awareness</div>
                     </div>
                   )}
-                  {leakAnalysis.core_metrics.showdown_tendency && (
+                  {leakAnalysis.core_metrics.blind_defense && (
                     <div className="text-center p-3 bg-gray-50 rounded-lg">
                       <div className="text-lg font-bold text-gray-900 capitalize">
-                        {leakAnalysis.core_metrics.showdown_tendency.interpretation}
+                        {leakAnalysis.core_metrics.blind_defense.interpretation}
                       </div>
-                      <div className="text-xs text-gray-600 mt-1">Showdown Tendency</div>
+                      <div className="text-xs text-gray-600 mt-1">Blind Defense</div>
                     </div>
                   )}
-                  {leakAnalysis.core_metrics.pressure_response && (
+                  {leakAnalysis.core_metrics.preflop_aggression && (
                     <div className="text-center p-3 bg-gray-50 rounded-lg">
                       <div className="text-lg font-bold text-gray-900 capitalize">
-                        {leakAnalysis.core_metrics.pressure_response.interpretation}
+                        {leakAnalysis.core_metrics.preflop_aggression.interpretation}
                       </div>
-                      <div className="text-xs text-gray-600 mt-1">Under Pressure</div>
+                      <div className="text-xs text-gray-600 mt-1">Preflop Aggression</div>
                     </div>
                   )}
                 </div>
@@ -397,10 +361,10 @@ const PlayerProfile = () => {
 
       {/* Visual Analytics Section */}
       <div>
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">Visual Analytics</h2>
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">Preflop Analytics</h2>
 
-        {/* Row 1: Preflop and Positional */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        {/* Preflop and Positional Charts */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <PreflopAggressionChart
             vpip_pct={player.vpip_pct}
             pfr_pct={player.pfr_pct}
@@ -415,19 +379,6 @@ const PlayerProfile = () => {
             vpip_btn={player.vpip_btn}
             vpip_sb={player.vpip_sb}
             vpip_bb={player.vpip_bb}
-          />
-        </div>
-
-        {/* Row 2: C-Bet and Showdown */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <CBetStreetsChart
-            cbet_flop_pct={player.cbet_flop_pct}
-            cbet_turn_pct={player.cbet_turn_pct}
-            cbet_river_pct={player.cbet_river_pct}
-          />
-          <ShowdownChart
-            wtsd_pct={player.wtsd_pct}
-            wsd_pct={player.wsd_pct}
           />
         </div>
       </div>
@@ -482,26 +433,10 @@ const PlayerProfile = () => {
         title="Composite Metrics Overview"
       />
 
-      {/* Advanced metrics */}
+      {/* Preflop Composite Metrics */}
       <div>
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">Advanced Composite Metrics</h2>
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">Preflop Composite Metrics</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <StatCard
-            title="Pressure Vulnerability Score"
-            value={player.pressure_vulnerability_score !== null && player.pressure_vulnerability_score !== undefined ? player.pressure_vulnerability_score.toFixed(1) : 'N/A'}
-            subtitle="Fold frequency under pressure"
-            icon={<Shield size={24} />}
-            color="blue"
-            tooltip={getStatTooltip('pressure_vulnerability_score', player.pressure_vulnerability_score ?? undefined)}
-          />
-          <StatCard
-            title="Aggression Consistency Ratio"
-            value={player.aggression_consistency_ratio !== null && player.aggression_consistency_ratio !== undefined ? player.aggression_consistency_ratio.toFixed(1) : 'N/A'}
-            subtitle="Give-up tendency across streets"
-            icon={<TrendingUp size={24} />}
-            color="green"
-            tooltip={getStatTooltip('aggression_consistency_ratio', player.aggression_consistency_ratio ?? undefined)}
-          />
           <StatCard
             title="Positional Awareness Index"
             value={player.positional_awareness_index !== null && player.positional_awareness_index !== undefined ? player.positional_awareness_index.toFixed(1) : 'N/A'}
@@ -514,22 +449,17 @@ const PlayerProfile = () => {
             title="Blind Defense Efficiency"
             value={player.blind_defense_efficiency !== null && player.blind_defense_efficiency !== undefined ? player.blind_defense_efficiency.toFixed(1) : 'N/A'}
             subtitle="Quality of blind defense"
-            color="red"
+            icon={<Shield size={24} />}
+            color="blue"
             tooltip={getStatTooltip('blind_defense_efficiency', player.blind_defense_efficiency ?? undefined)}
           />
           <StatCard
-            title="Multi-Street Persistence"
-            value={player.multi_street_persistence_score !== null && player.multi_street_persistence_score !== undefined ? player.multi_street_persistence_score.toFixed(1) : 'N/A'}
-            subtitle="Commitment across streets"
-            color="blue"
-            tooltip={getStatTooltip('multi_street_persistence_score', player.multi_street_persistence_score ?? undefined)}
-          />
-          <StatCard
-            title="Delayed Aggression Coefficient"
-            value={player.delayed_aggression_coefficient !== null && player.delayed_aggression_coefficient !== undefined ? player.delayed_aggression_coefficient.toFixed(1) : 'N/A'}
-            subtitle="Check-raise and trap frequency"
+            title="Optimal Stake Rating"
+            value={player.optimal_stake_skill_rating !== null && player.optimal_stake_skill_rating !== undefined ? player.optimal_stake_skill_rating.toFixed(1) : 'N/A'}
+            subtitle="Skill level assessment"
+            icon={<TrendingUp size={24} />}
             color="green"
-            tooltip={getStatTooltip('delayed_aggression_coefficient', player.delayed_aggression_coefficient ?? undefined)}
+            tooltip={getStatTooltip('optimal_stake_skill_rating', player.optimal_stake_skill_rating ?? undefined)}
           />
         </div>
       </div>

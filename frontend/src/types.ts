@@ -6,7 +6,7 @@ export interface PlayerStats {
   player_name: string;
   total_hands: number;
 
-  // Traditional stats - Preflop
+  // Preflop statistics (percentages 0-100)
   vpip_pct?: number;
   pfr_pct?: number;
   limp_pct?: number;
@@ -16,7 +16,7 @@ export interface PlayerStats {
   cold_call_pct?: number;
   squeeze_pct?: number;
 
-  // Positional VPIP
+  // Positional VPIP (for positional awareness analysis)
   vpip_utg?: number;
   vpip_hj?: number;
   vpip_mp?: number;
@@ -30,58 +30,14 @@ export interface PlayerStats {
   fold_to_steal_pct?: number;
   three_bet_vs_steal_pct?: number;
 
-  // Continuation betting
-  cbet_flop_pct?: number;
-  cbet_turn_pct?: number;
-  cbet_river_pct?: number;
-
-  // Facing cbets
-  fold_to_cbet_flop_pct?: number;
-  fold_to_cbet_turn_pct?: number;
-  fold_to_cbet_river_pct?: number;
-  call_cbet_flop_pct?: number;
-  call_cbet_turn_pct?: number;
-  call_cbet_river_pct?: number;
-  raise_cbet_flop_pct?: number;
-  raise_cbet_turn_pct?: number;
-  raise_cbet_river_pct?: number;
-
-  // Check-raise
-  check_raise_flop_pct?: number;
-  check_raise_turn_pct?: number;
-  check_raise_river_pct?: number;
-
-  // Donk betting
-  donk_bet_flop_pct?: number;
-  donk_bet_turn_pct?: number;
-  donk_bet_river_pct?: number;
-
-  // Float
-  float_flop_pct?: number;
-
-  // Aggression
-  af?: number;
-  afq?: number;
-
-  // Showdown
-  wtsd_pct?: number;
-  wsd_pct?: number;
-
   // Win rate
   total_profit_loss?: number;
   bb_per_100?: number;
 
-  // Composite metrics
+  // Composite Metrics (preflop-focused)
   exploitability_index?: number;
-  pressure_vulnerability_score?: number;
-  aggression_consistency_ratio?: number;
   positional_awareness_index?: number;
   blind_defense_efficiency?: number;
-  value_bluff_imbalance_ratio?: number;
-  range_polarization_factor?: number;
-  street_fold_gradient?: number;
-  delayed_aggression_coefficient?: number;
-  multi_street_persistence_score?: number;
   optimal_stake_skill_rating?: number;
   player_type?: PlayerType;
 
@@ -252,10 +208,9 @@ export interface CoreMetricValue {
 
 export interface CoreMetrics {
   exploitability_score: CoreMetricValue;
-  aggression_profile: CoreMetricValue;
   positional_awareness: CoreMetricValue;
-  showdown_tendency: CoreMetricValue;
-  pressure_response: CoreMetricValue;
+  blind_defense: CoreMetricValue;
+  preflop_aggression: CoreMetricValue;
 }
 
 export interface LeakSummary {
@@ -273,4 +228,73 @@ export interface LeakAnalysisResponse {
   core_metrics: CoreMetrics;
   leaks: LeakItem[];
   leak_summary: LeakSummary;
+}
+
+// GTO Scenario Types (Preflop-only)
+export type GTOCategory = 'opening' | 'defense' | 'facing_3bet' | 'facing_4bet';
+
+export interface GTOScenario {
+  scenario_id: number;
+  scenario_name: string;
+  street: string;  // Always 'preflop' for now
+  category: GTOCategory;
+  position?: string;  // UTG, MP, CO, BTN, SB, BB
+  action?: string;  // open, fold, call, 3bet, 4bet, allin
+  opponent_position?: string;
+  gto_aggregate_freq?: number;  // For villain analysis (without hole cards)
+  description?: string;
+}
+
+export interface GTOFrequency {
+  frequency_id: number;
+  scenario_id: number;
+  hand: string;  // e.g., "AhKd"
+  position: string;
+  frequency: number;  // 0.0 to 1.0
+}
+
+// Hero vs Villain Analysis Types
+export interface HeroAnalysis {
+  scenario: string;
+  hole_cards: string;
+  action_taken: string;
+  gto_frequency: number;  // Combo-level frequency
+  is_deviation: boolean;
+  deviation_severity?: number;
+}
+
+export interface VillainAnalysis {
+  scenario: string;
+  action_taken: boolean;
+  gto_aggregate_freq: number;  // Average frequency across all combos
+  note: string;
+}
+
+// Player Preflop Action (for hero analysis with hole cards)
+export interface PlayerPreflopAction {
+  action_id: number;
+  hand_id: number;
+  player_name: string;
+  position: string;
+  scenario_id?: number;
+  hole_cards?: string;
+  action_taken: string;
+  gto_frequency?: number;
+  is_gto_deviation: boolean;
+  deviation_severity?: number;
+  is_hero: boolean;
+}
+
+// Player Scenario Stats (for both hero and villain aggregated analysis)
+export interface PlayerScenarioStats {
+  stat_id: number;
+  player_name: string;
+  scenario_id: number;
+  total_occurrences: number;
+  action_taken_count: number;
+  player_frequency?: number;
+  gto_frequency?: number;
+  deviation?: number;
+  abs_deviation?: number;
+  is_hero: boolean;  // TRUE=hero (combo GTO), FALSE=villain (aggregate GTO)
 }

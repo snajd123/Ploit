@@ -73,131 +73,166 @@ class HandAction(Base):
 
 class PlayerHandSummary(Base):
     """
-    Per-player per-hand boolean flags for efficient stat calculation.
+    DEPRECATED: Per-player per-hand boolean flags.
 
-    Table: player_hand_summary
+    NOTE: This table no longer exists in the database.
+    Kept for backward compatibility with existing code.
+    New code should use PlayerPreflopActions instead.
+
+    Table: player_hand_summary (DEPRECATED - does not exist)
     """
     __tablename__ = 'player_hand_summary'
+    __table_args__ = {'extend_existing': True}
 
     summary_id = Column(Integer, primary_key=True, autoincrement=True)
-    hand_id = Column(BigInteger, ForeignKey('raw_hands.hand_id', ondelete='CASCADE'), nullable=False)
+    hand_id = Column(BigInteger, nullable=False)
     player_name = Column(String(100), nullable=False)
     position = Column(String(10))
 
-    # Preflop flags
+    # Preflop flags (kept for backward compatibility)
     vpip = Column(Boolean, default=False)
     pfr = Column(Boolean, default=False)
     limp = Column(Boolean, default=False)
-    faced_raise = Column(Boolean, default=False)
     three_bet_opportunity = Column(Boolean, default=False)
-    faced_three_bet = Column(Boolean, default=False)
-    folded_to_three_bet = Column(Boolean, default=False)
-    called_three_bet = Column(Boolean, default=False)
     made_three_bet = Column(Boolean, default=False)
     four_bet = Column(Boolean, default=False)
     cold_call = Column(Boolean, default=False)
     squeeze = Column(Boolean, default=False)
-
-    # Street visibility
-    saw_flop = Column(Boolean, default=False)
-    saw_turn = Column(Boolean, default=False)
-    saw_river = Column(Boolean, default=False)
-
-    # Continuation bet opportunities and actions (as aggressor)
-    cbet_opportunity_flop = Column(Boolean, default=False)
-    cbet_made_flop = Column(Boolean, default=False)
-    cbet_opportunity_turn = Column(Boolean, default=False)
-    cbet_made_turn = Column(Boolean, default=False)
-    cbet_opportunity_river = Column(Boolean, default=False)
-    cbet_made_river = Column(Boolean, default=False)
-
-    # Facing continuation bets
-    faced_cbet_flop = Column(Boolean, default=False)
-    folded_to_cbet_flop = Column(Boolean, default=False)
-    called_cbet_flop = Column(Boolean, default=False)
-    raised_cbet_flop = Column(Boolean, default=False)
-
-    faced_cbet_turn = Column(Boolean, default=False)
-    folded_to_cbet_turn = Column(Boolean, default=False)
-    called_cbet_turn = Column(Boolean, default=False)
-    raised_cbet_turn = Column(Boolean, default=False)
-
-    faced_cbet_river = Column(Boolean, default=False)
-    folded_to_cbet_river = Column(Boolean, default=False)
-    called_cbet_river = Column(Boolean, default=False)
-    raised_cbet_river = Column(Boolean, default=False)
-
-    # Check-raise flags
-    check_raise_opportunity_flop = Column(Boolean, default=False)
-    check_raised_flop = Column(Boolean, default=False)
-    check_raise_opportunity_turn = Column(Boolean, default=False)
-    check_raised_turn = Column(Boolean, default=False)
-    check_raise_opportunity_river = Column(Boolean, default=False)
-    check_raised_river = Column(Boolean, default=False)
-
-    # Donk bets (betting into aggressor)
-    donk_bet_flop = Column(Boolean, default=False)
-    donk_bet_turn = Column(Boolean, default=False)
-    donk_bet_river = Column(Boolean, default=False)
-
-    # Float plays (call flop, bet/raise later when checked to)
-    float_flop = Column(Boolean, default=False)
-
-    # Steal and blind defense
     steal_attempt = Column(Boolean, default=False)
-    faced_steal = Column(Boolean, default=False)
     fold_to_steal = Column(Boolean, default=False)
-    call_steal = Column(Boolean, default=False)
-    three_bet_vs_steal = Column(Boolean, default=False)
 
-    # Showdown
+    # Showdown (basic)
     went_to_showdown = Column(Boolean, default=False)
-    won_at_showdown = Column(Boolean, default=False)
-    showed_bluff = Column(Boolean, default=False)
-
-    # Hand result
     won_hand = Column(Boolean, default=False)
     profit_loss = Column(DECIMAL(10, 2))
 
-    # Board categorization
-    board_category_l1 = Column(String(30))
-    board_category_l2 = Column(String(50))
-    board_category_l3 = Column(String(100))
-    is_paired = Column(Boolean, default=False)
-    is_rainbow = Column(Boolean, default=False)
-    is_two_tone = Column(Boolean, default=False)
-    is_monotone = Column(Boolean, default=False)
-    is_connected = Column(Boolean, default=False)
-    is_highly_connected = Column(Boolean, default=False)
-    has_broadway = Column(Boolean, default=False)
-    is_dry = Column(Boolean, default=False)
-    is_wet = Column(Boolean, default=False)
-    high_card_rank = Column(String(2))
-    middle_card_rank = Column(String(2))
-    low_card_rank = Column(String(2))
-
-    # Hero hole cards (only for hero player, NULL for opponents)
-    hole_cards = Column(String(10))
-
-    # Session assignment
-    session_id = Column(Integer, ForeignKey('sessions.session_id'))
-
     created_at = Column(TIMESTAMP, default=func.current_timestamp())
-
-    __table_args__ = (
-        UniqueConstraint('hand_id', 'player_name', name='uq_hand_player'),
-    )
 
     def __repr__(self) -> str:
         return f"<PlayerHandSummary(hand_id={self.hand_id}, player={self.player_name}, vpip={self.vpip})>"
 
 
+class GTOScenario(Base):
+    """
+    GTO preflop scenario definitions from GTOWizard.
+
+    Table: gto_scenarios
+
+    For villain analysis (without hole cards), use gto_aggregate_freq.
+    For hero analysis (with hole cards), lookup combo-level freq in gto_frequencies.
+    """
+    __tablename__ = 'gto_scenarios'
+
+    scenario_id = Column(Integer, primary_key=True, autoincrement=True)
+    scenario_name = Column(String(100), nullable=False, unique=True)
+    street = Column(String(20), nullable=False, default='preflop')
+    category = Column(String(50), nullable=False)  # opening, defense, facing_3bet, facing_4bet
+    position = Column(String(10))  # UTG, MP, CO, BTN, SB, BB
+    action = Column(String(20))  # open, fold, call, 3bet, 4bet, allin
+    opponent_position = Column(String(20))  # Position of the opponent (for vs scenarios)
+    gto_aggregate_freq = Column(DECIMAL(10, 8))  # Average freq across all combos (for villain analysis)
+    data_source = Column(String(50), default='gtowizard')
+    description = Column(Text)
+    created_at = Column(TIMESTAMP, default=func.current_timestamp())
+    updated_at = Column(TIMESTAMP, default=func.current_timestamp())
+
+    def __repr__(self) -> str:
+        return f"<GTOScenario(id={self.scenario_id}, name={self.scenario_name}, category={self.category})>"
+
+
+class GTOFrequency(Base):
+    """
+    Combo-level GTO frequencies for each scenario.
+
+    Table: gto_frequencies
+
+    Used for HERO analysis when hole cards are known.
+    """
+    __tablename__ = 'gto_frequencies'
+
+    frequency_id = Column(Integer, primary_key=True, autoincrement=True)
+    scenario_id = Column(Integer, ForeignKey('gto_scenarios.scenario_id', ondelete='CASCADE'), nullable=False)
+    hand = Column(String(4), nullable=False)  # e.g., "AhKd"
+    position = Column(String(10), nullable=False)  # Position for this frequency
+    frequency = Column(DECIMAL(10, 8), nullable=False)  # 0.0 to 1.0
+
+    __table_args__ = (
+        UniqueConstraint('scenario_id', 'hand', 'position', name='unique_scenario_hand_position'),
+    )
+
+    def __repr__(self) -> str:
+        return f"<GTOFrequency(scenario={self.scenario_id}, hand={self.hand}, freq={self.frequency})>"
+
+
+class PlayerPreflopActions(Base):
+    """
+    Track player preflop actions per hand for GTO comparison.
+
+    Table: player_preflop_actions
+
+    HERO ONLY: This table is only populated when hole cards are known.
+    Uses combo-level GTO frequencies from gto_frequencies table.
+    """
+    __tablename__ = 'player_preflop_actions'
+
+    action_id = Column(Integer, primary_key=True, autoincrement=True)
+    hand_id = Column(BigInteger, ForeignKey('raw_hands.hand_id', ondelete='CASCADE'), nullable=False)
+    player_name = Column(String(100), nullable=False)
+    position = Column(String(10), nullable=False)
+    scenario_id = Column(Integer, ForeignKey('gto_scenarios.scenario_id'))
+    hole_cards = Column(String(10))  # e.g., "AhKd" - always known for hero
+    action_taken = Column(String(20), nullable=False)  # fold, call, raise, 3bet, 4bet, allin
+    gto_frequency = Column(DECIMAL(10, 8))  # Combo-level GTO frequency
+    is_gto_deviation = Column(Boolean, default=False)
+    deviation_severity = Column(DECIMAL(5, 4))  # 0-1, how far from GTO
+    is_hero = Column(Boolean, default=True)  # Always TRUE - this table only for known hole cards
+    created_at = Column(TIMESTAMP, default=func.current_timestamp())
+
+    __table_args__ = (
+        UniqueConstraint('hand_id', 'player_name', name='uq_preflop_hand_player'),
+    )
+
+    def __repr__(self) -> str:
+        return f"<PlayerPreflopActions(hand={self.hand_id}, player={self.player_name}, action={self.action_taken})>"
+
+
+class PlayerScenarioStats(Base):
+    """
+    Aggregated stats per player per scenario for leak detection.
+
+    Table: player_scenario_stats
+
+    For HERO (is_hero=TRUE): GTO comparison uses average of combo-level frequencies
+    For VILLAIN (is_hero=FALSE): GTO comparison uses gto_scenarios.gto_aggregate_freq
+    """
+    __tablename__ = 'player_scenario_stats'
+
+    stat_id = Column(Integer, primary_key=True, autoincrement=True)
+    player_name = Column(String(100), nullable=False)
+    scenario_id = Column(Integer, ForeignKey('gto_scenarios.scenario_id', ondelete='CASCADE'), nullable=False)
+    total_occurrences = Column(Integer, default=0)
+    action_taken_count = Column(Integer, default=0)  # Times player took this action
+    player_frequency = Column(DECIMAL(5, 4))  # Player's actual frequency
+    gto_frequency = Column(DECIMAL(5, 4))  # GTO frequency for comparison
+    deviation = Column(DECIMAL(5, 4))  # player_frequency - gto_frequency
+    abs_deviation = Column(DECIMAL(5, 4))  # Absolute deviation
+    is_hero = Column(Boolean, default=False)  # TRUE=hero (combo GTO), FALSE=villain (aggregate GTO)
+    last_updated = Column(TIMESTAMP, default=func.current_timestamp())
+
+    __table_args__ = (
+        UniqueConstraint('player_name', 'scenario_id', name='uq_player_scenario'),
+    )
+
+    def __repr__(self) -> str:
+        return f"<PlayerScenarioStats(player={self.player_name}, scenario={self.scenario_id}, dev={self.deviation})>"
+
+
 class PlayerStats(Base):
     """
-    Pre-calculated traditional statistics and composite metrics.
+    Pre-calculated preflop statistics and composite metrics.
     Updated after each hand upload batch.
 
-    Table: player_stats
+    Table: player_stats (preflop-only version)
     """
     __tablename__ = 'player_stats'
 
@@ -228,60 +263,14 @@ class PlayerStats(Base):
     fold_to_steal_pct = Column(DECIMAL(5, 2))
     three_bet_vs_steal_pct = Column(DECIMAL(5, 2))
 
-    # Postflop aggression (continuation betting)
-    cbet_flop_pct = Column(DECIMAL(5, 2))
-    cbet_turn_pct = Column(DECIMAL(5, 2))
-    cbet_river_pct = Column(DECIMAL(5, 2))
-
-    # Postflop defense (facing cbets)
-    fold_to_cbet_flop_pct = Column(DECIMAL(5, 2))
-    fold_to_cbet_turn_pct = Column(DECIMAL(5, 2))
-    fold_to_cbet_river_pct = Column(DECIMAL(5, 2))
-
-    call_cbet_flop_pct = Column(DECIMAL(5, 2))
-    call_cbet_turn_pct = Column(DECIMAL(5, 2))
-    call_cbet_river_pct = Column(DECIMAL(5, 2))
-
-    raise_cbet_flop_pct = Column(DECIMAL(5, 2))
-    raise_cbet_turn_pct = Column(DECIMAL(5, 2))
-    raise_cbet_river_pct = Column(DECIMAL(5, 2))
-
-    # Check-raise frequency
-    check_raise_flop_pct = Column(DECIMAL(5, 2))
-    check_raise_turn_pct = Column(DECIMAL(5, 2))
-    check_raise_river_pct = Column(DECIMAL(5, 2))
-
-    # Donk betting
-    donk_bet_flop_pct = Column(DECIMAL(5, 2))
-    donk_bet_turn_pct = Column(DECIMAL(5, 2))
-    donk_bet_river_pct = Column(DECIMAL(5, 2))
-
-    # Float frequency
-    float_flop_pct = Column(DECIMAL(5, 2))
-
-    # Aggression metrics
-    af = Column(DECIMAL(5, 2))
-    afq = Column(DECIMAL(5, 2))
-
-    # Showdown metrics
-    wtsd_pct = Column(DECIMAL(5, 2))
-    wsd_pct = Column(DECIMAL(5, 2))
-
     # Win rate
     total_profit_loss = Column(DECIMAL(12, 2))
     bb_per_100 = Column(DECIMAL(8, 2))
 
-    # Composite Metrics (calculated and stored for query performance)
+    # Composite Metrics (preflop-focused)
     exploitability_index = Column(DECIMAL(5, 2))
-    pressure_vulnerability_score = Column(DECIMAL(5, 2))
-    aggression_consistency_ratio = Column(DECIMAL(5, 2))
     positional_awareness_index = Column(DECIMAL(5, 2))
     blind_defense_efficiency = Column(DECIMAL(5, 2))
-    value_bluff_imbalance_ratio = Column(DECIMAL(5, 2))
-    range_polarization_factor = Column(DECIMAL(5, 2))
-    street_fold_gradient = Column(DECIMAL(5, 2))
-    delayed_aggression_coefficient = Column(DECIMAL(5, 2))
-    multi_street_persistence_score = Column(DECIMAL(5, 2))
     optimal_stake_skill_rating = Column(DECIMAL(5, 2))
     player_type = Column(String(20))
 

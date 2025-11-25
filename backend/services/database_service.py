@@ -17,7 +17,8 @@ from decimal import Decimal
 import logging
 
 from backend.models.database_models import (
-    RawHand, HandAction, PlayerHandSummary, PlayerStats, UploadSession
+    RawHand, HandAction, PlayerHandSummary, PlayerStats, UploadSession,
+    GTOScenario, GTOFrequency, PlayerPreflopActions, PlayerScenarioStats
 )
 from backend.parser.data_structures import Hand, PlayerHandSummaryFlags
 from backend.services.stats_calculator import StatsCalculator

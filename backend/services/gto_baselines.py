@@ -94,49 +94,8 @@ PREFLOP_GLOBAL = {
     "squeeze": 3.0,
 }
 
-# Postflop statistics (position-independent averages)
-# Modern GTO plays more polarized (less c-betting, but bigger when doing so)
-POSTFLOP_BASELINES = {
-    # C-bet frequencies (as aggressor in single-raised pot)
-    "cbet_flop": 35.0,          # Modern GTO is more selective (~35%, not 65%)
-    "cbet_turn": 45.0,          # Higher when flop was c-bet
-    "cbet_river": 50.0,
-
-    # Fold to c-bet (as defender)
-    "fold_to_cbet_flop": 42.0,
-    "fold_to_cbet_turn": 40.0,
-    "fold_to_cbet_river": 38.0,
-
-    # Check-raise frequencies
-    "check_raise_flop": 8.0,
-    "check_raise_turn": 10.0,
-    "check_raise_river": 12.0,
-
-    # Donk bet (betting into aggressor)
-    "donk_bet_flop": 5.0,       # Mostly on certain board textures
-    "donk_bet_turn": 8.0,
-    "donk_bet_river": 10.0,
-
-    # Probe bet (betting when checked to after aggressor checks)
-    "probe_bet_turn": 35.0,
-    "probe_bet_river": 40.0,
-
-    # Float (call flop, bet turn when checked to)
-    "float_pct": 15.0,
-}
-
-# Showdown statistics
-SHOWDOWN_BASELINES = {
-    "wtsd": 28.0,               # Went to showdown %
-    "wsd": 52.0,                # Won at showdown %
-    "wwsf": 45.0,               # Won when saw flop %
-}
-
-# Aggression metrics
-AGGRESSION_BASELINES = {
-    "af": 3.0,                  # Aggression factor (bets+raises)/calls
-    "afq": 40.0,                # Aggression frequency %
-}
+# NOTE: Postflop baselines removed - currently preflop only
+# Postflop GTO data will be added in a future update
 
 
 # Deviation thresholds - how far from GTO before it's exploitable
@@ -166,38 +125,36 @@ DEVIATION_THRESHOLDS = {
         "major": 22,
         "critical": 30,
     },
-    # Postflop deviations
-    "cbet_flop": {
-        "minor": 10,
-        "moderate": 20,
-        "major": 30,
-        "critical": 40,
+    "four_bet": {
+        "minor": 1,
+        "moderate": 2,
+        "major": 4,
+        "critical": 6,
     },
-    "fold_to_cbet_flop": {
+    "cold_call": {
+        "minor": 3,
+        "moderate": 6,
+        "major": 10,
+        "critical": 15,
+    },
+    "steal_attempt": {
+        "minor": 5,
+        "moderate": 10,
+        "major": 15,
+        "critical": 25,
+    },
+    "fold_to_steal": {
         "minor": 8,
         "moderate": 15,
         "major": 22,
         "critical": 30,
-    },
-    # Showdown deviations
-    "wtsd": {
-        "minor": 5,
-        "moderate": 10,
-        "major": 15,
-        "critical": 20,
-    },
-    "wsd": {
-        "minor": 5,
-        "moderate": 10,
-        "major": 15,
-        "critical": 20,
     },
 }
 
 
 def get_baseline(stat_name: str, position: str = None) -> float:
     """
-    Get the GTO baseline for a statistic.
+    Get the GTO baseline for a preflop statistic.
 
     Args:
         stat_name: Name of the statistic
@@ -215,18 +172,6 @@ def get_baseline(stat_name: str, position: str = None) -> float:
     # Check global preflop
     if stat_name in PREFLOP_GLOBAL:
         return PREFLOP_GLOBAL[stat_name]
-
-    # Check postflop
-    if stat_name in POSTFLOP_BASELINES:
-        return POSTFLOP_BASELINES[stat_name]
-
-    # Check showdown
-    if stat_name in SHOWDOWN_BASELINES:
-        return SHOWDOWN_BASELINES[stat_name]
-
-    # Check aggression
-    if stat_name in AGGRESSION_BASELINES:
-        return AGGRESSION_BASELINES[stat_name]
 
     return None
 
@@ -293,16 +238,26 @@ def analyze_deviation(
     }
 
 
-# Exploit recommendations based on deviations
+# Exploit recommendations based on preflop deviations
 EXPLOIT_RECOMMENDATIONS = {
     "vpip_high": {
         "tendency": "Plays too many hands preflop",
-        "exploit": "Value bet thinner, reduce bluffing frequency",
+        "exploit": "Value bet thinner, 3-bet for value more often",
         "ev_factor": 0.03,  # EV per % deviation per 100 hands
     },
     "vpip_low": {
         "tendency": "Plays too few hands preflop",
         "exploit": "Steal more often, fold to their raises",
+        "ev_factor": 0.02,
+    },
+    "pfr_high": {
+        "tendency": "Raises too aggressively preflop",
+        "exploit": "3-bet wider for value, call down lighter",
+        "ev_factor": 0.025,
+    },
+    "pfr_low": {
+        "tendency": "Raises too passively preflop",
+        "exploit": "Steal blinds more, respect their raises",
         "ev_factor": 0.02,
     },
     "fold_to_three_bet_high": {
@@ -315,35 +270,45 @@ EXPLOIT_RECOMMENDATIONS = {
         "exploit": "3-bet tighter for value, reduce bluff 3-bets",
         "ev_factor": 0.03,
     },
-    "fold_to_cbet_flop_high": {
-        "tendency": "Folds too much to c-bets",
-        "exploit": "C-bet wider range, bluff more",
-        "ev_factor": 0.035,
-    },
-    "fold_to_cbet_flop_low": {
-        "tendency": "Calls too much vs c-bets",
-        "exploit": "C-bet only for value, check back bluffs",
+    "three_bet_high": {
+        "tendency": "3-bets too aggressively",
+        "exploit": "Call wider in position, 4-bet bluff more",
         "ev_factor": 0.03,
     },
-    "wtsd_high": {
-        "tendency": "Goes to showdown too often",
-        "exploit": "Value bet thinner, reduce river bluffs",
+    "three_bet_low": {
+        "tendency": "3-bets too passively",
+        "exploit": "Open wider vs them, iso-raise more",
         "ev_factor": 0.025,
     },
-    "wtsd_low": {
-        "tendency": "Folds too often before showdown",
-        "exploit": "Bluff more on later streets",
+    "cold_call_high": {
+        "tendency": "Cold calls too much (capped range)",
+        "exploit": "Squeeze more, value bet thinner postflop",
         "ev_factor": 0.03,
     },
-    "cbet_flop_high": {
-        "tendency": "C-bets too frequently",
-        "exploit": "Check-raise more, call down lighter",
+    "cold_call_low": {
+        "tendency": "Rarely cold calls (polarized 3-bet or fold)",
+        "exploit": "Open tighter when they're behind, respect 3-bets",
         "ev_factor": 0.02,
     },
-    "cbet_flop_low": {
-        "tendency": "C-bets too infrequently",
-        "exploit": "Float more, probe when checked to",
+    "steal_attempt_high": {
+        "tendency": "Steals blinds too aggressively",
+        "exploit": "Defend wider from blinds, 3-bet light",
+        "ev_factor": 0.025,
+    },
+    "steal_attempt_low": {
+        "tendency": "Steals blinds too infrequently",
+        "exploit": "Fold blinds more, wait for premium holdings",
         "ev_factor": 0.02,
+    },
+    "fold_to_steal_high": {
+        "tendency": "Folds to steals too often",
+        "exploit": "Steal wider from late position",
+        "ev_factor": 0.035,
+    },
+    "fold_to_steal_low": {
+        "tendency": "Defends vs steals too much",
+        "exploit": "Steal tighter, value bet postflop",
+        "ev_factor": 0.025,
     },
 }
 

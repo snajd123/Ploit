@@ -13,7 +13,7 @@ from typing import Dict, Optional, Any, Tuple, List
 import logging
 
 from backend.services.gto_baselines import (
-    PREFLOP_GLOBAL, POSTFLOP_BASELINES, SHOWDOWN_BASELINES,
+    PREFLOP_GLOBAL,
     get_baseline, analyze_deviation, get_exploit_recommendation,
     DEVIATION_THRESHOLDS
 )
@@ -66,24 +66,17 @@ class StatsCalculator:
 
     def calculate_all_metrics(self) -> Dict[str, Any]:
         """
-        Calculate all 12 composite metrics.
+        Calculate preflop-focused composite metrics.
 
         Returns:
             Dictionary with all calculated metrics ready for database storage
         """
         metrics = {}
 
-        # Calculate each metric
+        # Calculate preflop-only metrics
         metrics['exploitability_index'] = self.calculate_exploitability_index()
-        metrics['pressure_vulnerability_score'] = self.calculate_pressure_vulnerability_score()
-        metrics['aggression_consistency_ratio'] = self.calculate_aggression_consistency_ratio()
         metrics['positional_awareness_index'] = self.calculate_positional_awareness_index()
         metrics['blind_defense_efficiency'] = self.calculate_blind_defense_efficiency()
-        metrics['value_bluff_imbalance_ratio'] = self.calculate_value_bluff_imbalance_ratio()
-        metrics['range_polarization_factor'] = self.calculate_range_polarization_factor()
-        metrics['street_fold_gradient'] = self.calculate_street_fold_gradient()
-        metrics['delayed_aggression_coefficient'] = self.calculate_delayed_aggression_coefficient()
-        metrics['multi_street_persistence_score'] = self.calculate_multi_street_persistence_score()
         metrics['optimal_stake_skill_rating'] = self.calculate_optimal_stake_skill_rating()
         metrics['player_type'] = self.classify_player_type()
 
@@ -97,17 +90,15 @@ class StatsCalculator:
         """
         Calculate Exploitability Index (0-100 scale) using calibrated GTO baselines.
 
-        V2.0 Formula with real GTO values:
-        EI = (Preflop_Score × 0.35) + (Postflop_Score × 0.40) + (Showdown_Score × 0.25)
+        PREFLOP-ONLY VERSION:
+        EI = Preflop_Score (100% weight)
 
         Calibrated baselines (from GTOWizard 6-max 100bb):
-        - VPIP/PFR gap: GTO ~4% (was 3%)
-        - Fold to 3bet: GTO ~48% (was 55% - way off)
-        - 3-bet%: GTO ~7% (was correct)
-        - C-bet flop: GTO ~35% (was 65% - massively off)
-        - Fold to c-bet: GTO ~42% (was 55%)
-        - WTSD: GTO ~28% (was 27%)
-        - W$SD: GTO ~52% (was 51%)
+        - VPIP/PFR gap: GTO ~4%
+        - Fold to 3bet: GTO ~48%
+        - 3-bet%: GTO ~7%
+        - 4-bet%: GTO ~2.5%
+        - Cold call: GTO ~5%
 
         Minimum sample: 200 hands
 
@@ -129,78 +120,44 @@ class StatsCalculator:
                 default=Decimal(str(PREFLOP_GLOBAL['fold_to_three_bet'])))
             three_bet = self._get_decimal('three_bet_pct',
                 default=Decimal(str(PREFLOP_GLOBAL['three_bet'])))
-            cbet_flop = self._get_decimal('cbet_flop_pct',
-                default=Decimal(str(POSTFLOP_BASELINES['cbet_flop'])))
-            cbet_turn = self._get_decimal('cbet_turn_pct',
-                default=Decimal(str(POSTFLOP_BASELINES['cbet_turn'])))
-            fold_to_cbet_flop = self._get_decimal('fold_to_cbet_flop_pct',
-                default=Decimal(str(POSTFLOP_BASELINES['fold_to_cbet_flop'])))
-            check_raise_flop = self._get_decimal('check_raise_flop_pct',
-                default=Decimal(str(POSTFLOP_BASELINES['check_raise_flop'])))
-            wtsd = self._get_decimal('wtsd_pct',
-                default=Decimal(str(SHOWDOWN_BASELINES['wtsd'])))
-            wsd = self._get_decimal('wsd_pct',
-                default=Decimal(str(SHOWDOWN_BASELINES['wsd'])))
+            four_bet = self._get_decimal('four_bet_pct',
+                default=Decimal(str(PREFLOP_GLOBAL['four_bet'])))
+            cold_call = self._get_decimal('cold_call_pct',
+                default=Decimal(str(PREFLOP_GLOBAL['cold_call'])))
 
-            # === Preflop Score (35% weight) ===
-            # Gap: GTO gap is ~4% (PFR/VPIP ratio ~0.83)
+            # === VPIP/PFR Gap Score (25% weight) ===
             gto_gap = Decimal(str(PREFLOP_GLOBAL['vpip_pfr_gap']))
             actual_gap = vpip - pfr
             gap_deviation = abs(actual_gap - gto_gap)
+            gap_score = min(gap_deviation / Decimal('10'), Decimal('1')) * Decimal('100')
 
-            # Fold to 3-bet: GTO ~48%
+            # === Fold to 3-bet Score (25% weight) ===
             gto_fold_3bet = Decimal(str(PREFLOP_GLOBAL['fold_to_three_bet']))
             fold_3bet_deviation = abs(fold_to_3bet - gto_fold_3bet)
+            fold_3bet_score = min(fold_3bet_deviation / Decimal('20'), Decimal('1')) * Decimal('100')
 
-            # 3-bet%: GTO ~7%
+            # === 3-bet Score (20% weight) ===
             gto_3bet = Decimal(str(PREFLOP_GLOBAL['three_bet']))
             three_bet_deviation = abs(three_bet - gto_3bet)
+            three_bet_score = min(three_bet_deviation / Decimal('5'), Decimal('1')) * Decimal('100')
 
-            # Normalized preflop score (each component 0-33, total ~0-100 before weighting)
-            preflop_score = (
-                min(gap_deviation / Decimal('10'), Decimal('1')) * Decimal('33') +
-                min(fold_3bet_deviation / Decimal('20'), Decimal('1')) * Decimal('33') +
-                min(three_bet_deviation / Decimal('5'), Decimal('1')) * Decimal('33')
-            )
+            # === 4-bet Score (15% weight) ===
+            gto_4bet = Decimal(str(PREFLOP_GLOBAL['four_bet']))
+            four_bet_deviation = abs(four_bet - gto_4bet)
+            four_bet_score = min(four_bet_deviation / Decimal('3'), Decimal('1')) * Decimal('100')
 
-            # === Postflop Score (40% weight) ===
-            # C-bet flop: GTO ~35%
-            gto_cbet = Decimal(str(POSTFLOP_BASELINES['cbet_flop']))
-            cbet_deviation = abs(cbet_flop - gto_cbet)
-
-            # Fold to c-bet: GTO ~42%
-            gto_fold_cbet = Decimal(str(POSTFLOP_BASELINES['fold_to_cbet_flop']))
-            fold_cbet_deviation = abs(fold_to_cbet_flop - gto_fold_cbet)
-
-            # C-bet consistency (turn/flop ratio)
-            cbet_drop = cbet_flop - cbet_turn if cbet_flop > 0 else Decimal('0')
-            cbet_inconsistency = max(Decimal('0'), cbet_drop - Decimal('10'))  # Some drop is normal
-
-            postflop_score = (
-                min(cbet_deviation / Decimal('25'), Decimal('1')) * Decimal('40') +
-                min(fold_cbet_deviation / Decimal('20'), Decimal('1')) * Decimal('40') +
-                min(cbet_inconsistency / Decimal('20'), Decimal('1')) * Decimal('20')
-            )
-
-            # === Showdown Score (25% weight) ===
-            # WTSD: GTO ~28%
-            gto_wtsd = Decimal(str(SHOWDOWN_BASELINES['wtsd']))
-            wtsd_deviation = abs(wtsd - gto_wtsd)
-
-            # W$SD: GTO ~52%
-            gto_wsd = Decimal(str(SHOWDOWN_BASELINES['wsd']))
-            wsd_deviation = abs(wsd - gto_wsd)
-
-            showdown_score = (
-                min(wtsd_deviation / Decimal('15'), Decimal('1')) * Decimal('50') +
-                min(wsd_deviation / Decimal('10'), Decimal('1')) * Decimal('50')
-            )
+            # === Cold Call Score (15% weight) ===
+            gto_cold_call = Decimal(str(PREFLOP_GLOBAL['cold_call']))
+            cold_call_deviation = abs(cold_call - gto_cold_call)
+            cold_call_score = min(cold_call_deviation / Decimal('5'), Decimal('1')) * Decimal('100')
 
             # === Final EI (weighted sum) ===
             ei = (
-                preflop_score * Decimal('0.35') +
-                postflop_score * Decimal('0.40') +
-                showdown_score * Decimal('0.25')
+                gap_score * Decimal('0.25') +
+                fold_3bet_score * Decimal('0.25') +
+                three_bet_score * Decimal('0.20') +
+                four_bet_score * Decimal('0.15') +
+                cold_call_score * Decimal('0.15')
             )
 
             # Clamp to 0-100

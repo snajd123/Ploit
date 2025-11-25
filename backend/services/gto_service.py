@@ -9,9 +9,13 @@ from sqlalchemy import func
 from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime
 
-from backend.models.gto_models import (
-    GTOScenario, GTOFrequency, PlayerAction, PlayerGTOStat
+from backend.models.database_models import (
+    GTOScenario, GTOFrequency, PlayerPreflopActions, PlayerScenarioStats
 )
+
+# Aliases for backward compatibility
+PlayerAction = PlayerPreflopActions
+PlayerGTOStat = PlayerScenarioStats
 
 
 class GTOService:
@@ -130,6 +134,96 @@ class GTOService:
         ).all()
 
         return {hand: float(freq) for hand, freq in results}
+
+    def get_gto_aggregate_frequency(
+        self,
+        scenario_name: str
+    ) -> Optional[float]:
+        """
+        Get aggregate GTO frequency for a scenario (for VILLAIN analysis without hole cards).
+
+        This uses the pre-calculated average frequency across all combos,
+        stored in gto_scenarios.gto_aggregate_freq.
+
+        Args:
+            scenario_name: e.g., 'BB_vs_UTG_call'
+
+        Returns:
+            float: Aggregate frequency (0.0 to 1.0) or None if not found
+
+        Example:
+            freq = gto_service.get_gto_aggregate_frequency('BB_vs_UTG_call')
+            # Returns ~0.64 (64% call frequency on average)
+        """
+        scenario = self.db.query(GTOScenario).filter(
+            GTOScenario.scenario_name == scenario_name
+        ).first()
+
+        if scenario and scenario.gto_aggregate_freq is not None:
+            return float(scenario.gto_aggregate_freq)
+        return None
+
+    def get_all_scenario_aggregates(
+        self,
+        category: Optional[str] = None
+    ) -> Dict[str, float]:
+        """
+        Get all aggregate frequencies for villain analysis.
+
+        Args:
+            category: Optional filter by category ('opening', 'defense', 'facing_3bet', 'facing_4bet')
+
+        Returns:
+            Dictionary of scenario_name -> aggregate_frequency
+
+        Example:
+            aggregates = gto_service.get_all_scenario_aggregates('defense')
+            # Returns {'BB_vs_UTG_call': 0.64, 'BB_vs_UTG_3bet': 0.29, ...}
+        """
+        query = self.db.query(
+            GTOScenario.scenario_name,
+            GTOScenario.gto_aggregate_freq
+        ).filter(
+            GTOScenario.gto_aggregate_freq.isnot(None)
+        )
+
+        if category:
+            query = query.filter(GTOScenario.category == category)
+
+        results = query.all()
+        return {name: float(freq) for name, freq in results if freq is not None}
+
+    def analyze_villain_action(
+        self,
+        scenario_name: str,
+        action_taken: bool
+    ) -> Dict[str, Any]:
+        """
+        Analyze a villain's action against aggregate GTO (without knowing hole cards).
+
+        Args:
+            scenario_name: e.g., 'BB_vs_UTG_call'
+            action_taken: True if villain took the action, False if not
+
+        Returns:
+            Analysis with GTO comparison
+
+        Example:
+            analysis = gto_service.analyze_villain_action('BB_vs_UTG_call', True)
+            # Returns comparison to 64% aggregate call frequency
+        """
+        gto_freq = self.get_gto_aggregate_frequency(scenario_name)
+
+        if gto_freq is None:
+            return {'error': f'Scenario not found: {scenario_name}'}
+
+        return {
+            'scenario': scenario_name,
+            'action_taken': action_taken,
+            'gto_aggregate_freq': gto_freq,
+            'gto_expected': gto_freq > 0.5,  # GTO expects this action more than 50%
+            'note': 'Aggregate frequency used (villain hole cards unknown)'
+        }
 
     def get_scenario_by_context(
         self,
