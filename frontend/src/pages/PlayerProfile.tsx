@@ -15,7 +15,6 @@ import ExploitDashboard from '../components/ExploitDashboard';
 import BaselineComparison from '../components/BaselineComparison';
 import DeviationHeatmap from '../components/DeviationHeatmap';
 import { LeakSummary, LeaksList } from '../components/LeakCard';
-import StatWithConfidence, { StatGroup } from '../components/StatWithConfidence';
 import { STAT_DEFINITIONS } from '../config/statDefinitions';
 
 // Helper function to generate tooltip content for a statistic
@@ -288,32 +287,37 @@ const PlayerProfile = () => {
           {/* Player Type Exploit Info */}
           {leakAnalysis.player_type && (
             <div className="card bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 mb-6">
-              <h3 className="font-semibold text-gray-900 mb-2">
-                Player Profile: {leakAnalysis.player_type.type}
-              </h3>
-              <p className="text-sm text-gray-700 mb-3">{leakAnalysis.player_type.description}</p>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="font-semibold text-gray-900">
+                  Player Profile: {leakAnalysis.player_type.type}
+                </h3>
+                <span className={`text-xs px-2 py-1 rounded-full ${
+                  leakAnalysis.player_type.confidence === 'high' ? 'bg-green-100 text-green-700' :
+                  leakAnalysis.player_type.confidence === 'good' ? 'bg-green-100 text-green-700' :
+                  leakAnalysis.player_type.confidence === 'moderate' ? 'bg-yellow-100 text-yellow-700' :
+                  'bg-gray-100 text-gray-600'
+                }`}>
+                  {leakAnalysis.player_type.confidence} confidence ({leakAnalysis.player_type.sample_size} hands)
+                </span>
+              </div>
 
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
-                  <h4 className="text-xs font-semibold text-gray-600 uppercase mb-1">Key Traits</h4>
-                  <ul className="text-sm text-gray-700 space-y-1">
-                    {leakAnalysis.player_type.key_traits.map((trait, i) => (
-                      <li key={i} className="flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
-                        {trait}
-                      </li>
-                    ))}
-                  </ul>
+                  <h4 className="text-xs font-semibold text-gray-600 uppercase mb-1">Stats</h4>
+                  <div className="text-sm text-gray-700 space-y-1">
+                    <div>VPIP: <span className="font-medium">{leakAnalysis.player_type.vpip?.toFixed(1) ?? 'N/A'}%</span></div>
+                    <div>PFR: <span className="font-medium">{leakAnalysis.player_type.pfr?.toFixed(1) ?? 'N/A'}%</span></div>
+                    <div>Aggression Ratio: <span className="font-medium">{leakAnalysis.player_type.aggression_ratio.toFixed(2)}</span></div>
+                  </div>
                 </div>
                 <div>
-                  <h4 className="text-xs font-semibold text-gray-600 uppercase mb-1">Primary Exploit</h4>
-                  <p className="text-sm text-purple-700 font-medium mb-2">
-                    {leakAnalysis.player_type.primary_exploit}
-                  </p>
-                  <h4 className="text-xs font-semibold text-gray-600 uppercase mb-1">Secondary Exploits</h4>
+                  <h4 className="text-xs font-semibold text-gray-600 uppercase mb-1">How to Exploit</h4>
                   <ul className="text-sm text-gray-700 space-y-1">
-                    {leakAnalysis.player_type.secondary_exploits.map((exploit, i) => (
-                      <li key={i}>• {exploit}</li>
+                    {leakAnalysis.player_type.exploits.map((exploit, i) => (
+                      <li key={i} className="flex items-start gap-1">
+                        <span className="text-purple-500 mt-1">•</span>
+                        <span>{exploit}</span>
+                      </li>
                     ))}
                   </ul>
                 </div>
@@ -321,23 +325,65 @@ const PlayerProfile = () => {
             </div>
           )}
 
-          {/* Core Metrics with Confidence */}
-          {leakAnalysis.core_metrics && leakAnalysis.core_metrics.length > 0 && (
+          {/* Core Metrics Summary */}
+          {leakAnalysis.core_metrics && (
             <div className="mb-6">
-              <StatGroup title="Core Stats with Confidence Intervals">
-                {leakAnalysis.core_metrics.map((metric) => (
-                  <StatWithConfidence
-                    key={metric.name}
-                    label={metric.name}
-                    value={metric.value}
-                    sampleSize={metric.sample_size}
-                    ciLower={metric.ci_lower}
-                    ciUpper={metric.ci_upper}
-                    gtoBaseline={metric.gto_baseline}
-                    showDeviation={true}
-                  />
-                ))}
-              </StatGroup>
+              <div className="card">
+                <h3 className="font-semibold text-gray-900 mb-4">Core Profile Summary</h3>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                  {leakAnalysis.core_metrics.exploitability_score && (
+                    <div className="text-center p-3 bg-gray-50 rounded-lg">
+                      <div className="text-2xl font-bold text-gray-900">
+                        {leakAnalysis.core_metrics.exploitability_score.value?.toFixed(0) ?? 'N/A'}
+                      </div>
+                      <div className="text-xs text-gray-600 mt-1">Exploitability</div>
+                      <div className={`text-xs mt-1 ${
+                        leakAnalysis.core_metrics.exploitability_score.interpretation === 'very_exploitable' ? 'text-red-600' :
+                        leakAnalysis.core_metrics.exploitability_score.interpretation === 'exploitable' ? 'text-orange-600' :
+                        leakAnalysis.core_metrics.exploitability_score.interpretation === 'solid' ? 'text-yellow-600' :
+                        'text-green-600'
+                      }`}>
+                        {leakAnalysis.core_metrics.exploitability_score.interpretation}
+                      </div>
+                    </div>
+                  )}
+                  {leakAnalysis.core_metrics.aggression_profile && (
+                    <div className="text-center p-3 bg-gray-50 rounded-lg">
+                      <div className="text-2xl font-bold text-gray-900">
+                        {leakAnalysis.core_metrics.aggression_profile.value}
+                      </div>
+                      <div className="text-xs text-gray-600 mt-1">Aggression Ratio</div>
+                      <div className="text-xs text-blue-600 mt-1">
+                        {leakAnalysis.core_metrics.aggression_profile.interpretation}
+                      </div>
+                    </div>
+                  )}
+                  {leakAnalysis.core_metrics.positional_awareness && (
+                    <div className="text-center p-3 bg-gray-50 rounded-lg">
+                      <div className="text-lg font-bold text-gray-900 capitalize">
+                        {leakAnalysis.core_metrics.positional_awareness.interpretation}
+                      </div>
+                      <div className="text-xs text-gray-600 mt-1">Position Awareness</div>
+                    </div>
+                  )}
+                  {leakAnalysis.core_metrics.showdown_tendency && (
+                    <div className="text-center p-3 bg-gray-50 rounded-lg">
+                      <div className="text-lg font-bold text-gray-900 capitalize">
+                        {leakAnalysis.core_metrics.showdown_tendency.interpretation}
+                      </div>
+                      <div className="text-xs text-gray-600 mt-1">Showdown Tendency</div>
+                    </div>
+                  )}
+                  {leakAnalysis.core_metrics.pressure_response && (
+                    <div className="text-center p-3 bg-gray-50 rounded-lg">
+                      <div className="text-lg font-bold text-gray-900 capitalize">
+                        {leakAnalysis.core_metrics.pressure_response.interpretation}
+                      </div>
+                      <div className="text-xs text-gray-600 mt-1">Under Pressure</div>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 

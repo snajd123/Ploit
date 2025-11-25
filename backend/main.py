@@ -546,22 +546,25 @@ async def get_player_leaks(
 
         # Create StatsCalculator and get leak analysis
         calculator = StatsCalculator(stats)
-        leaks = calculator.get_leak_analysis()
+        leak_analysis = calculator.get_leak_analysis()
         core_metrics = calculator.get_core_metrics()
         player_type_info = calculator.get_player_type_details()
+
+        # Extract the leaks list from the analysis result
+        leaks_list = leak_analysis.get("leaks", [])
 
         return {
             "player_name": stats.get("player_name"),
             "total_hands": stats.get("total_hands"),
             "player_type": player_type_info,
             "core_metrics": core_metrics,
-            "leaks": leaks,
+            "leaks": leaks_list,
             "leak_summary": {
-                "total_leaks": len(leaks),
-                "critical_leaks": len([l for l in leaks if l["severity"] == "critical"]),
-                "major_leaks": len([l for l in leaks if l["severity"] == "major"]),
-                "total_ev_opportunity": sum(l["ev_impact_bb_100"] for l in leaks),
-                "reliability": "high" if stats.get("total_hands", 0) >= 1000 else "moderate" if stats.get("total_hands", 0) >= 300 else "low"
+                "total_leaks": leak_analysis.get("total_leaks", 0),
+                "critical_leaks": leak_analysis.get("critical_leaks", 0),
+                "major_leaks": leak_analysis.get("major_leaks", 0),
+                "total_ev_opportunity": leak_analysis.get("total_ev_opportunity_bb_100", 0),
+                "reliability": leak_analysis.get("reliability", "low")
             }
         }
 

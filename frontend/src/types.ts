@@ -236,21 +236,26 @@ export interface LeakItem {
 
 export interface PlayerTypeInfo {
   type: string;
-  description: string;
-  key_traits: string[];
-  primary_exploit: string;
-  secondary_exploits: string[];
+  confidence: 'low' | 'moderate' | 'good' | 'high';
+  sample_size: number;
+  vpip: number | null;
+  pfr: number | null;
+  aggression_ratio: number;
+  exploits: string[];
 }
 
-export interface CoreMetric {
-  name: string;
-  value: number;
-  gto_baseline: number;
-  deviation: number;
-  reliability: 'excellent' | 'good' | 'moderate' | 'low' | 'insufficient';
-  ci_lower: number;
-  ci_upper: number;
-  sample_size: number;
+export interface CoreMetricValue {
+  value: number | null;
+  interpretation: string;
+  description: string;
+}
+
+export interface CoreMetrics {
+  exploitability_score: CoreMetricValue;
+  aggression_profile: CoreMetricValue;
+  positional_awareness: CoreMetricValue;
+  showdown_tendency: CoreMetricValue;
+  pressure_response: CoreMetricValue;
 }
 
 export interface LeakSummary {
@@ -265,7 +270,7 @@ export interface LeakAnalysisResponse {
   player_name: string;
   total_hands: number;
   player_type: PlayerTypeInfo;
-  core_metrics: CoreMetric[];
+  core_metrics: CoreMetrics;
   leaks: LeakItem[];
   leak_summary: LeakSummary;
 }
