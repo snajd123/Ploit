@@ -47,6 +47,46 @@ const ACTION_FILTERS = [
   { id: 'allin', label: 'All-In' },
 ];
 
+// Convert technical scenario names to user-friendly display names
+const getFriendlyScenarioName = (scenario: Scenario): string => {
+  const { scenario_name, category, action, position, opponent_position } = scenario;
+
+  // Opening ranges
+  if (category === 'opening') {
+    return `Open from ${position}`;
+  }
+
+  // Facing an open (defense)
+  if (category === 'defense') {
+    const actionLabel = action === '3bet' ? '3-Bet' : action.charAt(0).toUpperCase() + action.slice(1);
+    return `${actionLabel} vs ${opponent_position} Open`;
+  }
+
+  // Facing a 3-bet
+  if (category === 'facing_3bet') {
+    const actionLabel = action === '4bet' ? '4-Bet' :
+                        action === 'allin' ? 'All-In' :
+                        action.charAt(0).toUpperCase() + action.slice(1);
+    return `${actionLabel} vs ${opponent_position}'s 3-Bet`;
+  }
+
+  // Facing a 4-bet
+  if (category === 'facing_4bet') {
+    const actionLabel = action === '5bet' ? '5-Bet' :
+                        action === 'allin' ? 'All-In' :
+                        action.charAt(0).toUpperCase() + action.slice(1);
+    return `${actionLabel} vs ${opponent_position}'s 4-Bet`;
+  }
+
+  // Multiway/squeeze
+  if (category === 'multiway' || category === 'squeeze') {
+    return scenario.description || scenario_name.replace(/_/g, ' ');
+  }
+
+  // Fallback: clean up underscore format
+  return scenario_name.replace(/_/g, ' ');
+};
+
 const GTOBrowser: React.FC = () => {
   const [selectedPosition, setSelectedPosition] = useState('UTG');
   const [selectedAction, setSelectedAction] = useState('all');
@@ -266,7 +306,7 @@ const GTOBrowser: React.FC = () => {
                                 {scenario.action.toUpperCase()}
                               </span>
                               <span className="text-sm font-medium text-gray-700">
-                                {scenario.scenario_name}
+                                {getFriendlyScenarioName(scenario)}
                               </span>
                             </div>
                           </button>
@@ -283,7 +323,7 @@ const GTOBrowser: React.FC = () => {
                                 <div>
                                   <div className="mb-4">
                                     <h4 className="text-lg font-semibold text-gray-900 mb-2">
-                                      {selectedScenario.scenario_name}
+                                      {getFriendlyScenarioName(selectedScenario)}
                                     </h4>
                                     <div className="flex items-center gap-4 text-sm text-gray-600">
                                       <span>
