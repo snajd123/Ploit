@@ -230,13 +230,14 @@ export interface LeakAnalysisResponse {
   leak_summary: LeakSummary;
 }
 
-// GTO Analysis Response (for player GTO comparison)
+// GTO Analysis Response (comprehensive player GTO comparison)
 export interface GTOAnalysisResponse {
   player: string;
   adherence: {
     gto_adherence_score: number;
     avg_deviation: number;
     major_leaks_count: number;
+    moderate_leaks_count: number;
     total_hands: number;
   };
   opening_ranges: Array<{
@@ -248,23 +249,53 @@ export interface GTOAnalysisResponse {
     leak_severity: 'minor' | 'moderate' | 'major';
     leak_type: string | null;
   }>;
-  threebet_stats: Array<{
+  defense_vs_open: Array<{
     position: string;
-    opportunities: number;
-    three_bets: number;
+    sample_size: number;
+    player_call: number;
+    player_3bet: number;
+    player_fold: number;
+    gto_call: number;
+    gto_3bet: number;
+    gto_fold: number;
+    call_diff: number;
+    '3bet_diff': number;
+    fold_diff: number;
+  }>;
+  facing_3bet: Array<{
+    position: string;
+    sample_size: number;
+    player_fold: number;
+    player_call: number;
+    player_4bet: number;
+    gto_fold: number;
+    gto_call: number;
+    gto_4bet: number;
+    fold_diff: number;
+    call_diff: number;
+    '4bet_diff': number;
+  }>;
+  blind_defense: Array<{
+    position: string;
+    sample_size: number;
+    player_fold: number;
+    player_call: number;
+    player_3bet: number;
+    gto_fold: number;
+    gto_call: number;
+    gto_3bet: number;
+    fold_diff: number;
+    call_diff: number;
+    '3bet_diff': number;
+  }>;
+  steal_attempts: Array<{
+    position: string;
+    sample_size: number;
     player_frequency: number;
     gto_frequency: number;
     frequency_diff: number;
-    leak_severity: 'minor' | 'moderate' | 'major';
     leak_type: string | null;
   }>;
-  fold_to_3bet: {
-    faced_3bet: number;
-    folded: number;
-    player_frequency: number;
-    gto_frequency: number;
-    frequency_diff: number;
-  };
 }
 
 // GTO Scenario Types (Preflop-only)
