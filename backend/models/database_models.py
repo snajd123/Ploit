@@ -73,13 +73,9 @@ class HandAction(Base):
 
 class PlayerHandSummary(Base):
     """
-    DEPRECATED: Per-player per-hand boolean flags.
+    Per-player per-hand boolean flags for statistical tracking.
 
-    NOTE: This table no longer exists in the database.
-    Kept for backward compatibility with existing code.
-    New code should use PlayerPreflopActions instead.
-
-    Table: player_hand_summary (DEPRECATED - does not exist)
+    Table: player_hand_summary
     """
     __tablename__ = 'player_hand_summary'
     __table_args__ = {'extend_existing': True}
@@ -89,22 +85,95 @@ class PlayerHandSummary(Base):
     player_name = Column(String(100), nullable=False)
     position = Column(String(10))
 
-    # Preflop flags (kept for backward compatibility)
+    # Preflop flags
     vpip = Column(Boolean, default=False)
     pfr = Column(Boolean, default=False)
     limp = Column(Boolean, default=False)
+    faced_raise = Column(Boolean, default=False)
     three_bet_opportunity = Column(Boolean, default=False)
+    faced_three_bet = Column(Boolean, default=False)
+    folded_to_three_bet = Column(Boolean, default=False)
+    called_three_bet = Column(Boolean, default=False)
     made_three_bet = Column(Boolean, default=False)
     four_bet = Column(Boolean, default=False)
     cold_call = Column(Boolean, default=False)
     squeeze = Column(Boolean, default=False)
-    steal_attempt = Column(Boolean, default=False)
-    fold_to_steal = Column(Boolean, default=False)
 
-    # Showdown (basic)
+    # Street visibility
+    saw_flop = Column(Boolean, default=False)
+    saw_turn = Column(Boolean, default=False)
+    saw_river = Column(Boolean, default=False)
+
+    # Continuation bet opportunities and actions (as aggressor)
+    cbet_opportunity_flop = Column(Boolean, default=False)
+    cbet_made_flop = Column(Boolean, default=False)
+    cbet_opportunity_turn = Column(Boolean, default=False)
+    cbet_made_turn = Column(Boolean, default=False)
+    cbet_opportunity_river = Column(Boolean, default=False)
+    cbet_made_river = Column(Boolean, default=False)
+
+    # Facing continuation bets
+    faced_cbet_flop = Column(Boolean, default=False)
+    folded_to_cbet_flop = Column(Boolean, default=False)
+    called_cbet_flop = Column(Boolean, default=False)
+    raised_cbet_flop = Column(Boolean, default=False)
+    faced_cbet_turn = Column(Boolean, default=False)
+    folded_to_cbet_turn = Column(Boolean, default=False)
+    called_cbet_turn = Column(Boolean, default=False)
+    raised_cbet_turn = Column(Boolean, default=False)
+    faced_cbet_river = Column(Boolean, default=False)
+    folded_to_cbet_river = Column(Boolean, default=False)
+    called_cbet_river = Column(Boolean, default=False)
+    raised_cbet_river = Column(Boolean, default=False)
+
+    # Check-raise flags
+    check_raise_opportunity_flop = Column(Boolean, default=False)
+    check_raised_flop = Column(Boolean, default=False)
+    check_raise_opportunity_turn = Column(Boolean, default=False)
+    check_raised_turn = Column(Boolean, default=False)
+    check_raise_opportunity_river = Column(Boolean, default=False)
+    check_raised_river = Column(Boolean, default=False)
+
+    # Donk bets (betting into aggressor)
+    donk_bet_flop = Column(Boolean, default=False)
+    donk_bet_turn = Column(Boolean, default=False)
+    donk_bet_river = Column(Boolean, default=False)
+
+    # Float plays
+    float_flop = Column(Boolean, default=False)
+
+    # Steal and blind defense
+    steal_attempt = Column(Boolean, default=False)
+    faced_steal = Column(Boolean, default=False)
+    fold_to_steal = Column(Boolean, default=False)
+    call_steal = Column(Boolean, default=False)
+    three_bet_vs_steal = Column(Boolean, default=False)
+
+    # Showdown
     went_to_showdown = Column(Boolean, default=False)
+    won_at_showdown = Column(Boolean, default=False)
+    showed_bluff = Column(Boolean, default=False)
+
+    # Hand result
     won_hand = Column(Boolean, default=False)
     profit_loss = Column(DECIMAL(10, 2))
+
+    # Board categorization
+    board_category_l1 = Column(String(50))
+    board_category_l2 = Column(String(50))
+    board_category_l3 = Column(String(50))
+    is_paired = Column(Boolean, default=False)
+    is_rainbow = Column(Boolean, default=False)
+    is_two_tone = Column(Boolean, default=False)
+    is_monotone = Column(Boolean, default=False)
+    is_connected = Column(Boolean, default=False)
+    is_highly_connected = Column(Boolean, default=False)
+    has_broadway = Column(Boolean, default=False)
+    is_dry = Column(Boolean, default=False)
+    is_wet = Column(Boolean, default=False)
+    high_card_rank = Column(Integer)
+    middle_card_rank = Column(Integer)
+    low_card_rank = Column(Integer)
 
     created_at = Column(TIMESTAMP, default=func.current_timestamp())
 
