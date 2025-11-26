@@ -955,13 +955,21 @@ async def clear_database(
 
         # Count records before deletion
         counts_before = {}
+        # Order matters - delete child tables before parent tables (foreign keys)
         tables_to_clear = [
-            'hand_actions',
+            'hero_gto_mistakes',      # FK to raw_hands
+            'missed_exploits',        # FK to sessions/players
+            'session_gto_summary',    # FK to sessions
+            'opponent_session_stats', # FK to sessions
+            'sessions',               # FK to player_stats
+            'hand_actions',           # FK to raw_hands
             'player_preflop_actions',
             'player_scenario_stats',
             'raw_hands',
             'player_stats',
-            'upload_sessions'
+            'upload_sessions',
+            'claude_messages',        # FK to claude_conversations
+            'claude_conversations',
         ]
 
         for table in tables_to_clear:
@@ -1023,14 +1031,21 @@ async def reset_preview(db: Session = Depends(get_db)):
     try:
         from sqlalchemy import text
 
-        # Tables to delete
+        # Tables to delete (all player/session data)
         tables_to_delete = [
             ('raw_hands', 'Hand histories'),
             ('hand_actions', 'Hand actions'),
+            ('hero_gto_mistakes', 'Hero GTO mistakes'),
+            ('missed_exploits', 'Missed exploits'),
+            ('sessions', 'Sessions'),
+            ('session_gto_summary', 'Session GTO summaries'),
+            ('opponent_session_stats', 'Opponent session stats'),
             ('player_preflop_actions', 'Player preflop actions'),
             ('player_scenario_stats', 'Player scenario stats'),
             ('player_stats', 'Player stats'),
             ('upload_sessions', 'Upload sessions'),
+            ('claude_conversations', 'Claude conversations'),
+            ('claude_messages', 'Claude messages'),
         ]
 
         to_delete = {}
