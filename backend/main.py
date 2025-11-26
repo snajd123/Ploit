@@ -658,18 +658,21 @@ async def get_player_gto_analysis(
         defense_query = text("""
             SELECT
                 position,
-                COUNT(*) FILTER (WHERE faced_raise = true AND NOT pfr) as faced_open,
-                COUNT(*) FILTER (WHERE cold_call = true) as cold_calls,
-                COUNT(*) FILTER (WHERE made_three_bet = true AND faced_raise = true) as three_bets,
-                ROUND(100.0 * COUNT(*) FILTER (WHERE cold_call = true) /
-                    NULLIF(COUNT(*) FILTER (WHERE faced_raise = true AND NOT pfr), 0), 1) as call_pct,
-                ROUND(100.0 * COUNT(*) FILTER (WHERE made_three_bet = true AND faced_raise = true) /
-                    NULLIF(COUNT(*) FILTER (WHERE faced_raise = true AND NOT pfr), 0), 1) as three_bet_pct
+                COUNT(*) FILTER (WHERE faced_raise = true) as faced_open,
+                COUNT(*) FILTER (WHERE faced_raise = true AND vpip = false) as folded,
+                COUNT(*) FILTER (WHERE faced_raise = true AND vpip = true AND pfr = false) as called,
+                COUNT(*) FILTER (WHERE faced_raise = true AND made_three_bet = true) as three_bets,
+                ROUND(100.0 * COUNT(*) FILTER (WHERE faced_raise = true AND vpip = false) /
+                    NULLIF(COUNT(*) FILTER (WHERE faced_raise = true), 0), 1) as fold_pct,
+                ROUND(100.0 * COUNT(*) FILTER (WHERE faced_raise = true AND vpip = true AND pfr = false) /
+                    NULLIF(COUNT(*) FILTER (WHERE faced_raise = true), 0), 1) as call_pct,
+                ROUND(100.0 * COUNT(*) FILTER (WHERE faced_raise = true AND made_three_bet = true) /
+                    NULLIF(COUNT(*) FILTER (WHERE faced_raise = true), 0), 1) as three_bet_pct
             FROM player_hand_summary
             WHERE player_name = :player_name
             AND position IS NOT NULL
             GROUP BY position
-            HAVING COUNT(*) FILTER (WHERE faced_raise = true AND NOT pfr) >= 5
+            HAVING COUNT(*) FILTER (WHERE faced_raise = true) >= 5
             ORDER BY position
         """)
         defense_result = db.execute(defense_query, {"player_name": validated_name})
@@ -693,9 +696,9 @@ async def get_player_gto_analysis(
         defense_vs_open = []
         for row in defense_rows:
             pos = row['position']
+            fold_freq = float(row['fold_pct']) if row['fold_pct'] else 0
             call_freq = float(row['call_pct']) if row['call_pct'] else 0
             threebet_freq = float(row['three_bet_pct']) if row['three_bet_pct'] else 0
-            fold_freq = 100 - call_freq - threebet_freq
 
             gto_call = gto_defense.get(pos, {}).get('call', 15)
             gto_3bet = gto_defense.get(pos, {}).get('3bet', 8)
@@ -704,15 +707,15 @@ async def get_player_gto_analysis(
             defense_vs_open.append({
                 'position': pos,
                 'sample_size': row['faced_open'],
+                'player_fold': round(fold_freq, 1),
                 'player_call': round(call_freq, 1),
                 'player_3bet': round(threebet_freq, 1),
-                'player_fold': round(fold_freq, 1),
+                'gto_fold': round(gto_fold, 1),
                 'gto_call': round(gto_call, 1),
                 'gto_3bet': round(gto_3bet, 1),
-                'gto_fold': round(gto_fold, 1),
+                'fold_diff': round(fold_freq - gto_fold, 1),
                 'call_diff': round(call_freq - gto_call, 1),
                 '3bet_diff': round(threebet_freq - gto_3bet, 1),
-                'fold_diff': round(fold_freq - gto_fold, 1),
             })
 
         # ============================================
