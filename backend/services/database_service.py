@@ -219,37 +219,16 @@ class DatabaseService:
         Args:
             hand_id: Hand ID
             flags: PlayerHandSummaryFlags object
-            board_analysis: Optional BoardAnalysis object for board categorization
+            board_analysis: Optional BoardAnalysis object (unused in preflop-only mode)
 
         Returns:
-            PlayerHandSummary ORM object
+            PlayerHandSummary ORM object with preflop stats only
         """
-        # Extract board categorization if available
-        board_cat = {}
-        if board_analysis:
-            board_cat = {
-                'board_category_l1': board_analysis.category_l1,
-                'board_category_l2': board_analysis.category_l2,
-                'board_category_l3': board_analysis.category_l3,
-                'is_paired': board_analysis.is_paired,
-                'is_rainbow': board_analysis.is_rainbow,
-                'is_two_tone': board_analysis.is_two_tone,
-                'is_monotone': board_analysis.is_monotone,
-                'is_connected': board_analysis.is_connected,
-                'is_highly_connected': board_analysis.is_highly_connected,
-                'has_broadway': board_analysis.has_broadway,
-                'is_dry': board_analysis.is_dry,
-                'is_wet': board_analysis.is_wet,
-                'high_card_rank': board_analysis.high_card_rank,
-                'middle_card_rank': board_analysis.middle_card_rank,
-                'low_card_rank': board_analysis.low_card_rank
-            }
-
         return PlayerHandSummary(
             hand_id=hand_id,
             player_name=flags.player_name,
             position=flags.position,
-            # Preflop
+            # Preflop flags
             vpip=flags.vpip,
             pfr=flags.pfr,
             limp=flags.limp,
@@ -262,58 +241,16 @@ class DatabaseService:
             four_bet=flags.four_bet,
             cold_call=flags.cold_call,
             squeeze=flags.squeeze,
-            # Street visibility
-            saw_flop=flags.saw_flop,
-            saw_turn=flags.saw_turn,
-            saw_river=flags.saw_river,
-            # Cbet opportunities
-            cbet_opportunity_flop=flags.cbet_opportunity_flop,
-            cbet_made_flop=flags.cbet_made_flop,
-            cbet_opportunity_turn=flags.cbet_opportunity_turn,
-            cbet_made_turn=flags.cbet_made_turn,
-            cbet_opportunity_river=flags.cbet_opportunity_river,
-            cbet_made_river=flags.cbet_made_river,
-            # Facing cbets
-            faced_cbet_flop=flags.faced_cbet_flop,
-            folded_to_cbet_flop=flags.folded_to_cbet_flop,
-            called_cbet_flop=flags.called_cbet_flop,
-            raised_cbet_flop=flags.raised_cbet_flop,
-            faced_cbet_turn=flags.faced_cbet_turn,
-            folded_to_cbet_turn=flags.folded_to_cbet_turn,
-            called_cbet_turn=flags.called_cbet_turn,
-            raised_cbet_turn=flags.raised_cbet_turn,
-            faced_cbet_river=flags.faced_cbet_river,
-            folded_to_cbet_river=flags.folded_to_cbet_river,
-            called_cbet_river=flags.called_cbet_river,
-            raised_cbet_river=flags.raised_cbet_river,
-            # Check-raise
-            check_raise_opportunity_flop=flags.check_raise_opportunity_flop,
-            check_raised_flop=flags.check_raised_flop,
-            check_raise_opportunity_turn=flags.check_raise_opportunity_turn,
-            check_raised_turn=flags.check_raised_turn,
-            check_raise_opportunity_river=flags.check_raise_opportunity_river,
-            check_raised_river=flags.check_raised_river,
-            # Donk bets
-            donk_bet_flop=flags.donk_bet_flop,
-            donk_bet_turn=flags.donk_bet_turn,
-            donk_bet_river=flags.donk_bet_river,
-            # Float
-            float_flop=flags.float_flop,
-            # Steal and defense
+            # Steal and defense (preflop)
             steal_attempt=flags.steal_attempt,
             faced_steal=flags.faced_steal,
             fold_to_steal=flags.fold_to_steal,
             call_steal=flags.call_steal,
             three_bet_vs_steal=flags.three_bet_vs_steal,
-            # Showdown
+            # Basic outcome
             went_to_showdown=flags.went_to_showdown,
-            won_at_showdown=flags.won_at_showdown,
-            showed_bluff=flags.showed_bluff,
-            # Result
             won_hand=flags.won_hand,
             profit_loss=flags.profit_loss,
-            # Board categorization
-            **board_cat
         )
 
     # ========================================
