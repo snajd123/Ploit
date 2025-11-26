@@ -67,64 +67,15 @@ CREATE TABLE IF NOT EXISTS player_hand_summary (
     cold_call BOOLEAN DEFAULT FALSE,
     squeeze BOOLEAN DEFAULT FALSE,
 
-    -- Street visibility
-    saw_flop BOOLEAN DEFAULT FALSE,
-    saw_turn BOOLEAN DEFAULT FALSE,
-    saw_river BOOLEAN DEFAULT FALSE,
-
-    -- Continuation bet opportunities and actions (as aggressor)
-    cbet_opportunity_flop BOOLEAN DEFAULT FALSE,
-    cbet_made_flop BOOLEAN DEFAULT FALSE,
-    cbet_opportunity_turn BOOLEAN DEFAULT FALSE,
-    cbet_made_turn BOOLEAN DEFAULT FALSE,
-    cbet_opportunity_river BOOLEAN DEFAULT FALSE,
-    cbet_made_river BOOLEAN DEFAULT FALSE,
-
-    -- Facing continuation bets
-    faced_cbet_flop BOOLEAN DEFAULT FALSE,
-    folded_to_cbet_flop BOOLEAN DEFAULT FALSE,
-    called_cbet_flop BOOLEAN DEFAULT FALSE,
-    raised_cbet_flop BOOLEAN DEFAULT FALSE,
-
-    faced_cbet_turn BOOLEAN DEFAULT FALSE,
-    folded_to_cbet_turn BOOLEAN DEFAULT FALSE,
-    called_cbet_turn BOOLEAN DEFAULT FALSE,
-    raised_cbet_turn BOOLEAN DEFAULT FALSE,
-
-    faced_cbet_river BOOLEAN DEFAULT FALSE,
-    folded_to_cbet_river BOOLEAN DEFAULT FALSE,
-    called_cbet_river BOOLEAN DEFAULT FALSE,
-    raised_cbet_river BOOLEAN DEFAULT FALSE,
-
-    -- Check-raise flags
-    check_raise_opportunity_flop BOOLEAN DEFAULT FALSE,
-    check_raised_flop BOOLEAN DEFAULT FALSE,
-    check_raise_opportunity_turn BOOLEAN DEFAULT FALSE,
-    check_raised_turn BOOLEAN DEFAULT FALSE,
-    check_raise_opportunity_river BOOLEAN DEFAULT FALSE,
-    check_raised_river BOOLEAN DEFAULT FALSE,
-
-    -- Donk bets (betting into aggressor)
-    donk_bet_flop BOOLEAN DEFAULT FALSE,
-    donk_bet_turn BOOLEAN DEFAULT FALSE,
-    donk_bet_river BOOLEAN DEFAULT FALSE,
-
-    -- Float plays (call flop, bet/raise later when checked to)
-    float_flop BOOLEAN DEFAULT FALSE,
-
-    -- Steal and blind defense
+    -- Steal and blind defense (preflop)
     steal_attempt BOOLEAN DEFAULT FALSE,
     faced_steal BOOLEAN DEFAULT FALSE,
     fold_to_steal BOOLEAN DEFAULT FALSE,
     call_steal BOOLEAN DEFAULT FALSE,
     three_bet_vs_steal BOOLEAN DEFAULT FALSE,
 
-    -- Showdown
+    -- Basic outcome
     went_to_showdown BOOLEAN DEFAULT FALSE,
-    won_at_showdown BOOLEAN DEFAULT FALSE,
-    showed_bluff BOOLEAN DEFAULT FALSE,
-
-    -- Hand result
     won_hand BOOLEAN DEFAULT FALSE,
     profit_loss DECIMAL(10,2),
 
@@ -134,6 +85,7 @@ CREATE TABLE IF NOT EXISTS player_hand_summary (
 
 CREATE INDEX IF NOT EXISTS idx_player_summary_player ON player_hand_summary(player_name);
 CREATE INDEX IF NOT EXISTS idx_player_summary_hand ON player_hand_summary(hand_id);
+CREATE INDEX IF NOT EXISTS idx_player_summary_position ON player_hand_summary(position);
 
 -- ============================================
 -- Table 4: player_stats
