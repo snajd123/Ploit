@@ -925,11 +925,10 @@ async def test_stats_calculation(player_name: str, db: Session = Depends(get_db)
     "/api/database/clear",
     tags=["Database"],
     summary="Clear all player data (preserves GTO data)",
-    description="Delete all player/hand data but preserve GTO reference data. Requires API key."
+    description="Delete all player/hand data but preserve GTO reference data."
 )
 async def clear_database(
-    db: Session = Depends(get_db),
-    api_key: str = Depends(verify_api_key)
+    db: Session = Depends(get_db)
 ):
     """
     Clear all player data from the database while preserving GTO reference data.
