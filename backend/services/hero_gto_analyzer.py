@@ -513,8 +513,8 @@ class HeroGTOAnalyzer:
                 "biggest_mistakes": []
             }
 
-        # Store mistakes in database
-        self._store_mistakes(mistakes)
+        # Note: _store_mistakes disabled - hero_gto_mistakes table was dropped
+        # self._store_mistakes(mistakes)
 
         # Calculate aggregates
         total_ev_loss = sum(m.get('ev_loss_bb', 0) for m in mistakes)

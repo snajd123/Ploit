@@ -179,69 +179,6 @@ class GTOFrequency(Base):
         return f"<GTOFrequency(scenario={self.scenario_id}, hand={self.hand}, freq={self.frequency})>"
 
 
-class PlayerPreflopActions(Base):
-    """
-    Track player preflop actions per hand for GTO comparison.
-
-    Table: player_preflop_actions
-
-    HERO ONLY: This table is only populated when hole cards are known.
-    Uses combo-level GTO frequencies from gto_frequencies table.
-    """
-    __tablename__ = 'player_preflop_actions'
-
-    action_id = Column(Integer, primary_key=True, autoincrement=True)
-    hand_id = Column(BigInteger, ForeignKey('raw_hands.hand_id', ondelete='CASCADE'), nullable=False)
-    player_name = Column(String(100), nullable=False)
-    position = Column(String(10), nullable=False)
-    scenario_id = Column(Integer, ForeignKey('gto_scenarios.scenario_id'))
-    hole_cards = Column(String(10))  # e.g., "AhKd" - always known for hero
-    action_taken = Column(String(20), nullable=False)  # fold, call, raise, 3bet, 4bet, allin
-    gto_frequency = Column(DECIMAL(10, 8))  # Combo-level GTO frequency
-    is_gto_deviation = Column(Boolean, default=False)
-    deviation_severity = Column(DECIMAL(5, 4))  # 0-1, how far from GTO
-    is_hero = Column(Boolean, default=True)  # Always TRUE - this table only for known hole cards
-    created_at = Column(TIMESTAMP, default=func.current_timestamp())
-
-    __table_args__ = (
-        UniqueConstraint('hand_id', 'player_name', name='uq_preflop_hand_player'),
-    )
-
-    def __repr__(self) -> str:
-        return f"<PlayerPreflopActions(hand={self.hand_id}, player={self.player_name}, action={self.action_taken})>"
-
-
-class PlayerScenarioStats(Base):
-    """
-    Aggregated stats per player per scenario for leak detection.
-
-    Table: player_scenario_stats
-
-    For HERO (is_hero=TRUE): GTO comparison uses average of combo-level frequencies
-    For VILLAIN (is_hero=FALSE): GTO comparison uses gto_scenarios.gto_aggregate_freq
-    """
-    __tablename__ = 'player_scenario_stats'
-
-    stat_id = Column(Integer, primary_key=True, autoincrement=True)
-    player_name = Column(String(100), nullable=False)
-    scenario_id = Column(Integer, ForeignKey('gto_scenarios.scenario_id', ondelete='CASCADE'), nullable=False)
-    total_occurrences = Column(Integer, default=0)
-    action_taken_count = Column(Integer, default=0)  # Times player took this action
-    player_frequency = Column(DECIMAL(5, 4))  # Player's actual frequency
-    gto_frequency = Column(DECIMAL(5, 4))  # GTO frequency for comparison
-    deviation = Column(DECIMAL(5, 4))  # player_frequency - gto_frequency
-    abs_deviation = Column(DECIMAL(5, 4))  # Absolute deviation
-    is_hero = Column(Boolean, default=False)  # TRUE=hero (combo GTO), FALSE=villain (aggregate GTO)
-    last_updated = Column(TIMESTAMP, default=func.current_timestamp())
-
-    __table_args__ = (
-        UniqueConstraint('player_name', 'scenario_id', name='uq_player_scenario'),
-    )
-
-    def __repr__(self) -> str:
-        return f"<PlayerScenarioStats(player={self.player_name}, scenario={self.scenario_id}, dev={self.deviation})>"
-
-
 class PlayerStats(Base):
     """
     Pre-calculated preflop statistics and composite metrics.

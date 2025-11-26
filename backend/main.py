@@ -1189,6 +1189,288 @@ async def get_player_gto_analysis(
 
 
 @app.get(
+    "/api/players/{player_name}/scenario-hands",
+    tags=["Players"],
+    summary="Get hands for a specific GTO scenario",
+    description="Drill down into hands for a specific position/scenario matchup with GTO comparison"
+)
+async def get_scenario_hands(
+    player_name: str,
+    scenario: str = Query(..., description="Scenario type: opening, defense, facing_3bet, facing_4bet"),
+    position: str = Query(..., description="Player's position: UTG, MP, CO, BTN, SB, BB"),
+    vs_position: Optional[str] = Query(None, description="Opponent position for matchup scenarios"),
+    limit: int = Query(50, ge=1, le=200, description="Max hands to return"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get individual hands for a specific scenario to analyze GTO deviations.
+
+    Returns hands where the player was in the specified scenario, showing
+    what action they took vs what GTO recommends.
+    """
+    try:
+        # Validate inputs
+        validated_name = InputValidator.validate_player_name(player_name)
+        valid_scenarios = ['opening', 'defense', 'facing_3bet', 'facing_4bet']
+        if scenario not in valid_scenarios:
+            raise HTTPException(status_code=400, detail=f"Invalid scenario. Must be one of: {valid_scenarios}")
+
+        valid_positions = ['UTG', 'MP', 'HJ', 'CO', 'BTN', 'SB', 'BB']
+        if position.upper() not in valid_positions:
+            raise HTTPException(status_code=400, detail=f"Invalid position. Must be one of: {valid_positions}")
+
+        position = position.upper()
+        if vs_position:
+            vs_position = vs_position.upper()
+
+        # Get GTO frequencies for this scenario
+        gto_query = text("""
+            SELECT action, gto_aggregate_freq * 100 as freq
+            FROM gto_scenarios
+            WHERE category = :scenario
+            AND position = :position
+            AND (opponent_position = :vs_position OR (:vs_position IS NULL AND opponent_position IS NULL))
+        """)
+        gto_result = db.execute(gto_query, {
+            "scenario": scenario,
+            "position": position,
+            "vs_position": vs_position
+        })
+        gto_freqs = {row[0]: float(row[1]) if row[1] else 0 for row in gto_result}
+
+        # If no specific GTO found, get average for position
+        if not gto_freqs:
+            gto_avg_query = text("""
+                SELECT action, AVG(gto_aggregate_freq) * 100 as freq
+                FROM gto_scenarios
+                WHERE category = :scenario
+                AND position = :position
+                GROUP BY action
+            """)
+            gto_avg_result = db.execute(gto_avg_query, {"scenario": scenario, "position": position})
+            gto_freqs = {row[0]: float(row[1]) if row[1] else 0 for row in gto_avg_result}
+
+        # Build the query based on scenario type
+        if scenario == 'opening':
+            # Opening: hands where player was first to act and could open
+            hands_query = text("""
+                SELECT
+                    phs.hand_id,
+                    rh.timestamp,
+                    rh.stake_level,
+                    phs.pfr as raised,
+                    phs.vpip,
+                    CASE
+                        WHEN phs.pfr = true THEN 'raise'
+                        WHEN phs.vpip = false THEN 'fold'
+                        ELSE 'limp'
+                    END as player_action
+                FROM player_hand_summary phs
+                JOIN raw_hands rh ON phs.hand_id = rh.hand_id
+                WHERE phs.player_name = :player_name
+                AND phs.position = :position
+                AND phs.faced_raise = false
+                ORDER BY rh.timestamp DESC
+                LIMIT :limit
+            """)
+            params = {"player_name": validated_name, "position": position, "limit": limit}
+
+        elif scenario == 'defense':
+            # Defense: hands where player faced an open
+            if vs_position:
+                hands_query = text("""
+                    SELECT
+                        phs.hand_id,
+                        rh.timestamp,
+                        rh.stake_level,
+                        phs.raiser_position as vs_pos,
+                        CASE
+                            WHEN phs.vpip = false THEN 'fold'
+                            WHEN phs.made_three_bet = true THEN '3bet'
+                            ELSE 'call'
+                        END as player_action
+                    FROM player_hand_summary phs
+                    JOIN raw_hands rh ON phs.hand_id = rh.hand_id
+                    WHERE phs.player_name = :player_name
+                    AND phs.position = :position
+                    AND phs.faced_raise = true
+                    AND phs.raiser_position = :vs_position
+                    ORDER BY rh.timestamp DESC
+                    LIMIT :limit
+                """)
+                params = {"player_name": validated_name, "position": position, "vs_position": vs_position, "limit": limit}
+            else:
+                hands_query = text("""
+                    SELECT
+                        phs.hand_id,
+                        rh.timestamp,
+                        rh.stake_level,
+                        phs.raiser_position as vs_pos,
+                        CASE
+                            WHEN phs.vpip = false THEN 'fold'
+                            WHEN phs.made_three_bet = true THEN '3bet'
+                            ELSE 'call'
+                        END as player_action
+                    FROM player_hand_summary phs
+                    JOIN raw_hands rh ON phs.hand_id = rh.hand_id
+                    WHERE phs.player_name = :player_name
+                    AND phs.position = :position
+                    AND phs.faced_raise = true
+                    ORDER BY rh.timestamp DESC
+                    LIMIT :limit
+                """)
+                params = {"player_name": validated_name, "position": position, "limit": limit}
+
+        elif scenario == 'facing_3bet':
+            # Facing 3-bet: hands where player opened and faced a 3-bet
+            if vs_position:
+                hands_query = text("""
+                    SELECT
+                        phs.hand_id,
+                        rh.timestamp,
+                        rh.stake_level,
+                        phs.three_bettor_position as vs_pos,
+                        CASE
+                            WHEN phs.folded_to_three_bet = true THEN 'fold'
+                            WHEN phs.four_bet = true THEN '4bet'
+                            WHEN phs.called_three_bet = true THEN 'call'
+                            ELSE 'unknown'
+                        END as player_action
+                    FROM player_hand_summary phs
+                    JOIN raw_hands rh ON phs.hand_id = rh.hand_id
+                    WHERE phs.player_name = :player_name
+                    AND phs.position = :position
+                    AND phs.faced_three_bet = true
+                    AND phs.three_bettor_position = :vs_position
+                    ORDER BY rh.timestamp DESC
+                    LIMIT :limit
+                """)
+                params = {"player_name": validated_name, "position": position, "vs_position": vs_position, "limit": limit}
+            else:
+                hands_query = text("""
+                    SELECT
+                        phs.hand_id,
+                        rh.timestamp,
+                        rh.stake_level,
+                        phs.three_bettor_position as vs_pos,
+                        CASE
+                            WHEN phs.folded_to_three_bet = true THEN 'fold'
+                            WHEN phs.four_bet = true THEN '4bet'
+                            WHEN phs.called_three_bet = true THEN 'call'
+                            ELSE 'unknown'
+                        END as player_action
+                    FROM player_hand_summary phs
+                    JOIN raw_hands rh ON phs.hand_id = rh.hand_id
+                    WHERE phs.player_name = :player_name
+                    AND phs.position = :position
+                    AND phs.faced_three_bet = true
+                    ORDER BY rh.timestamp DESC
+                    LIMIT :limit
+                """)
+                params = {"player_name": validated_name, "position": position, "limit": limit}
+
+        elif scenario == 'facing_4bet':
+            # Facing 4-bet: hands where player 3-bet and faced a 4-bet
+            if vs_position:
+                hands_query = text("""
+                    SELECT
+                        phs.hand_id,
+                        rh.timestamp,
+                        rh.stake_level,
+                        phs.raiser_position as vs_pos,
+                        CASE
+                            WHEN phs.folded_to_four_bet = true THEN 'fold'
+                            WHEN phs.five_bet = true THEN '5bet'
+                            WHEN phs.called_four_bet = true THEN 'call'
+                            ELSE 'unknown'
+                        END as player_action
+                    FROM player_hand_summary phs
+                    JOIN raw_hands rh ON phs.hand_id = rh.hand_id
+                    WHERE phs.player_name = :player_name
+                    AND phs.position = :position
+                    AND phs.faced_four_bet = true
+                    AND phs.raiser_position = :vs_position
+                    ORDER BY rh.timestamp DESC
+                    LIMIT :limit
+                """)
+                params = {"player_name": validated_name, "position": position, "vs_position": vs_position, "limit": limit}
+            else:
+                hands_query = text("""
+                    SELECT
+                        phs.hand_id,
+                        rh.timestamp,
+                        rh.stake_level,
+                        phs.raiser_position as vs_pos,
+                        CASE
+                            WHEN phs.folded_to_four_bet = true THEN 'fold'
+                            WHEN phs.five_bet = true THEN '5bet'
+                            WHEN phs.called_four_bet = true THEN 'call'
+                            ELSE 'unknown'
+                        END as player_action
+                    FROM player_hand_summary phs
+                    JOIN raw_hands rh ON phs.hand_id = rh.hand_id
+                    WHERE phs.player_name = :player_name
+                    AND phs.position = :position
+                    AND phs.faced_four_bet = true
+                    ORDER BY rh.timestamp DESC
+                    LIMIT :limit
+                """)
+                params = {"player_name": validated_name, "position": position, "limit": limit}
+
+        # Execute query
+        result = db.execute(hands_query, params)
+        hands = []
+
+        for row in result.mappings():
+            player_action = row['player_action']
+
+            # Determine if this was a GTO mistake
+            # A "mistake" is taking an action that GTO does very rarely
+            action_freq = gto_freqs.get(player_action, 0)
+            is_mistake = action_freq < 15  # If GTO does this less than 15%, it's likely a mistake
+
+            # Find what GTO recommends most
+            gto_recommended = max(gto_freqs.keys(), key=lambda k: gto_freqs[k]) if gto_freqs else None
+
+            hands.append({
+                'hand_id': row['hand_id'],
+                'timestamp': row['timestamp'].isoformat() if row['timestamp'] else None,
+                'stake_level': row['stake_level'],
+                'vs_position': row.get('vs_pos'),
+                'player_action': player_action,
+                'gto_frequencies': gto_freqs,
+                'gto_recommended': gto_recommended,
+                'is_mistake': is_mistake,
+                'action_gto_freq': round(action_freq, 1)
+            })
+
+        # Calculate summary stats
+        total_hands = len(hands)
+        mistakes = sum(1 for h in hands if h['is_mistake'])
+
+        return {
+            'player': validated_name,
+            'scenario': scenario,
+            'position': position,
+            'vs_position': vs_position,
+            'gto_frequencies': gto_freqs,
+            'total_hands': total_hands,
+            'mistakes': mistakes,
+            'mistake_rate': round(mistakes / total_hands * 100, 1) if total_hands > 0 else 0,
+            'hands': hands
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting scenario hands: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving scenario hands: {str(e)}"
+        )
+
+
+@app.get(
     "/api/database/stats",
     response_model=DatabaseStatsResponse,
     tags=["Database"],

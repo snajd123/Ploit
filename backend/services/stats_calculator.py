@@ -898,12 +898,12 @@ class StatsCalculator:
         else:
             positional_awareness = "poor"
 
-        # 4. Showdown Tendency
+        # 4. Showdown Tendency (preflop-only: using fixed baseline)
         if wtsd is None:
             showdown_tendency = "unknown"
         else:
             wtsd_val = float(wtsd)
-            gto_wtsd = SHOWDOWN_BASELINES['wtsd']
+            gto_wtsd = 28.0  # GTO WTSD baseline
             if wtsd_val > gto_wtsd + 8:
                 showdown_tendency = "station"  # Goes to showdown too much
             elif wtsd_val < gto_wtsd - 8:
@@ -1038,15 +1038,14 @@ class StatsCalculator:
         """
         leaks = []
 
+        # Preflop-only stats with GTO baselines
         stat_mappings = [
             ('vpip_pct', 'vpip', PREFLOP_GLOBAL['vpip']),
             ('pfr_pct', 'pfr', PREFLOP_GLOBAL['pfr']),
             ('three_bet_pct', 'three_bet', PREFLOP_GLOBAL['three_bet']),
             ('fold_to_three_bet_pct', 'fold_to_three_bet', PREFLOP_GLOBAL['fold_to_three_bet']),
-            ('cbet_flop_pct', 'cbet_flop', POSTFLOP_BASELINES['cbet_flop']),
-            ('fold_to_cbet_flop_pct', 'fold_to_cbet_flop', POSTFLOP_BASELINES['fold_to_cbet_flop']),
-            ('wtsd_pct', 'wtsd', SHOWDOWN_BASELINES['wtsd']),
-            ('wsd_pct', 'wsd', SHOWDOWN_BASELINES['wsd']),
+            ('four_bet_pct', 'four_bet', PREFLOP_GLOBAL['four_bet']),
+            ('cold_call_pct', 'cold_call', PREFLOP_GLOBAL['cold_call']),
         ]
 
         for db_key, stat_name, baseline in stat_mappings:

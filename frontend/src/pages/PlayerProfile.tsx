@@ -1,7 +1,7 @@
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useState, useMemo } from 'react';
-import { ArrowLeft, TrendingUp, Target, Shield, Crosshair, AlertTriangle, BarChart3, User } from 'lucide-react';
+import { ArrowLeft, TrendingUp, Target, Shield, Crosshair, AlertTriangle, BarChart3, User, X } from 'lucide-react';
 import { api } from '../services/api';
 import PlayerBadge from '../components/PlayerBadge';
 import StatCard from '../components/StatCard';
@@ -9,11 +9,17 @@ import { Tooltip } from '../components/Tooltip';
 import MetricChart from '../components/MetricChart';
 import PositionalVPIPChart from '../components/PositionalVPIPChart';
 import PreflopAggressionChart from '../components/PreflopAggressionChart';
-import ExploitDashboard from '../components/ExploitDashboard';
-import BaselineComparison from '../components/BaselineComparison';
-import DeviationHeatmap from '../components/DeviationHeatmap';
+// Note: ExploitDashboard, BaselineComparison, DeviationHeatmap disabled - require player_scenario_stats table
 import { LeakSummary, LeaksList } from '../components/LeakCard';
 import { STAT_DEFINITIONS, getStatDefinitionsWithGTO, GTOOptimalRange } from '../config/statDefinitions';
+import type { ScenarioHandsResponse } from '../types';
+
+// Scenario drill-down selection
+interface ScenarioSelection {
+  scenario: 'opening' | 'defense' | 'facing_3bet' | 'facing_4bet';
+  position: string;
+  vsPosition?: string;
+}
 
 type TabId = 'overview' | 'gto' | 'leaks' | 'charts';
 
@@ -137,10 +143,182 @@ const GTOScenarioTable = ({
   );
 };
 
+// Scenario Hands Drill-down Modal
+const ScenarioHandsModal = ({
+  data,
+  isLoading,
+  onClose,
+  selection
+}: {
+  data: ScenarioHandsResponse | undefined;
+  isLoading: boolean;
+  onClose: () => void;
+  selection: ScenarioSelection;
+}) => {
+  const scenarioLabels: Record<string, string> = {
+    opening: 'Opening Range',
+    defense: 'Defense vs Open',
+    facing_3bet: 'Facing 3-Bet',
+    facing_4bet: 'Facing 4-Bet'
+  };
+
+  const actionColors: Record<string, string> = {
+    fold: 'text-gray-600 bg-gray-100',
+    call: 'text-green-700 bg-green-100',
+    raise: 'text-blue-700 bg-blue-100',
+    '3bet': 'text-orange-700 bg-orange-100',
+    '4bet': 'text-red-700 bg-red-100',
+    '5bet': 'text-purple-700 bg-purple-100',
+    limp: 'text-yellow-700 bg-yellow-100',
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4 flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-bold text-white">
+              {scenarioLabels[selection.scenario]} - {selection.position}
+              {selection.vsPosition && ` vs ${selection.vsPosition}`}
+            </h2>
+            {data && (
+              <p className="text-blue-100 text-sm mt-1">
+                {data.total_hands} hands • {data.mistakes} mistakes ({data.mistake_rate}%)
+              </p>
+            )}
+          </div>
+          <button
+            onClick={onClose}
+            className="text-white/80 hover:text-white transition-colors"
+          >
+            <X size={24} />
+          </button>
+        </div>
+
+        {/* GTO Reference Bar */}
+        {data && Object.keys(data.gto_frequencies).length > 0 && (
+          <div className="bg-blue-50 px-6 py-3 border-b border-blue-100">
+            <div className="text-sm text-blue-800 font-medium mb-2">GTO Frequencies:</div>
+            <div className="flex gap-4 flex-wrap">
+              {Object.entries(data.gto_frequencies)
+                .sort((a, b) => b[1] - a[1])
+                .map(([action, freq]) => (
+                  <span key={action} className="text-sm">
+                    <span className={`px-2 py-0.5 rounded ${actionColors[action] || 'bg-gray-100'}`}>
+                      {action}
+                    </span>
+                    <span className="text-blue-600 ml-1 font-medium">{freq.toFixed(1)}%</span>
+                  </span>
+                ))}
+            </div>
+          </div>
+        )}
+
+        {/* Content */}
+        <div className="overflow-y-auto max-h-[60vh] p-6">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin h-8 w-8 border-2 border-blue-600 border-t-transparent rounded-full" />
+            </div>
+          ) : data && data.hands.length > 0 ? (
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-white">
+                <tr className="border-b-2 border-gray-200">
+                  <th className="text-left py-3 px-3 font-semibold text-gray-700">Hand ID</th>
+                  <th className="text-left py-3 px-3 font-semibold text-gray-700">Date</th>
+                  <th className="text-left py-3 px-3 font-semibold text-gray-700">Stakes</th>
+                  {selection.vsPosition === undefined && (
+                    <th className="text-left py-3 px-3 font-semibold text-gray-700">vs Position</th>
+                  )}
+                  <th className="text-left py-3 px-3 font-semibold text-gray-700">Your Action</th>
+                  <th className="text-right py-3 px-3 font-semibold text-gray-700">GTO Freq</th>
+                  <th className="text-center py-3 px-3 font-semibold text-gray-700">Assessment</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.hands.map((hand) => (
+                  <tr
+                    key={hand.hand_id}
+                    className={`border-b border-gray-100 hover:bg-gray-50 ${
+                      hand.is_mistake ? 'bg-red-50/50' : ''
+                    }`}
+                  >
+                    <td className="py-3 px-3 font-mono text-gray-600">{hand.hand_id}</td>
+                    <td className="py-3 px-3 text-gray-500">
+                      {hand.timestamp ? new Date(hand.timestamp).toLocaleDateString() : '-'}
+                    </td>
+                    <td className="py-3 px-3 text-gray-600">{hand.stake_level || '-'}</td>
+                    {selection.vsPosition === undefined && (
+                      <td className="py-3 px-3 text-gray-600">{hand.vs_position || '-'}</td>
+                    )}
+                    <td className="py-3 px-3">
+                      <span className={`px-2 py-1 rounded font-medium ${
+                        actionColors[hand.player_action] || 'bg-gray-100'
+                      }`}>
+                        {hand.player_action}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3 text-right">
+                      <span className={hand.action_gto_freq < 15 ? 'text-red-600 font-medium' : 'text-gray-600'}>
+                        {hand.action_gto_freq.toFixed(1)}%
+                      </span>
+                    </td>
+                    <td className="py-3 px-3 text-center">
+                      {hand.is_mistake ? (
+                        <span className="inline-flex items-center text-red-600 text-xs font-medium">
+                          <AlertTriangle size={14} className="mr-1" />
+                          Mistake
+                        </span>
+                      ) : (
+                        <span className="text-green-600 text-xs font-medium">OK</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="text-center text-gray-500 py-12">
+              No hands found for this scenario
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="border-t border-gray-200 px-6 py-4 bg-gray-50 flex justify-between items-center">
+          <div className="text-sm text-gray-500">
+            Hands where GTO frequency &lt; 15% are marked as potential mistakes
+          </div>
+          <button
+            onClick={onClose}
+            className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const PlayerProfile = () => {
   const { playerName } = useParams<{ playerName: string }>();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<TabId>('overview');
+  const [selectedScenario, setSelectedScenario] = useState<ScenarioSelection | null>(null);
+
+  // Query for scenario hands drill-down
+  const { data: scenarioHandsData, isLoading: scenarioHandsLoading } = useQuery({
+    queryKey: ['scenarioHands', playerName, selectedScenario],
+    queryFn: () => api.getScenarioHands(
+      playerName!,
+      selectedScenario!.scenario,
+      selectedScenario!.position,
+      selectedScenario!.vsPosition
+    ),
+    enabled: !!playerName && !!selectedScenario,
+  });
 
   const { data: player, isLoading, error } = useQuery({
     queryKey: ['player', playerName],
@@ -148,11 +326,12 @@ const PlayerProfile = () => {
     enabled: !!playerName,
   });
 
-  const { data: exploitAnalysis } = useQuery({
-    queryKey: ['playerExploits', playerName],
-    queryFn: () => api.analyzePlayerExploits(playerName!),
-    enabled: !!playerName,
-  });
+  // Note: exploitAnalysis disabled - requires player_scenario_stats table to be populated
+  // const { data: exploitAnalysis } = useQuery({
+  //   queryKey: ['playerExploits', playerName],
+  //   queryFn: () => api.analyzePlayerExploits(playerName!),
+  //   enabled: !!playerName,
+  // });
 
   const { data: leakAnalysis } = useQuery({
     queryKey: ['playerLeaks', playerName],
@@ -536,7 +715,15 @@ const PlayerProfile = () => {
                         </thead>
                         <tbody>
                           {gtoAnalysis.facing_3bet_matchups.map((row, idx) => (
-                            <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
+                            <tr
+                              key={idx}
+                              className="border-b border-gray-100 hover:bg-blue-50 cursor-pointer transition-colors"
+                              onClick={() => setSelectedScenario({
+                                scenario: 'facing_3bet',
+                                position: row.position,
+                                vsPosition: row.vs_position
+                              })}
+                            >
                               <td className="py-2 px-3 font-medium">{row.position}</td>
                               <td className="py-2 px-3 text-gray-600">{row.vs_position}</td>
                               <td className="py-2 px-3 text-right text-gray-500">{row.sample_size || '-'}</td>
@@ -560,6 +747,7 @@ const PlayerProfile = () => {
                         </tbody>
                       </table>
                     </div>
+                    <p className="text-xs text-gray-400 mt-2">Click a row to see individual hands and GTO mistakes</p>
                   </div>
                 )}
 
@@ -620,7 +808,15 @@ const PlayerProfile = () => {
                         </thead>
                         <tbody>
                           {gtoAnalysis.position_matchups.map((row, idx) => (
-                            <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
+                            <tr
+                              key={idx}
+                              className="border-b border-gray-100 hover:bg-blue-50 cursor-pointer transition-colors"
+                              onClick={() => setSelectedScenario({
+                                scenario: 'defense',
+                                position: row.position,
+                                vsPosition: row.vs_position
+                              })}
+                            >
                               <td className="py-2 px-3 font-medium">{row.position}</td>
                               <td className="py-2 px-3 text-gray-600">{row.vs_position}</td>
                               <td className="py-2 px-3 text-right text-gray-500">{row.sample_size || '-'}</td>
@@ -644,7 +840,7 @@ const PlayerProfile = () => {
                         </tbody>
                       </table>
                     </div>
-                    <p className="text-xs text-gray-400 mt-2">Note: Player data requires hands to be re-parsed after upgrading to track raiser positions.</p>
+                    <p className="text-xs text-gray-400 mt-2">Click a row to see individual hands and GTO mistakes</p>
                   </div>
                 )}
 
@@ -673,7 +869,15 @@ const PlayerProfile = () => {
                         </thead>
                         <tbody>
                           {gtoAnalysis.facing_4bet_reference.map((row, idx) => (
-                            <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
+                            <tr
+                              key={idx}
+                              className="border-b border-gray-100 hover:bg-blue-50 cursor-pointer transition-colors"
+                              onClick={() => setSelectedScenario({
+                                scenario: 'facing_4bet',
+                                position: row.position,
+                                vsPosition: row.vs_position
+                              })}
+                            >
                               <td className="py-2 px-3 font-medium">{row.position}</td>
                               <td className="py-2 px-3 text-gray-600">{row.vs_position}</td>
                               <td className="py-2 px-3 text-right text-gray-500">{row.sample_size || '-'}</td>
@@ -697,7 +901,7 @@ const PlayerProfile = () => {
                         </tbody>
                       </table>
                     </div>
-                    <p className="text-xs text-gray-400 mt-2">Note: Player data requires hands to be re-parsed after upgrading to track 4-bet scenarios.</p>
+                    <p className="text-xs text-gray-400 mt-2">Click a row to see individual hands and GTO mistakes</p>
                   </div>
                 )}
               </>
@@ -769,35 +973,7 @@ const PlayerProfile = () => {
                   <LeaksList leaks={leakAnalysis.leaks} maxLeaks={15} />
                 </div>
 
-                {/* Exploit Analysis */}
-                {exploitAnalysis && exploitAnalysis.analyses && exploitAnalysis.analyses.length > 0 && (
-                  <>
-                    <ExploitDashboard
-                      deviations={
-                        exploitAnalysis.analyses
-                          .filter(a => a.comparison_type === 'baseline' || a.scenario === 'Poker Theory Baselines')
-                          .flatMap(a => a.deviations)
-                      }
-                      playerName={player.player_name}
-                    />
-                    <DeviationHeatmap
-                      deviations={
-                        exploitAnalysis.analyses
-                          .filter(a => a.comparison_type === 'baseline' || a.scenario === 'Poker Theory Baselines')
-                          .flatMap(a => a.deviations)
-                      }
-                      playerName={player.player_name}
-                    />
-                    <BaselineComparison
-                      deviations={
-                        exploitAnalysis.analyses
-                          .filter(a => a.comparison_type === 'baseline' || a.scenario === 'Poker Theory Baselines')
-                          .flatMap(a => a.deviations)
-                      }
-                      playerName={player.player_name}
-                    />
-                  </>
-                )}
+                {/* Exploit Analysis - temporarily disabled while player_scenario_stats is being populated */}
               </>
             ) : (
               <div className="card text-center text-gray-500 py-12">
@@ -886,6 +1062,16 @@ const PlayerProfile = () => {
           </div>
         )}
       </div>
+
+      {/* Scenario Drill-down Modal */}
+      {selectedScenario && (
+        <ScenarioHandsModal
+          data={scenarioHandsData}
+          isLoading={scenarioHandsLoading}
+          onClose={() => setSelectedScenario(null)}
+          selection={selectedScenario}
+        />
+      )}
     </div>
   );
 };

@@ -22,6 +22,7 @@ import type {
   UploadHistoryResponse,
   GTOOptimalRangesResponse,
   GTOAnalysisResponse,
+  ScenarioHandsResponse,
 } from '../types';
 
 class ApiClient {
@@ -110,6 +111,28 @@ class ApiClient {
   // Get player GTO analysis
   async getPlayerGTOAnalysis(playerName: string): Promise<GTOAnalysisResponse> {
     const response = await this.client.get<GTOAnalysisResponse>(`/api/players/${encodeURIComponent(playerName)}/gto-analysis`);
+    return response.data;
+  }
+
+  // Get scenario hands for drill-down
+  async getScenarioHands(
+    playerName: string,
+    scenario: string,
+    position: string,
+    vsPosition?: string,
+    limit: number = 50
+  ): Promise<ScenarioHandsResponse> {
+    const params = new URLSearchParams({
+      scenario,
+      position,
+      limit: limit.toString()
+    });
+    if (vsPosition) {
+      params.append('vs_position', vsPosition);
+    }
+    const response = await this.client.get<ScenarioHandsResponse>(
+      `/api/players/${encodeURIComponent(playerName)}/scenario-hands?${params}`
+    );
     return response.data;
   }
 

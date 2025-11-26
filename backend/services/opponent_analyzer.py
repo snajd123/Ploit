@@ -44,9 +44,9 @@ class OpponentAnalyzer:
             if analysis:
                 results.append(analysis)
 
-        # Store in database
-        if results:
-            self._store_opponent_stats(results)
+        # Note: _store_opponent_stats disabled - opponent_session_stats table was dropped
+        # if results:
+        #     self._store_opponent_stats(results)
 
         return results
 

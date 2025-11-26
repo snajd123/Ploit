@@ -340,6 +340,31 @@ export interface GTOAnalysisResponse {
   }>;
 }
 
+// Scenario Hands Drill-down Types
+export interface ScenarioHand {
+  hand_id: number;
+  timestamp: string | null;
+  stake_level: string | null;
+  vs_position: string | null;
+  player_action: string;
+  gto_frequencies: Record<string, number>;
+  gto_recommended: string | null;
+  is_mistake: boolean;
+  action_gto_freq: number;
+}
+
+export interface ScenarioHandsResponse {
+  player: string;
+  scenario: string;
+  position: string;
+  vs_position: string | null;
+  gto_frequencies: Record<string, number>;
+  total_hands: number;
+  mistakes: number;
+  mistake_rate: number;
+  hands: ScenarioHand[];
+}
+
 // GTO Scenario Types (Preflop-only)
 export type GTOCategory = 'opening' | 'defense' | 'facing_3bet' | 'facing_4bet';
 

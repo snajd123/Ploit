@@ -4,11 +4,9 @@ from backend.models.database_models import (
     Base,
     RawHand,
     HandAction,
-    PlayerHandSummary,  # DEPRECATED but kept for compatibility
+    PlayerHandSummary,
     GTOScenario,
     GTOFrequency,
-    PlayerPreflopActions,
-    PlayerScenarioStats,
     PlayerStats,
     UploadSession
 )
@@ -17,11 +15,9 @@ __all__ = [
     'Base',
     'RawHand',
     'HandAction',
-    'PlayerHandSummary',  # DEPRECATED
+    'PlayerHandSummary',
     'GTOScenario',
     'GTOFrequency',
-    'PlayerPreflopActions',
-    'PlayerScenarioStats',
     'PlayerStats',
     'UploadSession'
 ]
