@@ -985,14 +985,22 @@ async def clear_database(
 
         logger.warning("Starting database reset operation (preserving GTO data)")
 
-        # Delete in order respecting foreign keys
-        for table in tables_to_clear:
-            try:
-                db.execute(text(f'DELETE FROM {table}'))
-            except Exception as e:
-                logger.warning(f"Could not clear {table}: {e}")
-
-        db.commit()
+        # Use TRUNCATE CASCADE to handle all foreign key dependencies automatically
+        # This is faster and handles circular/complex FK relationships
+        tables_str = ', '.join(tables_to_clear)
+        try:
+            db.execute(text(f'TRUNCATE TABLE {tables_str} CASCADE'))
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            logger.error(f"TRUNCATE failed: {e}, trying individual deletes...")
+            # Fallback: delete with CASCADE on each table
+            for table in tables_to_clear:
+                try:
+                    db.execute(text(f'TRUNCATE TABLE {table} CASCADE'))
+                except Exception as e2:
+                    logger.warning(f"Could not clear {table}: {e2}")
+            db.commit()
 
         total_deleted = sum(counts_before.values())
         logger.warning(f"Database reset complete: {total_deleted} total rows deleted, GTO data preserved")
