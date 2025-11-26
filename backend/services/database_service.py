@@ -637,7 +637,14 @@ class DatabaseService:
 
             players = query.all()
 
-            return [{'player_name': p.player_name, 'total_hands': p.total_hands} for p in players]
+            return [{
+                'player_name': p.player_name,
+                'total_hands': p.total_hands,
+                'vpip_pct': float(p.vpip_pct) if p.vpip_pct else None,
+                'pfr_pct': float(p.pfr_pct) if p.pfr_pct else None,
+                'player_type': p.player_type,
+                'exploitability_index': float(p.exploitability_index) if p.exploitability_index else None
+            } for p in players]
 
         except SQLAlchemyError as e:
             logger.error(f"Error getting all players: {str(e)}")

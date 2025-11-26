@@ -8,7 +8,7 @@ import type { PlayerType } from '../types';
 
 const PlayersList = () => {
   const navigate = useNavigate();
-  const [minHands, setMinHands] = useState(100);
+  const [minHands, setMinHands] = useState(0);
   const [sortBy, setSortBy] = useState('total_hands');
 
   // New filter states
