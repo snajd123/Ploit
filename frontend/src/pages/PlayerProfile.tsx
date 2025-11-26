@@ -542,6 +542,70 @@ const PlayerProfile = () => {
                     { key: 'frequency_diff', label: 'Diff', isDiff: true },
                   ]}
                 />
+
+                {/* GTO Reference: Position-Specific Defense Matchups */}
+                {gtoAnalysis.position_matchups && gtoAnalysis.position_matchups.length > 0 && (
+                  <div className="card mb-6">
+                    <h3 className="font-semibold text-gray-900 mb-2">GTO Reference: Defense by Matchup</h3>
+                    <p className="text-sm text-gray-500 mb-4">Optimal defense frequencies vary significantly based on who opened</p>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-gray-200">
+                            <th className="text-left py-2 px-3 font-medium text-gray-600">Your Position</th>
+                            <th className="text-left py-2 px-3 font-medium text-gray-600">vs Opener</th>
+                            <th className="text-right py-2 px-3 font-medium text-blue-600 bg-blue-50">GTO Fold</th>
+                            <th className="text-right py-2 px-3 font-medium text-blue-600 bg-blue-50">GTO Call</th>
+                            <th className="text-right py-2 px-3 font-medium text-blue-600 bg-blue-50">GTO 3-Bet</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {gtoAnalysis.position_matchups.map((row, idx) => (
+                            <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
+                              <td className="py-2 px-3 font-medium">{row.position}</td>
+                              <td className="py-2 px-3 text-gray-600">{row.vs_position}</td>
+                              <td className="py-2 px-3 text-right text-blue-600 bg-blue-50/50">{row.gto_fold.toFixed(1)}%</td>
+                              <td className="py-2 px-3 text-right text-blue-600 bg-blue-50/50">{row.gto_call.toFixed(1)}%</td>
+                              <td className="py-2 px-3 text-right text-blue-600 bg-blue-50/50">{row.gto_3bet.toFixed(1)}%</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* GTO Reference: Facing 4-Bet */}
+                {gtoAnalysis.facing_4bet_reference && gtoAnalysis.facing_4bet_reference.length > 0 && (
+                  <div className="card mb-6">
+                    <h3 className="font-semibold text-gray-900 mb-2">GTO Reference: Facing 4-Bet</h3>
+                    <p className="text-sm text-gray-500 mb-4">How to respond after you 3-bet and face a 4-bet</p>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-gray-200">
+                            <th className="text-left py-2 px-3 font-medium text-gray-600">Your Position</th>
+                            <th className="text-left py-2 px-3 font-medium text-gray-600">vs 4-Bettor</th>
+                            <th className="text-right py-2 px-3 font-medium text-blue-600 bg-blue-50">GTO Fold</th>
+                            <th className="text-right py-2 px-3 font-medium text-blue-600 bg-blue-50">GTO Call</th>
+                            <th className="text-right py-2 px-3 font-medium text-blue-600 bg-blue-50">GTO 5-Bet</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {gtoAnalysis.facing_4bet_reference.map((row, idx) => (
+                            <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
+                              <td className="py-2 px-3 font-medium">{row.position}</td>
+                              <td className="py-2 px-3 text-gray-600">{row.vs_position}</td>
+                              <td className="py-2 px-3 text-right text-blue-600 bg-blue-50/50">{row.gto_fold.toFixed(1)}%</td>
+                              <td className="py-2 px-3 text-right text-blue-600 bg-blue-50/50">{row.gto_call.toFixed(1)}%</td>
+                              <td className="py-2 px-3 text-right text-blue-600 bg-blue-50/50">{row.gto_5bet.toFixed(1)}%</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </>
             ) : (
               <div className="card text-center text-gray-500 py-12">

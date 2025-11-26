@@ -785,7 +785,7 @@ async def get_player_gto_analysis(
             })
 
         # ============================================
-        # 4. BLIND DEFENSE (vs steals)
+        # 4. BLIND DEFENSE (vs steals) - Using actual GTO from database
         # ============================================
         blind_defense_query = text("""
             SELECT
@@ -810,17 +810,31 @@ async def get_player_gto_analysis(
         blind_result = db.execute(blind_defense_query, {"player_name": validated_name})
         blind_rows = [dict(row._mapping) for row in blind_result]
 
+        # Get GTO blind defense frequencies from database (vs BTN which is typical steal)
+        gto_blind_result = db.execute(text("""
+            SELECT position, action, gto_aggregate_freq * 100 as freq
+            FROM gto_scenarios
+            WHERE category = 'defense'
+            AND position IN ('BB', 'SB')
+            AND opponent_position = 'BTN'
+        """))
+        gto_blind = {}
+        for row in gto_blind_result:
+            pos, action, freq = row[0], row[1], float(row[2]) if row[2] else 0
+            if pos not in gto_blind:
+                gto_blind[pos] = {}
+            gto_blind[pos][action] = freq
+
         blind_defense = []
-        # GTO blind defense vs steal: ~55% fold, ~30% call, ~15% 3bet (approximate)
         for row in blind_rows:
             pos = row['position']
             fold = float(row['fold_pct']) if row['fold_pct'] else 0
             call = float(row['call_pct']) if row['call_pct'] else 0
             three_bet = float(row['three_bet_pct']) if row['three_bet_pct'] else 0
 
-            gto_fold = 55 if pos == 'BB' else 60
-            gto_call = 30 if pos == 'BB' else 25
-            gto_3bet = 15 if pos == 'BB' else 15
+            gto_call = gto_blind.get(pos, {}).get('call', 30)
+            gto_3bet = gto_blind.get(pos, {}).get('3bet', 15)
+            gto_fold = gto_blind.get(pos, {}).get('fold', 55)
 
             blind_defense.append({
                 'position': pos,
@@ -828,16 +842,16 @@ async def get_player_gto_analysis(
                 'player_fold': round(fold, 1),
                 'player_call': round(call, 1),
                 'player_3bet': round(three_bet, 1),
-                'gto_fold': gto_fold,
-                'gto_call': gto_call,
-                'gto_3bet': gto_3bet,
+                'gto_fold': round(gto_fold, 1),
+                'gto_call': round(gto_call, 1),
+                'gto_3bet': round(gto_3bet, 1),
                 'fold_diff': round(fold - gto_fold, 1),
                 'call_diff': round(call - gto_call, 1),
                 '3bet_diff': round(three_bet - gto_3bet, 1),
             })
 
         # ============================================
-        # 5. STEAL ATTEMPTS (from late positions)
+        # 5. STEAL ATTEMPTS - Using actual GTO from database
         # ============================================
         steal_query = text("""
             SELECT
@@ -856,9 +870,16 @@ async def get_player_gto_analysis(
         steal_result = db.execute(steal_query, {"player_name": validated_name})
         steal_rows = [dict(row._mapping) for row in steal_result]
 
+        # Get GTO opening frequencies from database for steal positions
+        gto_steal_result = db.execute(text("""
+            SELECT position, gto_aggregate_freq * 100 as freq
+            FROM gto_scenarios
+            WHERE category = 'opening'
+            AND position IN ('CO', 'BTN', 'SB')
+        """))
+        gto_steal = {row[0]: float(row[1]) if row[1] else 0 for row in gto_steal_result}
+
         steal_attempts = []
-        # GTO steal frequencies: CO ~30%, BTN ~45%, SB ~40% (approximate)
-        gto_steal = {'CO': 30, 'BTN': 45, 'SB': 40}
         for row in steal_rows:
             pos = row['position']
             player_freq = float(row['steal_pct']) if row['steal_pct'] else 0
@@ -869,9 +890,68 @@ async def get_player_gto_analysis(
                 'position': pos,
                 'sample_size': row['opportunities'],
                 'player_frequency': round(player_freq, 1),
-                'gto_frequency': gto_freq,
+                'gto_frequency': round(gto_freq, 1),
                 'frequency_diff': round(diff, 1),
                 'leak_type': 'Over-stealing' if diff > 10 else 'Under-stealing' if diff < -10 else None
+            })
+
+        # ============================================
+        # 6. POSITION-SPECIFIC DEFENSE (BB vs BTN, BB vs CO, etc.)
+        # ============================================
+        # Get all position-specific GTO defense scenarios
+        gto_matchups_result = db.execute(text("""
+            SELECT position, opponent_position, action, gto_aggregate_freq * 100 as freq
+            FROM gto_scenarios
+            WHERE category = 'defense'
+            ORDER BY position, opponent_position, action
+        """))
+        gto_matchups = {}
+        for row in gto_matchups_result:
+            pos, opp, action, freq = row[0], row[1], row[2], float(row[3]) if row[3] else 0
+            key = f"{pos}_vs_{opp}"
+            if key not in gto_matchups:
+                gto_matchups[key] = {}
+            gto_matchups[key][action] = freq
+
+        # Format as list for frontend
+        position_matchups = []
+        for key, actions in sorted(gto_matchups.items()):
+            pos, opp = key.split('_vs_')
+            position_matchups.append({
+                'position': pos,
+                'vs_position': opp,
+                'gto_fold': round(actions.get('fold', 0), 1),
+                'gto_call': round(actions.get('call', 0), 1),
+                'gto_3bet': round(actions.get('3bet', 0), 1),
+            })
+
+        # ============================================
+        # 7. FACING 4-BET GTO Reference
+        # ============================================
+        gto_f4bet_result = db.execute(text("""
+            SELECT position, opponent_position, action, gto_aggregate_freq * 100 as freq
+            FROM gto_scenarios
+            WHERE category = 'facing_4bet'
+            ORDER BY position, opponent_position, action
+        """))
+        gto_facing_4bet = {}
+        for row in gto_f4bet_result:
+            pos, opp, action, freq = row[0], row[1], row[2], float(row[3]) if row[3] else 0
+            key = f"{pos}_vs_{opp}"
+            if key not in gto_facing_4bet:
+                gto_facing_4bet[key] = {}
+            gto_facing_4bet[key][action] = freq
+
+        # Format facing 4-bet reference for frontend
+        facing_4bet_reference = []
+        for key, actions in sorted(gto_facing_4bet.items()):
+            pos, opp = key.split('_vs_')
+            facing_4bet_reference.append({
+                'position': pos,
+                'vs_position': opp,
+                'gto_fold': round(actions.get('fold', 0), 1),
+                'gto_call': round(actions.get('call', 0), 1),
+                'gto_5bet': round(actions.get('5bet', 0) + actions.get('allin', 0), 1),
             })
 
         # ============================================
@@ -919,7 +999,9 @@ async def get_player_gto_analysis(
             'defense_vs_open': defense_vs_open,
             'facing_3bet': facing_3bet,
             'blind_defense': blind_defense,
-            'steal_attempts': steal_attempts
+            'steal_attempts': steal_attempts,
+            'position_matchups': position_matchups,
+            'facing_4bet_reference': facing_4bet_reference
         }
 
     except HTTPException:

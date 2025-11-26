@@ -296,6 +296,20 @@ export interface GTOAnalysisResponse {
     frequency_diff: number;
     leak_type: string | null;
   }>;
+  position_matchups: Array<{
+    position: string;
+    vs_position: string;
+    gto_fold: number;
+    gto_call: number;
+    gto_3bet: number;
+  }>;
+  facing_4bet_reference: Array<{
+    position: string;
+    vs_position: string;
+    gto_fold: number;
+    gto_call: number;
+    gto_5bet: number;
+  }>;
 }
 
 // GTO Scenario Types (Preflop-only)
