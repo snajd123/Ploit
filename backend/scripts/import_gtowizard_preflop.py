@@ -323,10 +323,15 @@ def import_scenarios(db, scenarios: List[Dict], clear_existing: bool = False) ->
             scenario_id = result.fetchone()[0]
             stats['scenarios_created'] += 1
 
-        # Insert frequencies
+        # Insert frequencies and calculate aggregate
         if not combos:
             stats['zero_frequency_scenarios'] += 1
             print(f"  {name}: 0 FREQUENCY (GTO never takes this action)")
+            # Set aggregate frequency to 0 for zero-frequency scenarios
+            db.execute(text("""
+                UPDATE gto_scenarios SET gto_aggregate_freq = 0
+                WHERE scenario_id = :scenario_id
+            """), {'scenario_id': scenario_id})
         else:
             # Batch insert frequencies
             freq_values = []
@@ -346,6 +351,41 @@ def import_scenarios(db, scenarios: List[Dict], clear_existing: bool = False) ->
                     key = (fv['scenario_id'], fv['hand'], fv['position'])
                     seen[key] = fv
                 deduped_values = list(seen.values())
+
+                # Calculate aggregate frequency (average across all combos)
+                # Weight by combo count: pairs=6, suited=4, offsuit=12
+                total_weighted_freq = Decimal('0')
+                total_combos = 0
+
+                # Group by hand type for proper weighting
+                hand_type_freqs: Dict[str, List[Decimal]] = {}
+                for fv in deduped_values:
+                    ht = combo_to_hand_type(fv['hand'])
+                    if ht not in hand_type_freqs:
+                        hand_type_freqs[ht] = []
+                    hand_type_freqs[ht].append(fv['frequency'])
+
+                for ht, freqs in hand_type_freqs.items():
+                    avg_freq = sum(freqs) / len(freqs)
+                    # Determine combo count for this hand type
+                    if len(ht) == 2:  # Pairs like "AA"
+                        combo_count = 6
+                    elif ht.endswith('s'):  # Suited like "AKs"
+                        combo_count = 4
+                    else:  # Offsuit like "AKo"
+                        combo_count = 12
+                    total_weighted_freq += avg_freq * combo_count
+                    total_combos += combo_count
+
+                # Total possible combos in a full range
+                # For preflop: 1326 combos, but we calculate as percentage of hands that take this action
+                aggregate_freq = total_weighted_freq / Decimal('1326') if total_combos > 0 else Decimal('0')
+
+                # Update scenario with aggregate frequency
+                db.execute(text("""
+                    UPDATE gto_scenarios SET gto_aggregate_freq = :agg_freq
+                    WHERE scenario_id = :scenario_id
+                """), {'scenario_id': scenario_id, 'agg_freq': aggregate_freq})
 
                 # Batch insert with executemany
                 db.execute(text("""

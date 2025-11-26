@@ -72,10 +72,46 @@ def parse_range_to_matrix(range_string: str) -> Dict[str, float]:
     return matrix
 
 
+def combo_to_hand_type(combo: str) -> str:
+    """
+    Convert a specific combo (e.g., 'AhKd') to hand type (e.g., 'AKo').
+
+    Args:
+        combo: 4-char combo like 'AhKd', '2c2d', 'JsTs'
+
+    Returns:
+        Hand type like 'AKo', '22', 'JTs'
+    """
+    if len(combo) != 4:
+        return combo
+
+    rank1, suit1, rank2, suit2 = combo[0], combo[1], combo[2], combo[3]
+
+    # Rank order for sorting (A high)
+    rank_order = '23456789TJQKA'
+
+    # Ensure higher rank comes first
+    if rank_order.index(rank1) < rank_order.index(rank2):
+        rank1, rank2 = rank2, rank1
+        suit1, suit2 = suit2, suit1
+
+    # Pair
+    if rank1 == rank2:
+        return f"{rank1}{rank2}"
+
+    # Suited vs offsuit
+    if suit1 == suit2:
+        return f"{rank1}{rank2}s"
+    else:
+        return f"{rank1}{rank2}o"
+
+
 def get_range_from_frequencies(db: Session, scenario_id: int) -> Dict[str, float]:
     """
     Fetch hand frequencies from gto_frequencies table and build range matrix.
     Returns dict mapping hand notation (e.g., 'AKo', 'JTs', '22') to frequency (0.0-1.0).
+
+    Aggregates individual combo frequencies (e.g., 'AhKd') into hand type frequencies (e.g., 'AKo').
     """
     frequencies = db.query(GTOFrequency).filter(
         GTOFrequency.scenario_id == scenario_id
@@ -84,11 +120,22 @@ def get_range_from_frequencies(db: Session, scenario_id: int) -> Dict[str, float
     if not frequencies:
         return {}
 
-    # Build range matrix from frequency data
-    range_matrix = {}
+    # Aggregate combo frequencies by hand type
+    hand_type_freqs: Dict[str, list] = {}
+
     for freq in frequencies:
-        # Convert Decimal to float for JSON serialization
-        range_matrix[freq.hand] = float(freq.frequency)
+        # Convert combo (e.g., 'AhKd') to hand type (e.g., 'AKo')
+        hand_type = combo_to_hand_type(freq.hand)
+
+        if hand_type not in hand_type_freqs:
+            hand_type_freqs[hand_type] = []
+
+        hand_type_freqs[hand_type].append(float(freq.frequency))
+
+    # Calculate average frequency for each hand type
+    range_matrix = {}
+    for hand_type, freqs in hand_type_freqs.items():
+        range_matrix[hand_type] = sum(freqs) / len(freqs)
 
     return range_matrix
 
