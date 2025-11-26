@@ -88,6 +88,13 @@ const PlayerProfile = () => {
     enabled: !!playerName,
   });
 
+  // Fetch GTO analysis (on-the-fly calculation)
+  const { data: gtoAnalysis, isLoading: gtoLoading } = useQuery({
+    queryKey: ['playerGTOAnalysis', playerName],
+    queryFn: () => api.getPlayerGTOAnalysis(playerName!),
+    enabled: !!playerName,
+  });
+
   // Fetch GTO optimal ranges from database
   const { data: gtoRanges } = useQuery({
     queryKey: ['gtoOptimalRanges'],
@@ -376,6 +383,215 @@ const PlayerProfile = () => {
             <h3 className="font-semibold text-gray-900 mb-4">Identified Leaks</h3>
             <LeaksList leaks={leakAnalysis.leaks} maxLeaks={10} />
           </div>
+        </div>
+      )}
+
+      {/* GTO Analysis Section */}
+      {(gtoAnalysis || gtoLoading) && (
+        <div>
+          <div className="flex items-center gap-2 mb-4">
+            <Target className="text-blue-500" size={24} />
+            <h2 className="text-xl font-semibold text-gray-900">GTO Analysis</h2>
+          </div>
+
+          {gtoLoading ? (
+            <div className="card">
+              <div className="animate-pulse flex space-x-4">
+                <div className="flex-1 space-y-4 py-1">
+                  <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                  <div className="h-4 bg-gray-200 rounded"></div>
+                  <div className="h-4 bg-gray-200 rounded w-5/6"></div>
+                </div>
+              </div>
+            </div>
+          ) : gtoAnalysis && (
+            <>
+              {/* GTO Adherence Summary */}
+              <div className="card bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 mb-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold text-gray-900">GTO Adherence Score</h3>
+                  <span className={`text-3xl font-bold ${
+                    gtoAnalysis.adherence.gto_adherence_score >= 80 ? 'text-green-600' :
+                    gtoAnalysis.adherence.gto_adherence_score >= 60 ? 'text-yellow-600' :
+                    'text-red-600'
+                  }`}>
+                    {gtoAnalysis.adherence.gto_adherence_score.toFixed(0)}%
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-4 text-center">
+                  <div className="bg-white/50 rounded-lg p-3">
+                    <div className="text-2xl font-bold text-gray-900">
+                      {gtoAnalysis.adherence.avg_deviation.toFixed(1)}%
+                    </div>
+                    <div className="text-xs text-gray-600">Avg Deviation</div>
+                  </div>
+                  <div className="bg-white/50 rounded-lg p-3">
+                    <div className="text-2xl font-bold text-gray-900">
+                      {gtoAnalysis.adherence.major_leaks_count}
+                    </div>
+                    <div className="text-xs text-gray-600">Major Leaks</div>
+                  </div>
+                  <div className="bg-white/50 rounded-lg p-3">
+                    <div className="text-2xl font-bold text-gray-900">
+                      {gtoAnalysis.adherence.total_hands.toLocaleString()}
+                    </div>
+                    <div className="text-xs text-gray-600">Hands Analyzed</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Opening Ranges vs GTO */}
+              {gtoAnalysis.opening_ranges && gtoAnalysis.opening_ranges.length > 0 && (
+                <div className="card mb-6">
+                  <h3 className="font-semibold text-gray-900 mb-4">Opening Ranges vs GTO</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-200">
+                          <th className="text-left py-2 px-3 font-medium text-gray-600">Position</th>
+                          <th className="text-right py-2 px-3 font-medium text-gray-600">Hands</th>
+                          <th className="text-right py-2 px-3 font-medium text-gray-600">Player</th>
+                          <th className="text-right py-2 px-3 font-medium text-gray-600">GTO</th>
+                          <th className="text-right py-2 px-3 font-medium text-gray-600">Diff</th>
+                          <th className="text-center py-2 px-3 font-medium text-gray-600">Leak</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {gtoAnalysis.opening_ranges.map((row: typeof gtoAnalysis.opening_ranges[number]) => (
+                          <tr key={row.position} className="border-b border-gray-100 hover:bg-gray-50">
+                            <td className="py-2 px-3 font-medium">{row.position}</td>
+                            <td className="py-2 px-3 text-right text-gray-600">{row.total_hands}</td>
+                            <td className="py-2 px-3 text-right">{row.player_frequency.toFixed(1)}%</td>
+                            <td className="py-2 px-3 text-right text-blue-600">{row.gto_frequency.toFixed(1)}%</td>
+                            <td className={`py-2 px-3 text-right font-medium ${
+                              Math.abs(row.frequency_diff) < 5 ? 'text-green-600' :
+                              Math.abs(row.frequency_diff) < 10 ? 'text-yellow-600' :
+                              'text-red-600'
+                            }`}>
+                              {row.frequency_diff > 0 ? '+' : ''}{row.frequency_diff.toFixed(1)}%
+                            </td>
+                            <td className="py-2 px-3 text-center">
+                              {row.leak_type ? (
+                                <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                  row.leak_severity === 'major' ? 'bg-red-100 text-red-700' :
+                                  row.leak_severity === 'moderate' ? 'bg-yellow-100 text-yellow-700' :
+                                  'bg-gray-100 text-gray-600'
+                                }`}>
+                                  {row.leak_type}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-green-600">✓ Optimal</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* 3-Bet Stats vs GTO */}
+              {gtoAnalysis.threebet_stats && gtoAnalysis.threebet_stats.length > 0 && (
+                <div className="card mb-6">
+                  <h3 className="font-semibold text-gray-900 mb-4">3-Bet Frequency vs GTO</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-200">
+                          <th className="text-left py-2 px-3 font-medium text-gray-600">Position</th>
+                          <th className="text-right py-2 px-3 font-medium text-gray-600">Opportunities</th>
+                          <th className="text-right py-2 px-3 font-medium text-gray-600">3-Bets</th>
+                          <th className="text-right py-2 px-3 font-medium text-gray-600">Player</th>
+                          <th className="text-right py-2 px-3 font-medium text-gray-600">GTO</th>
+                          <th className="text-right py-2 px-3 font-medium text-gray-600">Diff</th>
+                          <th className="text-center py-2 px-3 font-medium text-gray-600">Leak</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {gtoAnalysis.threebet_stats.map((row: typeof gtoAnalysis.threebet_stats[number]) => (
+                          <tr key={row.position} className="border-b border-gray-100 hover:bg-gray-50">
+                            <td className="py-2 px-3 font-medium">{row.position}</td>
+                            <td className="py-2 px-3 text-right text-gray-600">{row.opportunities}</td>
+                            <td className="py-2 px-3 text-right text-gray-600">{row.three_bets}</td>
+                            <td className="py-2 px-3 text-right">{row.player_frequency.toFixed(1)}%</td>
+                            <td className="py-2 px-3 text-right text-blue-600">{row.gto_frequency.toFixed(1)}%</td>
+                            <td className={`py-2 px-3 text-right font-medium ${
+                              Math.abs(row.frequency_diff) < 3 ? 'text-green-600' :
+                              Math.abs(row.frequency_diff) < 6 ? 'text-yellow-600' :
+                              'text-red-600'
+                            }`}>
+                              {row.frequency_diff > 0 ? '+' : ''}{row.frequency_diff.toFixed(1)}%
+                            </td>
+                            <td className="py-2 px-3 text-center">
+                              {row.leak_type ? (
+                                <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                  row.leak_severity === 'major' ? 'bg-red-100 text-red-700' :
+                                  row.leak_severity === 'moderate' ? 'bg-yellow-100 text-yellow-700' :
+                                  'bg-gray-100 text-gray-600'
+                                }`}>
+                                  {row.leak_type}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-green-600">✓ Optimal</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Fold to 3-Bet Summary */}
+              {gtoAnalysis.fold_to_3bet && gtoAnalysis.fold_to_3bet.faced_3bet > 0 && (
+                <div className="card">
+                  <h3 className="font-semibold text-gray-900 mb-4">Fold to 3-Bet Analysis</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="text-center p-3 bg-gray-50 rounded-lg">
+                      <div className="text-2xl font-bold text-gray-900">
+                        {gtoAnalysis.fold_to_3bet.faced_3bet}
+                      </div>
+                      <div className="text-xs text-gray-600">Faced 3-Bet</div>
+                    </div>
+                    <div className="text-center p-3 bg-gray-50 rounded-lg">
+                      <div className="text-2xl font-bold text-gray-900">
+                        {gtoAnalysis.fold_to_3bet.folded}
+                      </div>
+                      <div className="text-xs text-gray-600">Folded</div>
+                    </div>
+                    <div className="text-center p-3 bg-gray-50 rounded-lg">
+                      <div className={`text-2xl font-bold ${
+                        Math.abs(gtoAnalysis.fold_to_3bet.frequency_diff) < 5 ? 'text-green-600' :
+                        Math.abs(gtoAnalysis.fold_to_3bet.frequency_diff) < 10 ? 'text-yellow-600' :
+                        'text-red-600'
+                      }`}>
+                        {gtoAnalysis.fold_to_3bet.player_frequency.toFixed(1)}%
+                      </div>
+                      <div className="text-xs text-gray-600">Player Fold %</div>
+                    </div>
+                    <div className="text-center p-3 bg-blue-50 rounded-lg">
+                      <div className="text-2xl font-bold text-blue-600">
+                        {gtoAnalysis.fold_to_3bet.gto_frequency.toFixed(1)}%
+                      </div>
+                      <div className="text-xs text-gray-600">GTO Fold %</div>
+                    </div>
+                  </div>
+                  {Math.abs(gtoAnalysis.fold_to_3bet.frequency_diff) > 5 && (
+                    <div className={`mt-4 p-3 rounded-lg ${
+                      gtoAnalysis.fold_to_3bet.frequency_diff > 0 ? 'bg-red-50 text-red-700' : 'bg-yellow-50 text-yellow-700'
+                    }`}>
+                      <strong>Leak:</strong> {gtoAnalysis.fold_to_3bet.frequency_diff > 0
+                        ? `Folds ${gtoAnalysis.fold_to_3bet.frequency_diff.toFixed(1)}% too often. Exploit: 3-bet wider for folds.`
+                        : `Folds ${Math.abs(gtoAnalysis.fold_to_3bet.frequency_diff).toFixed(1)}% too rarely. Play value-heavy vs their 3-bet defense.`
+                      }
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
 

@@ -21,6 +21,7 @@ import type {
   ClearDatabaseResponse,
   UploadHistoryResponse,
   GTOOptimalRangesResponse,
+  GTOAnalysisResponse,
 } from '../types';
 
 class ApiClient {
@@ -103,6 +104,12 @@ class ApiClient {
   // Get player leak analysis
   async getPlayerLeaks(playerName: string): Promise<LeakAnalysisResponse> {
     const response = await this.client.get<LeakAnalysisResponse>(`/api/players/${encodeURIComponent(playerName)}/leaks`);
+    return response.data;
+  }
+
+  // Get player GTO analysis
+  async getPlayerGTOAnalysis(playerName: string): Promise<GTOAnalysisResponse> {
+    const response = await this.client.get<GTOAnalysisResponse>(`/api/players/${encodeURIComponent(playerName)}/gto-analysis`);
     return response.data;
   }
 

@@ -230,6 +230,43 @@ export interface LeakAnalysisResponse {
   leak_summary: LeakSummary;
 }
 
+// GTO Analysis Response (for player GTO comparison)
+export interface GTOAnalysisResponse {
+  player: string;
+  adherence: {
+    gto_adherence_score: number;
+    avg_deviation: number;
+    major_leaks_count: number;
+    total_hands: number;
+  };
+  opening_ranges: Array<{
+    position: string;
+    total_hands: number;
+    player_frequency: number;
+    gto_frequency: number;
+    frequency_diff: number;
+    leak_severity: 'minor' | 'moderate' | 'major';
+    leak_type: string | null;
+  }>;
+  threebet_stats: Array<{
+    position: string;
+    opportunities: number;
+    three_bets: number;
+    player_frequency: number;
+    gto_frequency: number;
+    frequency_diff: number;
+    leak_severity: 'minor' | 'moderate' | 'major';
+    leak_type: string | null;
+  }>;
+  fold_to_3bet: {
+    faced_3bet: number;
+    folded: number;
+    player_frequency: number;
+    gto_frequency: number;
+    frequency_diff: number;
+  };
+}
+
 // GTO Scenario Types (Preflop-only)
 export type GTOCategory = 'opening' | 'defense' | 'facing_3bet' | 'facing_4bet';
 

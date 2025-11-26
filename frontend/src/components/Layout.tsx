@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Outlet, NavLink } from 'react-router-dom';
-import { LayoutDashboard, Upload, Users, MessageSquare, Target, Search, Menu, X, BookOpen, Crosshair, Grid3x3, BarChart2, Settings } from 'lucide-react';
+import { LayoutDashboard, Upload, Users, MessageSquare, Target, Search, Menu, X, BookOpen, Grid3x3, BarChart2, Settings } from 'lucide-react';
 import QuickLookupModal from './QuickLookupModal';
 import OnboardingModal, { shouldShowOnboarding } from './OnboardingModal';
 
@@ -33,7 +33,6 @@ const Layout = () => {
       label: 'Review',
       items: [
         { to: '/sessions', icon: BarChart2, label: 'Sessions', tooltip: 'Your session history' },
-        { to: '/gto', icon: Crosshair, label: 'GTO Analysis', tooltip: 'Compare play vs GTO' },
         { to: '/claude', icon: MessageSquare, label: 'Claude AI', tooltip: 'AI-powered analysis' },
       ]
     },

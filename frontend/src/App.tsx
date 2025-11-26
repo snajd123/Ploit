@@ -6,7 +6,7 @@ import PlayersList from './pages/PlayersList';
 import PlayerProfile from './pages/PlayerProfile';
 import ClaudeChat from './pages/ClaudeChat';
 import PreGameStrategy from './pages/PreGameStrategy';
-import GTOAnalysis from './pages/GTOAnalysis';
+// GTOAnalysis moved to player profiles - redirect /gto to /players
 import GTOBrowser from './pages/GTOBrowser';
 import Sessions from './pages/Sessions';
 import SessionDetail from './pages/SessionDetail';
@@ -25,7 +25,7 @@ function App() {
           <Route path="players/:playerName" element={<PlayerProfile />} />
           <Route path="claude" element={<ClaudeChat />} />
           <Route path="strategy" element={<PreGameStrategy />} />
-          <Route path="gto" element={<GTOAnalysis />} />
+          <Route path="gto" element={<Navigate to="/players" replace />} />
           <Route path="gto-browser" element={<GTOBrowser />} />
           <Route path="sessions" element={<Sessions />} />
           <Route path="sessions/:sessionId" element={<SessionDetail />} />

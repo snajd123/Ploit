@@ -579,6 +579,209 @@ async def get_player_leaks(
 
 
 @app.get(
+    "/api/players/{player_name}/gto-analysis",
+    response_model=Dict[str, Any],
+    tags=["Players"],
+    summary="Get player GTO analysis",
+    description="Compare player preflop frequencies to GTO optimal frequencies"
+)
+async def get_player_gto_analysis(
+    player_name: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Calculate GTO comparison for a player on-the-fly.
+
+    Compares player's opening frequencies, 3-bet frequencies, and fold frequencies
+    against GTO aggregate frequencies from the database.
+    """
+    from sqlalchemy import text
+
+    try:
+        validated_name = InputValidator.validate_player_name(player_name)
+
+        # Get opening frequencies by position (RFI - Raise First In)
+        opening_query = text("""
+            SELECT
+                position,
+                COUNT(*) as total_hands,
+                SUM(CASE WHEN pfr = true AND faced_raise = false THEN 1 ELSE 0 END) as opened,
+                ROUND(100.0 * SUM(CASE WHEN pfr = true AND faced_raise = false THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 1) as player_open_pct
+            FROM player_hand_summary
+            WHERE player_name = :player_name
+            AND position IS NOT NULL
+            AND position NOT IN ('BB')
+            GROUP BY position
+            HAVING COUNT(*) >= 10
+            ORDER BY CASE position
+                WHEN 'UTG' THEN 1
+                WHEN 'MP' THEN 2
+                WHEN 'HJ' THEN 3
+                WHEN 'CO' THEN 4
+                WHEN 'BTN' THEN 5
+                WHEN 'SB' THEN 6
+            END
+        """)
+
+        opening_result = db.execute(opening_query, {"player_name": validated_name})
+        opening_rows = [dict(row._mapping) for row in opening_result]
+
+        # Get GTO opening frequencies
+        gto_opening_query = text("""
+            SELECT position, gto_aggregate_freq
+            FROM gto_scenarios
+            WHERE category = 'opening'
+            AND position IN ('UTG', 'MP', 'HJ', 'CO', 'BTN', 'SB')
+        """)
+        gto_opening_result = db.execute(gto_opening_query)
+        gto_opening = {row[0]: float(row[1]) * 100 if row[1] else 0 for row in gto_opening_result}
+
+        # Build opening ranges comparison
+        opening_ranges = []
+        for row in opening_rows:
+            pos = row['position']
+            player_freq = float(row['player_open_pct']) if row['player_open_pct'] else 0
+            gto_freq = gto_opening.get(pos, 0)
+            diff = player_freq - gto_freq
+
+            # Determine leak severity
+            if abs(diff) < 5:
+                severity = 'minor'
+            elif abs(diff) < 15:
+                severity = 'moderate'
+            else:
+                severity = 'major'
+
+            opening_ranges.append({
+                'position': pos,
+                'total_hands': row['total_hands'],
+                'player_frequency': player_freq,
+                'gto_frequency': gto_freq,
+                'frequency_diff': diff,
+                'leak_severity': severity,
+                'leak_type': 'over_open' if diff > 5 else 'under_open' if diff < -5 else None
+            })
+
+        # Get 3-bet stats by position
+        threebet_query = text("""
+            SELECT
+                position,
+                COUNT(*) FILTER (WHERE three_bet_opportunity = true) as opportunities,
+                COUNT(*) FILTER (WHERE made_three_bet = true) as three_bets,
+                ROUND(100.0 * COUNT(*) FILTER (WHERE made_three_bet = true) /
+                    NULLIF(COUNT(*) FILTER (WHERE three_bet_opportunity = true), 0), 1) as player_3bet_pct
+            FROM player_hand_summary
+            WHERE player_name = :player_name
+            AND position IS NOT NULL
+            GROUP BY position
+            HAVING COUNT(*) FILTER (WHERE three_bet_opportunity = true) >= 5
+            ORDER BY position
+        """)
+
+        threebet_result = db.execute(threebet_query, {"player_name": validated_name})
+        threebet_rows = [dict(row._mapping) for row in threebet_result]
+
+        # Get GTO 3-bet frequencies (defense category, action=3bet)
+        gto_3bet_query = text("""
+            SELECT position, AVG(gto_aggregate_freq) * 100 as avg_3bet_freq
+            FROM gto_scenarios
+            WHERE category = 'defense'
+            AND action = '3bet'
+            GROUP BY position
+        """)
+        gto_3bet_result = db.execute(gto_3bet_query)
+        gto_3bet = {row[0]: float(row[1]) if row[1] else 0 for row in gto_3bet_result}
+
+        threebet_stats = []
+        for row in threebet_rows:
+            pos = row['position']
+            player_freq = float(row['player_3bet_pct']) if row['player_3bet_pct'] else 0
+            gto_freq = gto_3bet.get(pos, 8.0)  # Default ~8% if no GTO data
+            diff = player_freq - gto_freq
+
+            if abs(diff) < 3:
+                severity = 'minor'
+            elif abs(diff) < 8:
+                severity = 'moderate'
+            else:
+                severity = 'major'
+
+            threebet_stats.append({
+                'position': pos,
+                'opportunities': row['opportunities'],
+                'three_bets': row['three_bets'],
+                'player_frequency': player_freq,
+                'gto_frequency': gto_freq,
+                'frequency_diff': diff,
+                'leak_severity': severity,
+                'leak_type': 'over_3bet' if diff > 3 else 'under_3bet' if diff < -3 else None
+            })
+
+        # Get fold to 3-bet stats
+        fold_3bet_query = text("""
+            SELECT
+                COUNT(*) FILTER (WHERE faced_three_bet = true) as faced_3bet,
+                COUNT(*) FILTER (WHERE folded_to_three_bet = true) as folded,
+                ROUND(100.0 * COUNT(*) FILTER (WHERE folded_to_three_bet = true) /
+                    NULLIF(COUNT(*) FILTER (WHERE faced_three_bet = true), 0), 1) as fold_to_3bet_pct
+            FROM player_hand_summary
+            WHERE player_name = :player_name
+        """)
+
+        fold_3bet_result = db.execute(fold_3bet_query, {"player_name": validated_name})
+        fold_3bet_row = dict(fold_3bet_result.fetchone()._mapping)
+
+        # Calculate overall adherence score
+        total_deviations = 0
+        weighted_deviation_sum = 0
+
+        for r in opening_ranges:
+            weight = min(r['total_hands'], 100) / 100  # Cap weight at 100 hands
+            weighted_deviation_sum += abs(r['frequency_diff']) * weight
+            total_deviations += weight
+
+        for r in threebet_stats:
+            weight = min(r['opportunities'], 50) / 50
+            weighted_deviation_sum += abs(r['frequency_diff']) * weight
+            total_deviations += weight
+
+        avg_deviation = weighted_deviation_sum / total_deviations if total_deviations > 0 else 0
+        adherence_score = max(0, 100 - avg_deviation * 2)  # Penalize 2 points per % deviation
+
+        # Count major leaks
+        major_leaks = sum(1 for r in opening_ranges if r['leak_severity'] == 'major')
+        major_leaks += sum(1 for r in threebet_stats if r['leak_severity'] == 'major')
+
+        return {
+            'player': validated_name,
+            'adherence': {
+                'gto_adherence_score': round(adherence_score, 1),
+                'avg_deviation': round(avg_deviation, 1),
+                'major_leaks_count': major_leaks,
+                'total_hands': sum(r['total_hands'] for r in opening_ranges)
+            },
+            'opening_ranges': opening_ranges,
+            'threebet_stats': threebet_stats,
+            'fold_to_3bet': {
+                'faced_3bet': fold_3bet_row['faced_3bet'],
+                'folded': fold_3bet_row['folded'],
+                'player_frequency': float(fold_3bet_row['fold_to_3bet_pct']) if fold_3bet_row['fold_to_3bet_pct'] else 0,
+                'gto_frequency': 55.0,  # Approximate GTO fold to 3-bet
+                'frequency_diff': (float(fold_3bet_row['fold_to_3bet_pct']) if fold_3bet_row['fold_to_3bet_pct'] else 0) - 55.0
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting player GTO analysis: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving GTO analysis: {str(e)}"
+        )
+
+
+@app.get(
     "/api/database/stats",
     response_model=DatabaseStatsResponse,
     tags=["Database"],
