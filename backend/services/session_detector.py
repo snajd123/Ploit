@@ -204,9 +204,9 @@ class SessionDetector:
 
     def _assign_hands_to_session(self, hand_ids: List[int], session_id: int):
         """
-        Update raw_hands and player_hand_summary with session_id.
+        Update raw_hands with session_id.
+        Note: session_id is only stored on raw_hands, not player_hand_summary.
         """
-        # Update raw_hands
         update_raw_hands = text("""
             UPDATE raw_hands
             SET session_id = :session_id
@@ -214,18 +214,6 @@ class SessionDetector:
         """)
 
         self.db.execute(update_raw_hands, {
-            "session_id": session_id,
-            "hand_ids": hand_ids
-        })
-
-        # Update player_hand_summary
-        update_phs = text("""
-            UPDATE player_hand_summary
-            SET session_id = :session_id
-            WHERE hand_id = ANY(:hand_ids)
-        """)
-
-        self.db.execute(update_phs, {
             "session_id": session_id,
             "hand_ids": hand_ids
         })
