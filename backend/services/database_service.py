@@ -243,6 +243,7 @@ class DatabaseService:
             squeeze=flags.squeeze,
             # Position-specific tracking
             raiser_position=flags.raiser_position,
+            three_bettor_position=flags.three_bettor_position,
             # Facing 4-bet tracking
             faced_four_bet=flags.faced_four_bet,
             folded_to_four_bet=flags.folded_to_four_bet,
@@ -322,6 +323,7 @@ class DatabaseService:
                     summary.cold_call = flags.cold_call
                     summary.squeeze = flags.squeeze
                     summary.raiser_position = flags.raiser_position
+                    summary.three_bettor_position = flags.three_bettor_position
                     summary.faced_four_bet = flags.faced_four_bet
                     summary.folded_to_four_bet = flags.folded_to_four_bet
                     summary.called_four_bet = flags.called_four_bet

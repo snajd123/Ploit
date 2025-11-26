@@ -101,6 +101,7 @@ class PlayerHandSummary(Base):
 
     # Position-specific tracking
     raiser_position = Column(String(10))  # Position of the first raiser (opener)
+    three_bettor_position = Column(String(10))  # Position of the 3-bettor
 
     # Facing 4-bet tracking
     faced_four_bet = Column(Boolean, default=False)

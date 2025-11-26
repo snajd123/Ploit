@@ -25,7 +25,11 @@ from models.database_models import PlayerHandSummary, RawHand, HandAction
 
 def get_db_url():
     """Get database URL from environment or use default"""
-    return os.getenv('DATABASE_URL', 'postgresql://ploit_user:ploit123@localhost:5432/ploit_db')
+    url = os.getenv('DATABASE_URL', 'postgresql://ploit_user:ploit123@localhost:5432/ploit_db')
+    # Add options for Supabase pooler compatibility
+    if 'supabase' in url and '?' not in url:
+        url += '?sslmode=require&options=-c%20statement_timeout%3D60000'
+    return url
 
 
 def add_columns_if_not_exists(engine):
@@ -34,6 +38,7 @@ def add_columns_if_not_exists(engine):
 
     columns_to_add = [
         ('raiser_position', 'VARCHAR(10)'),
+        ('three_bettor_position', 'VARCHAR(10)'),
         ('faced_four_bet', 'BOOLEAN DEFAULT FALSE'),
         ('folded_to_four_bet', 'BOOLEAN DEFAULT FALSE'),
         ('called_four_bet', 'BOOLEAN DEFAULT FALSE'),
@@ -111,6 +116,12 @@ def recalculate_flags(session):
             first_raise = raises[0]
             first_raiser_pos = first_raise.position
 
+        # Identify 3-bettor position (2nd raise)
+        three_bettor_pos = None
+        if len(raises) >= 2:
+            second_raise = raises[1]
+            three_bettor_pos = second_raise.position
+
         # Calculate flags for each player
         for summary in summaries:
             changes_made = False
@@ -119,6 +130,12 @@ def recalculate_flags(session):
             if summary.faced_raise and first_raiser_pos:
                 if summary.raiser_position != first_raiser_pos:
                     summary.raiser_position = first_raiser_pos
+                    changes_made = True
+
+            # Set three_bettor_position for players who faced a 3-bet
+            if summary.faced_three_bet and three_bettor_pos:
+                if summary.three_bettor_position != three_bettor_pos:
+                    summary.three_bettor_position = three_bettor_pos
                     changes_made = True
 
             # Check for facing 4-bet (3rd raise)
@@ -179,7 +196,14 @@ def main():
     db_url = get_db_url()
     print(f"\nConnecting to database: {db_url.split('@')[1] if '@' in db_url else 'localhost'}")
 
-    engine = create_engine(db_url)
+    # Use connect_args for psycopg2 options to avoid SASL issues with Supabase pooler
+    engine = create_engine(
+        db_url,
+        connect_args={
+            'sslmode': 'require',
+            'options': '-c statement_timeout=120000'
+        } if 'supabase' in db_url else {}
+    )
     Session = sessionmaker(bind=engine)
     session = Session()
 

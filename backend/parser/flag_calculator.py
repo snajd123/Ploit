@@ -167,6 +167,15 @@ class FlagCalculator:
             faced_3bet = self._player_faced_raise_number(player_name, 2)
             flags.faced_three_bet = faced_3bet
 
+            # Track who 3-bet us (position of the 2nd raiser)
+            if faced_3bet:
+                preflop_all = [a for a in self.hand.actions if a.street == Street.PREFLOP]
+                raises = [a for a in preflop_all if a.action_type == ActionType.RAISE and a.is_aggressive]
+                if len(raises) >= 2:
+                    three_bettor = self.hand.get_player(raises[1].player_name)
+                    if three_bettor:
+                        flags.three_bettor_position = three_bettor.position
+
             if faced_3bet:
                 # How did they respond to the 3-bet?
                 # Get actions AFTER they faced the 3-bet

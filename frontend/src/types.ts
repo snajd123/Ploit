@@ -275,6 +275,20 @@ export interface GTOAnalysisResponse {
     call_diff: number;
     '4bet_diff': number;
   }>;
+  facing_3bet_matchups: Array<{
+    position: string;
+    vs_position: string;
+    sample_size: number;
+    player_fold: number | null;
+    player_call: number | null;
+    player_4bet: number | null;
+    gto_fold: number;
+    gto_call: number;
+    gto_4bet: number;
+    fold_diff: number | null;
+    call_diff: number | null;
+    '4bet_diff': number | null;
+  }>;
   blind_defense: Array<{
     position: string;
     sample_size: number;

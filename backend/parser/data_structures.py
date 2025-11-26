@@ -128,6 +128,7 @@ class PlayerHandSummaryFlags:
 
     # Position-specific tracking
     raiser_position: Optional[str] = None  # Position of the first raiser (opener)
+    three_bettor_position: Optional[str] = None  # Position of the 3-bettor (for facing 3-bet analysis)
 
     # Facing 4-bet tracking
     faced_four_bet: bool = False

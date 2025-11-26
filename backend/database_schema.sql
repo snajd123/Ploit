@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS player_hand_summary (
 
     -- Position-specific tracking
     raiser_position VARCHAR(10),
+    three_bettor_position VARCHAR(10),
 
     -- Facing 4-bet tracking
     faced_four_bet BOOLEAN DEFAULT FALSE,

@@ -785,6 +785,84 @@ async def get_player_gto_analysis(
             })
 
         # ============================================
+        # 3b. FACING 3-BET BY MATCHUP (position-specific)
+        # ============================================
+        # Get GTO facing 3-bet scenarios by position matchup
+        gto_f3bet_matchups_result = db.execute(text("""
+            SELECT position, opponent_position, action, gto_aggregate_freq * 100 as freq
+            FROM gto_scenarios
+            WHERE category = 'facing_3bet'
+            AND opponent_position IS NOT NULL
+            ORDER BY position, opponent_position, action
+        """))
+        gto_f3bet_matchups = {}
+        for row in gto_f3bet_matchups_result:
+            pos, opp, action, freq = row[0], row[1], row[2], float(row[3]) if row[3] else 0
+            key = f"{pos}_vs_{opp}"
+            if key not in gto_f3bet_matchups:
+                gto_f3bet_matchups[key] = {}
+            gto_f3bet_matchups[key][action] = freq
+
+        # Get player's facing 3-bet by who 3-bet them
+        player_f3bet_matchups_result = db.execute(text("""
+            SELECT
+                position,
+                three_bettor_position,
+                COUNT(*) as faced_3bet,
+                COUNT(*) FILTER (WHERE folded_to_three_bet = true) as folded,
+                COUNT(*) FILTER (WHERE called_three_bet = true) as called,
+                COUNT(*) FILTER (WHERE four_bet = true) as four_bets
+            FROM player_hand_summary
+            WHERE player_name = :player_name
+              AND faced_three_bet = true
+              AND three_bettor_position IS NOT NULL
+              AND position IS NOT NULL
+            GROUP BY position, three_bettor_position
+            ORDER BY position, three_bettor_position
+        """), {"player_name": validated_name})
+
+        player_f3bet_stats = {}
+        for row in player_f3bet_matchups_result.mappings():
+            key = f"{row['position']}_vs_{row['three_bettor_position']}"
+            total = row['faced_3bet'] or 0
+            if total > 0:
+                player_f3bet_stats[key] = {
+                    'sample_size': total,
+                    'fold_pct': (row['folded'] or 0) / total * 100,
+                    'call_pct': (row['called'] or 0) / total * 100,
+                    '4bet_pct': (row['four_bets'] or 0) / total * 100
+                }
+
+        # Format facing 3-bet matchups
+        facing_3bet_matchups = []
+        for key, actions in sorted(gto_f3bet_matchups.items()):
+            pos, opp = key.split('_vs_')
+            player_stats = player_f3bet_stats.get(key, {})
+
+            gto_fold = actions.get('fold', 0)
+            gto_call = actions.get('call', 0)
+            gto_4bet = actions.get('4bet', 0)
+
+            player_fold = player_stats.get('fold_pct')
+            player_call = player_stats.get('call_pct')
+            player_4bet = player_stats.get('4bet_pct')
+
+            facing_3bet_matchups.append({
+                'position': pos,
+                'vs_position': opp,
+                'sample_size': player_stats.get('sample_size', 0),
+                'player_fold': round(player_fold, 1) if player_fold is not None else None,
+                'player_call': round(player_call, 1) if player_call is not None else None,
+                'player_4bet': round(player_4bet, 1) if player_4bet is not None else None,
+                'gto_fold': round(gto_fold, 1),
+                'gto_call': round(gto_call, 1),
+                'gto_4bet': round(gto_4bet, 1),
+                'fold_diff': round(player_fold - gto_fold, 1) if player_fold is not None else None,
+                'call_diff': round(player_call - gto_call, 1) if player_call is not None else None,
+                '4bet_diff': round(player_4bet - gto_4bet, 1) if player_4bet is not None else None,
+            })
+
+        # ============================================
         # 4. BLIND DEFENSE (vs steals) - Using actual GTO from database
         # ============================================
         blind_defense_query = text("""
@@ -1093,6 +1171,7 @@ async def get_player_gto_analysis(
             'opening_ranges': opening_ranges,
             'defense_vs_open': defense_vs_open,
             'facing_3bet': facing_3bet,
+            'facing_3bet_matchups': facing_3bet_matchups,
             'blind_defense': blind_defense,
             'steal_attempts': steal_attempts,
             'position_matchups': position_matchups,
