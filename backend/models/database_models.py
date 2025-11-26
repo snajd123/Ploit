@@ -99,6 +99,15 @@ class PlayerHandSummary(Base):
     cold_call = Column(Boolean, default=False)
     squeeze = Column(Boolean, default=False)
 
+    # Position-specific tracking
+    raiser_position = Column(String(10))  # Position of the first raiser (opener)
+
+    # Facing 4-bet tracking
+    faced_four_bet = Column(Boolean, default=False)
+    folded_to_four_bet = Column(Boolean, default=False)
+    called_four_bet = Column(Boolean, default=False)
+    five_bet = Column(Boolean, default=False)
+
     # Steal and blind defense (preflop)
     steal_attempt = Column(Boolean, default=False)
     faced_steal = Column(Boolean, default=False)

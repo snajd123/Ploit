@@ -85,6 +85,22 @@ class FlagCalculator:
 
         return None
 
+    def _identify_first_raiser(self) -> Optional[tuple]:
+        """
+        Find the first raiser (opener) preflop.
+
+        Returns:
+            Tuple of (player_name, position) of first raiser, or (None, None)
+        """
+        preflop_actions = [a for a in self.hand.actions if a.street == Street.PREFLOP]
+
+        for action in preflop_actions:
+            if action.action_type == ActionType.RAISE and action.is_aggressive:
+                player = self.hand.get_player(action.player_name)
+                if player:
+                    return (action.player_name, player.position)
+        return (None, None)
+
     def _calculate_preflop_flags(self, player_name: str, flags: PlayerHandSummaryFlags) -> None:
         """
         Calculate preflop behavior flags.
@@ -130,6 +146,11 @@ class FlagCalculator:
         faced_raise = any(a.facing_bet for a in voluntary_actions)
         flags.faced_raise = faced_raise
 
+        # Track who opened (first raiser position) for position-specific defense
+        first_raiser_name, first_raiser_pos = self._identify_first_raiser()
+        if faced_raise and first_raiser_pos:
+            flags.raiser_position = first_raiser_pos
+
         # 3-bet opportunity: player faced the first raise but didn't make it
         if raise_count >= 1:
             made_first_raise = self._player_made_raise_number(player_name, 1)
@@ -169,6 +190,34 @@ class FlagCalculator:
         if raise_count >= 3:
             made_4bet = self._player_made_raise_number(player_name, 3)
             flags.four_bet = made_4bet
+
+            # Check if player faced a 4-bet (faced the 3rd raise)
+            # This happens when player 3-bet and then faced a 4-bet
+            faced_4bet = self._player_faced_raise_number(player_name, 3)
+            flags.faced_four_bet = faced_4bet
+
+            if faced_4bet:
+                # How did they respond to the 4-bet?
+                preflop_all = [a for a in self.hand.actions if a.street == Street.PREFLOP]
+                raises = [a for a in preflop_all if a.action_type == ActionType.RAISE and a.is_aggressive]
+
+                if len(raises) >= 3:
+                    third_raise_idx = preflop_all.index(raises[2])
+                    actions_after_4bet = [a for a in preflop_all[third_raise_idx + 1:]
+                                         if a.player_name == player_name and
+                                         a.action_type not in [ActionType.POST_SB, ActionType.POST_BB]]
+
+                    if actions_after_4bet:
+                        last_action = actions_after_4bet[-1]
+                        if last_action.action_type == ActionType.FOLD:
+                            flags.folded_to_four_bet = True
+                        elif last_action.action_type == ActionType.CALL:
+                            flags.called_four_bet = True
+
+        # 5-bet (4th raise)
+        if raise_count >= 4:
+            made_5bet = self._player_made_raise_number(player_name, 4)
+            flags.five_bet = made_5bet
 
         # Cold call: Called a raise without having invested yet
         # (didn't post blind or wasn't in the pot yet)

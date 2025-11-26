@@ -299,16 +299,30 @@ export interface GTOAnalysisResponse {
   position_matchups: Array<{
     position: string;
     vs_position: string;
+    sample_size: number;
+    player_fold: number | null;
+    player_call: number | null;
+    player_3bet: number | null;
     gto_fold: number;
     gto_call: number;
     gto_3bet: number;
+    fold_diff: number | null;
+    call_diff: number | null;
+    '3bet_diff': number | null;
   }>;
   facing_4bet_reference: Array<{
     position: string;
     vs_position: string;
+    sample_size: number;
+    player_fold: number | null;
+    player_call: number | null;
+    player_5bet: number | null;
     gto_fold: number;
     gto_call: number;
     gto_5bet: number;
+    fold_diff: number | null;
+    call_diff: number | null;
+    '5bet_diff': number | null;
   }>;
 }
 

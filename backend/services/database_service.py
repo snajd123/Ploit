@@ -241,6 +241,13 @@ class DatabaseService:
             four_bet=flags.four_bet,
             cold_call=flags.cold_call,
             squeeze=flags.squeeze,
+            # Position-specific tracking
+            raiser_position=flags.raiser_position,
+            # Facing 4-bet tracking
+            faced_four_bet=flags.faced_four_bet,
+            folded_to_four_bet=flags.folded_to_four_bet,
+            called_four_bet=flags.called_four_bet,
+            five_bet=flags.five_bet,
             # Steal and defense (preflop)
             steal_attempt=flags.steal_attempt,
             faced_steal=flags.faced_steal,
@@ -314,6 +321,11 @@ class DatabaseService:
                     summary.four_bet = flags.four_bet
                     summary.cold_call = flags.cold_call
                     summary.squeeze = flags.squeeze
+                    summary.raiser_position = flags.raiser_position
+                    summary.faced_four_bet = flags.faced_four_bet
+                    summary.folded_to_four_bet = flags.folded_to_four_bet
+                    summary.called_four_bet = flags.called_four_bet
+                    summary.five_bet = flags.five_bet
                     summary.saw_flop = flags.saw_flop
                     summary.saw_turn = flags.saw_turn
                     summary.saw_river = flags.saw_river

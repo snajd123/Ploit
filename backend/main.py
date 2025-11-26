@@ -913,20 +913,67 @@ async def get_player_gto_analysis(
                 gto_matchups[key] = {}
             gto_matchups[key][action] = freq
 
-        # Format as list for frontend
+        # Get player's position-specific defense frequencies using raiser_position
+        player_matchups_result = db.execute(text("""
+            SELECT
+                position,
+                raiser_position,
+                COUNT(*) as faced_open,
+                COUNT(*) FILTER (WHERE vpip = false) as folded,
+                COUNT(*) FILTER (WHERE vpip = true AND pfr = false) as called,
+                COUNT(*) FILTER (WHERE made_three_bet = true) as three_bets
+            FROM player_hand_summary
+            WHERE player_name = :player_name
+              AND faced_raise = true
+              AND raiser_position IS NOT NULL
+              AND position IS NOT NULL
+            GROUP BY position, raiser_position
+            ORDER BY position, raiser_position
+        """), {"player_name": validated_name})
+
+        player_matchup_stats = {}
+        for row in player_matchups_result.mappings():
+            key = f"{row['position']}_vs_{row['raiser_position']}"
+            total = row['faced_open'] or 0
+            if total > 0:
+                player_matchup_stats[key] = {
+                    'sample_size': total,
+                    'fold_pct': (row['folded'] or 0) / total * 100,
+                    'call_pct': (row['called'] or 0) / total * 100,
+                    '3bet_pct': (row['three_bets'] or 0) / total * 100
+                }
+
+        # Format as list for frontend with player frequencies
         position_matchups = []
         for key, actions in sorted(gto_matchups.items()):
             pos, opp = key.split('_vs_')
+            player_stats = player_matchup_stats.get(key, {})
+
+            gto_fold = actions.get('fold', 0)
+            gto_call = actions.get('call', 0)
+            gto_3bet = actions.get('3bet', 0)
+
+            player_fold = player_stats.get('fold_pct')
+            player_call = player_stats.get('call_pct')
+            player_3bet = player_stats.get('3bet_pct')
+
             position_matchups.append({
                 'position': pos,
                 'vs_position': opp,
-                'gto_fold': round(actions.get('fold', 0), 1),
-                'gto_call': round(actions.get('call', 0), 1),
-                'gto_3bet': round(actions.get('3bet', 0), 1),
+                'sample_size': player_stats.get('sample_size', 0),
+                'player_fold': round(player_fold, 1) if player_fold is not None else None,
+                'player_call': round(player_call, 1) if player_call is not None else None,
+                'player_3bet': round(player_3bet, 1) if player_3bet is not None else None,
+                'gto_fold': round(gto_fold, 1),
+                'gto_call': round(gto_call, 1),
+                'gto_3bet': round(gto_3bet, 1),
+                'fold_diff': round(player_fold - gto_fold, 1) if player_fold is not None else None,
+                'call_diff': round(player_call - gto_call, 1) if player_call is not None else None,
+                '3bet_diff': round(player_3bet - gto_3bet, 1) if player_3bet is not None else None,
             })
 
         # ============================================
-        # 7. FACING 4-BET GTO Reference
+        # 7. FACING 4-BET Analysis
         # ============================================
         gto_f4bet_result = db.execute(text("""
             SELECT position, opponent_position, action, gto_aggregate_freq * 100 as freq
@@ -942,16 +989,64 @@ async def get_player_gto_analysis(
                 gto_facing_4bet[key] = {}
             gto_facing_4bet[key][action] = freq
 
-        # Format facing 4-bet reference for frontend
+        # Get player's facing 4-bet frequencies
+        # We need position and raiser_position to know who 4-bet us
+        player_f4bet_result = db.execute(text("""
+            SELECT
+                position,
+                raiser_position,
+                COUNT(*) as faced_4bet,
+                COUNT(*) FILTER (WHERE folded_to_four_bet = true) as folded,
+                COUNT(*) FILTER (WHERE called_four_bet = true) as called,
+                COUNT(*) FILTER (WHERE five_bet = true) as five_bets
+            FROM player_hand_summary
+            WHERE player_name = :player_name
+              AND faced_four_bet = true
+              AND raiser_position IS NOT NULL
+              AND position IS NOT NULL
+            GROUP BY position, raiser_position
+            ORDER BY position, raiser_position
+        """), {"player_name": validated_name})
+
+        player_f4bet_stats = {}
+        for row in player_f4bet_result.mappings():
+            key = f"{row['position']}_vs_{row['raiser_position']}"
+            total = row['faced_4bet'] or 0
+            if total > 0:
+                player_f4bet_stats[key] = {
+                    'sample_size': total,
+                    'fold_pct': (row['folded'] or 0) / total * 100,
+                    'call_pct': (row['called'] or 0) / total * 100,
+                    '5bet_pct': (row['five_bets'] or 0) / total * 100
+                }
+
+        # Format facing 4-bet with player frequencies
         facing_4bet_reference = []
         for key, actions in sorted(gto_facing_4bet.items()):
             pos, opp = key.split('_vs_')
+            player_stats = player_f4bet_stats.get(key, {})
+
+            gto_fold = actions.get('fold', 0)
+            gto_call = actions.get('call', 0)
+            gto_5bet = actions.get('5bet', 0) + actions.get('allin', 0)
+
+            player_fold = player_stats.get('fold_pct')
+            player_call = player_stats.get('call_pct')
+            player_5bet = player_stats.get('5bet_pct')
+
             facing_4bet_reference.append({
                 'position': pos,
                 'vs_position': opp,
-                'gto_fold': round(actions.get('fold', 0), 1),
-                'gto_call': round(actions.get('call', 0), 1),
-                'gto_5bet': round(actions.get('5bet', 0) + actions.get('allin', 0), 1),
+                'sample_size': player_stats.get('sample_size', 0),
+                'player_fold': round(player_fold, 1) if player_fold is not None else None,
+                'player_call': round(player_call, 1) if player_call is not None else None,
+                'player_5bet': round(player_5bet, 1) if player_5bet is not None else None,
+                'gto_fold': round(gto_fold, 1),
+                'gto_call': round(gto_call, 1),
+                'gto_5bet': round(gto_5bet, 1),
+                'fold_diff': round(player_fold - gto_fold, 1) if player_fold is not None else None,
+                'call_diff': round(player_call - gto_call, 1) if player_call is not None else None,
+                '5bet_diff': round(player_5bet - gto_5bet, 1) if player_5bet is not None else None,
             })
 
         # ============================================

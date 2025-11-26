@@ -67,6 +67,15 @@ CREATE TABLE IF NOT EXISTS player_hand_summary (
     cold_call BOOLEAN DEFAULT FALSE,
     squeeze BOOLEAN DEFAULT FALSE,
 
+    -- Position-specific tracking
+    raiser_position VARCHAR(10),
+
+    -- Facing 4-bet tracking
+    faced_four_bet BOOLEAN DEFAULT FALSE,
+    folded_to_four_bet BOOLEAN DEFAULT FALSE,
+    called_four_bet BOOLEAN DEFAULT FALSE,
+    five_bet BOOLEAN DEFAULT FALSE,
+
     -- Steal and blind defense (preflop)
     steal_attempt BOOLEAN DEFAULT FALSE,
     faced_steal BOOLEAN DEFAULT FALSE,
@@ -86,6 +95,7 @@ CREATE TABLE IF NOT EXISTS player_hand_summary (
 CREATE INDEX IF NOT EXISTS idx_player_summary_player ON player_hand_summary(player_name);
 CREATE INDEX IF NOT EXISTS idx_player_summary_hand ON player_hand_summary(hand_id);
 CREATE INDEX IF NOT EXISTS idx_player_summary_position ON player_hand_summary(position);
+CREATE INDEX IF NOT EXISTS idx_player_summary_raiser_pos ON player_hand_summary(raiser_position);
 
 -- ============================================
 -- Table 4: player_stats

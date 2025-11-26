@@ -543,20 +543,27 @@ const PlayerProfile = () => {
                   ]}
                 />
 
-                {/* GTO Reference: Position-Specific Defense Matchups */}
+                {/* Position-Specific Defense Matchups with Player Data */}
                 {gtoAnalysis.position_matchups && gtoAnalysis.position_matchups.length > 0 && (
                   <div className="card mb-6">
-                    <h3 className="font-semibold text-gray-900 mb-2">GTO Reference: Defense by Matchup</h3>
-                    <p className="text-sm text-gray-500 mb-4">Optimal defense frequencies vary significantly based on who opened</p>
+                    <h3 className="font-semibold text-gray-900 mb-2">Defense by Position Matchup</h3>
+                    <p className="text-sm text-gray-500 mb-4">How you defend vs opens from specific positions compared to GTO</p>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="border-b border-gray-200">
-                            <th className="text-left py-2 px-3 font-medium text-gray-600">Your Position</th>
-                            <th className="text-left py-2 px-3 font-medium text-gray-600">vs Opener</th>
-                            <th className="text-right py-2 px-3 font-medium text-blue-600 bg-blue-50">GTO Fold</th>
-                            <th className="text-right py-2 px-3 font-medium text-blue-600 bg-blue-50">GTO Call</th>
-                            <th className="text-right py-2 px-3 font-medium text-blue-600 bg-blue-50">GTO 3-Bet</th>
+                            <th className="text-left py-2 px-3 font-medium text-gray-600">Your Pos</th>
+                            <th className="text-left py-2 px-3 font-medium text-gray-600">vs</th>
+                            <th className="text-right py-2 px-3 font-medium text-gray-600">n</th>
+                            <th className="text-right py-2 px-3 font-medium text-gray-900">Fold</th>
+                            <th className="text-right py-2 px-3 font-medium text-blue-600 bg-blue-50">GTO</th>
+                            <th className="text-right py-2 px-3 font-medium text-gray-600">Diff</th>
+                            <th className="text-right py-2 px-3 font-medium text-gray-900">Call</th>
+                            <th className="text-right py-2 px-3 font-medium text-blue-600 bg-blue-50">GTO</th>
+                            <th className="text-right py-2 px-3 font-medium text-gray-600">Diff</th>
+                            <th className="text-right py-2 px-3 font-medium text-gray-900">3-Bet</th>
+                            <th className="text-right py-2 px-3 font-medium text-blue-600 bg-blue-50">GTO</th>
+                            <th className="text-right py-2 px-3 font-medium text-gray-600">Diff</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -564,31 +571,52 @@ const PlayerProfile = () => {
                             <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
                               <td className="py-2 px-3 font-medium">{row.position}</td>
                               <td className="py-2 px-3 text-gray-600">{row.vs_position}</td>
+                              <td className="py-2 px-3 text-right text-gray-500">{row.sample_size || '-'}</td>
+                              <td className="py-2 px-3 text-right font-medium">{row.player_fold != null ? `${row.player_fold.toFixed(1)}%` : '-'}</td>
                               <td className="py-2 px-3 text-right text-blue-600 bg-blue-50/50">{row.gto_fold.toFixed(1)}%</td>
+                              <td className={`py-2 px-3 text-right font-medium ${row.fold_diff != null ? (row.fold_diff > 10 ? 'text-red-600' : row.fold_diff < -10 ? 'text-green-600' : 'text-gray-600') : 'text-gray-400'}`}>
+                                {row.fold_diff != null ? `${row.fold_diff > 0 ? '+' : ''}${row.fold_diff.toFixed(1)}` : '-'}
+                              </td>
+                              <td className="py-2 px-3 text-right font-medium">{row.player_call != null ? `${row.player_call.toFixed(1)}%` : '-'}</td>
                               <td className="py-2 px-3 text-right text-blue-600 bg-blue-50/50">{row.gto_call.toFixed(1)}%</td>
+                              <td className={`py-2 px-3 text-right font-medium ${row.call_diff != null ? (Math.abs(row.call_diff) > 10 ? 'text-red-600' : 'text-gray-600') : 'text-gray-400'}`}>
+                                {row.call_diff != null ? `${row.call_diff > 0 ? '+' : ''}${row.call_diff.toFixed(1)}` : '-'}
+                              </td>
+                              <td className="py-2 px-3 text-right font-medium">{row.player_3bet != null ? `${row.player_3bet.toFixed(1)}%` : '-'}</td>
                               <td className="py-2 px-3 text-right text-blue-600 bg-blue-50/50">{row.gto_3bet.toFixed(1)}%</td>
+                              <td className={`py-2 px-3 text-right font-medium ${row['3bet_diff'] != null ? (Math.abs(row['3bet_diff']) > 10 ? 'text-red-600' : 'text-gray-600') : 'text-gray-400'}`}>
+                                {row['3bet_diff'] != null ? `${row['3bet_diff'] > 0 ? '+' : ''}${row['3bet_diff'].toFixed(1)}` : '-'}
+                              </td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
+                    <p className="text-xs text-gray-400 mt-2">Note: Player data requires hands to be re-parsed after upgrading to track raiser positions.</p>
                   </div>
                 )}
 
-                {/* GTO Reference: Facing 4-Bet */}
+                {/* Facing 4-Bet Analysis */}
                 {gtoAnalysis.facing_4bet_reference && gtoAnalysis.facing_4bet_reference.length > 0 && (
                   <div className="card mb-6">
-                    <h3 className="font-semibold text-gray-900 mb-2">GTO Reference: Facing 4-Bet</h3>
-                    <p className="text-sm text-gray-500 mb-4">How to respond after you 3-bet and face a 4-bet</p>
+                    <h3 className="font-semibold text-gray-900 mb-2">Facing 4-Bet</h3>
+                    <p className="text-sm text-gray-500 mb-4">How you respond after 3-betting and facing a 4-bet, compared to GTO</p>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="border-b border-gray-200">
-                            <th className="text-left py-2 px-3 font-medium text-gray-600">Your Position</th>
-                            <th className="text-left py-2 px-3 font-medium text-gray-600">vs 4-Bettor</th>
-                            <th className="text-right py-2 px-3 font-medium text-blue-600 bg-blue-50">GTO Fold</th>
-                            <th className="text-right py-2 px-3 font-medium text-blue-600 bg-blue-50">GTO Call</th>
-                            <th className="text-right py-2 px-3 font-medium text-blue-600 bg-blue-50">GTO 5-Bet</th>
+                            <th className="text-left py-2 px-3 font-medium text-gray-600">Your Pos</th>
+                            <th className="text-left py-2 px-3 font-medium text-gray-600">vs</th>
+                            <th className="text-right py-2 px-3 font-medium text-gray-600">n</th>
+                            <th className="text-right py-2 px-3 font-medium text-gray-900">Fold</th>
+                            <th className="text-right py-2 px-3 font-medium text-blue-600 bg-blue-50">GTO</th>
+                            <th className="text-right py-2 px-3 font-medium text-gray-600">Diff</th>
+                            <th className="text-right py-2 px-3 font-medium text-gray-900">Call</th>
+                            <th className="text-right py-2 px-3 font-medium text-blue-600 bg-blue-50">GTO</th>
+                            <th className="text-right py-2 px-3 font-medium text-gray-600">Diff</th>
+                            <th className="text-right py-2 px-3 font-medium text-gray-900">5-Bet</th>
+                            <th className="text-right py-2 px-3 font-medium text-blue-600 bg-blue-50">GTO</th>
+                            <th className="text-right py-2 px-3 font-medium text-gray-600">Diff</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -596,14 +624,28 @@ const PlayerProfile = () => {
                             <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
                               <td className="py-2 px-3 font-medium">{row.position}</td>
                               <td className="py-2 px-3 text-gray-600">{row.vs_position}</td>
+                              <td className="py-2 px-3 text-right text-gray-500">{row.sample_size || '-'}</td>
+                              <td className="py-2 px-3 text-right font-medium">{row.player_fold != null ? `${row.player_fold.toFixed(1)}%` : '-'}</td>
                               <td className="py-2 px-3 text-right text-blue-600 bg-blue-50/50">{row.gto_fold.toFixed(1)}%</td>
+                              <td className={`py-2 px-3 text-right font-medium ${row.fold_diff != null ? (row.fold_diff > 10 ? 'text-red-600' : row.fold_diff < -10 ? 'text-green-600' : 'text-gray-600') : 'text-gray-400'}`}>
+                                {row.fold_diff != null ? `${row.fold_diff > 0 ? '+' : ''}${row.fold_diff.toFixed(1)}` : '-'}
+                              </td>
+                              <td className="py-2 px-3 text-right font-medium">{row.player_call != null ? `${row.player_call.toFixed(1)}%` : '-'}</td>
                               <td className="py-2 px-3 text-right text-blue-600 bg-blue-50/50">{row.gto_call.toFixed(1)}%</td>
+                              <td className={`py-2 px-3 text-right font-medium ${row.call_diff != null ? (Math.abs(row.call_diff) > 10 ? 'text-red-600' : 'text-gray-600') : 'text-gray-400'}`}>
+                                {row.call_diff != null ? `${row.call_diff > 0 ? '+' : ''}${row.call_diff.toFixed(1)}` : '-'}
+                              </td>
+                              <td className="py-2 px-3 text-right font-medium">{row.player_5bet != null ? `${row.player_5bet.toFixed(1)}%` : '-'}</td>
                               <td className="py-2 px-3 text-right text-blue-600 bg-blue-50/50">{row.gto_5bet.toFixed(1)}%</td>
+                              <td className={`py-2 px-3 text-right font-medium ${row['5bet_diff'] != null ? (Math.abs(row['5bet_diff']) > 10 ? 'text-red-600' : 'text-gray-600') : 'text-gray-400'}`}>
+                                {row['5bet_diff'] != null ? `${row['5bet_diff'] > 0 ? '+' : ''}${row['5bet_diff'].toFixed(1)}` : '-'}
+                              </td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
+                    <p className="text-xs text-gray-400 mt-2">Note: Player data requires hands to be re-parsed after upgrading to track 4-bet scenarios.</p>
                   </div>
                 )}
               </>

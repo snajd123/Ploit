@@ -126,6 +126,15 @@ class PlayerHandSummaryFlags:
     cold_call: bool = False
     squeeze: bool = False
 
+    # Position-specific tracking
+    raiser_position: Optional[str] = None  # Position of the first raiser (opener)
+
+    # Facing 4-bet tracking
+    faced_four_bet: bool = False
+    folded_to_four_bet: bool = False
+    called_four_bet: bool = False
+    five_bet: bool = False
+
     # Street visibility
     saw_flop: bool = False
     saw_turn: bool = False
