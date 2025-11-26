@@ -438,7 +438,7 @@ async def list_scenarios(
     street: Optional[str] = Query(None, description="Filter by street"),
     category: Optional[str] = Query(None, description="Filter by category"),
     position: Optional[str] = Query(None, description="Filter by position"),
-    limit: int = Query(100, ge=1, le=1000),
+    limit: int = Query(500, ge=1, le=1000),
     gto_service: GTOService = Depends(get_gto_service)
 ):
     """
