@@ -475,11 +475,14 @@ const PlayerProfile = () => {
 
                 {/* Defense vs Opens */}
                 <GTOScenarioTable
-                  title="Defense vs Opens (Call/3-Bet/Fold)"
+                  title="Defense vs Opens (Fold/Call/3-Bet)"
                   data={gtoAnalysis.defense_vs_open}
                   columns={[
                     { key: 'position', label: 'Position' },
                     { key: 'sample_size', label: 'Hands' },
+                    { key: 'player_fold', label: 'Fold', isPlayer: true },
+                    { key: 'gto_fold', label: 'GTO Fold', isGTO: true },
+                    { key: 'fold_diff', label: 'Diff', isDiff: true },
                     { key: 'player_call', label: 'Call', isPlayer: true },
                     { key: 'gto_call', label: 'GTO Call', isGTO: true },
                     { key: 'call_diff', label: 'Diff', isDiff: true },
@@ -501,8 +504,10 @@ const PlayerProfile = () => {
                     { key: 'fold_diff', label: 'Diff', isDiff: true },
                     { key: 'player_call', label: 'Call', isPlayer: true },
                     { key: 'gto_call', label: 'GTO Call', isGTO: true },
+                    { key: 'call_diff', label: 'Diff', isDiff: true },
                     { key: 'player_4bet', label: '4-Bet', isPlayer: true },
                     { key: 'gto_4bet', label: 'GTO 4-Bet', isGTO: true },
+                    { key: '4bet_diff', label: 'Diff', isDiff: true },
                   ]}
                 />
 
@@ -518,8 +523,10 @@ const PlayerProfile = () => {
                     { key: 'fold_diff', label: 'Diff', isDiff: true },
                     { key: 'player_call', label: 'Call', isPlayer: true },
                     { key: 'gto_call', label: 'GTO Call', isGTO: true },
+                    { key: 'call_diff', label: 'Diff', isDiff: true },
                     { key: 'player_3bet', label: '3-Bet', isPlayer: true },
                     { key: 'gto_3bet', label: 'GTO 3-Bet', isGTO: true },
+                    { key: '3bet_diff', label: 'Diff', isDiff: true },
                   ]}
                 />
 
