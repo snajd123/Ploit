@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Outlet, NavLink } from 'react-router-dom';
-import { LayoutDashboard, Upload, Users, MessageSquare, Target, Search, Menu, X, BookOpen, Crosshair, Grid3x3, BarChart2 } from 'lucide-react';
+import { LayoutDashboard, Upload, Users, MessageSquare, Target, Search, Menu, X, BookOpen, Crosshair, Grid3x3, BarChart2, Settings } from 'lucide-react';
 import QuickLookupModal from './QuickLookupModal';
 import OnboardingModal, { shouldShowOnboarding } from './OnboardingModal';
 
@@ -49,6 +49,7 @@ const Layout = () => {
       items: [
         { to: '/upload', icon: Upload, label: 'Upload', tooltip: 'Import hand histories' },
         { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', tooltip: 'Database overview' },
+        { to: '/settings', icon: Settings, label: 'Settings', tooltip: 'Upload history & reset data' },
       ]
     },
   ];
