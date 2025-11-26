@@ -9,7 +9,7 @@ from typing import List, Dict, Optional, Any
 from pydantic import BaseModel
 
 from ..database import get_db
-from ..models.gto_models import GTOScenario, PlayerGTOStat, GTOFrequency
+from ..models.gto_models import GTOScenario, GTOFrequency
 
 router = APIRouter(prefix="/api/gto", tags=["gto_browser"])
 
@@ -264,46 +264,36 @@ def match_scenario(request: MatchScenarioRequest, db: Session = Depends(get_db))
         )
     ).all()
 
-    # Get GTO stats for these scenarios
+    # Get GTO actions for these scenarios using aggregate frequencies
     gto_actions = []
     for scen in related_scenarios:
-        stats = db.query(PlayerGTOStat).filter(
-            PlayerGTOStat.scenario_id == scen.scenario_id
-        ).first()
+        action_name = scen.action or scen.scenario_name.split('_')[-1]
 
-        if stats:
-            action_name = scen.action or scen.scenario_name.split('_')[-1]
+        # Fetch range data from gto_frequencies table
+        range_matrix = get_range_from_frequencies(db, scen.scenario_id)
+        combos = calculate_combos_from_matrix(range_matrix) if range_matrix else None
 
-            # Fetch range data from gto_frequencies table
-            range_matrix = get_range_from_frequencies(db, scen.scenario_id)
-            combos = calculate_combos_from_matrix(range_matrix) if range_matrix else None
+        gto_actions.append(GTOAction(
+            action=action_name,
+            frequency=float(scen.gto_aggregate_freq * 100) if scen.gto_aggregate_freq else 0.0,
+            range_string=None,
+            range_matrix=range_matrix if range_matrix else None,
+            combos=combos
+        ))
 
-            gto_actions.append(GTOAction(
-                action=action_name,
-                frequency=float(stats.gto_frequency * 100) if stats.gto_frequency else 0.0,
-                range_string=None,
-                range_matrix=range_matrix if range_matrix else None,
-                combos=combos
-            ))
-
-    # If we only found one scenario (the matched one), get its stats
+    # If we only found the matched scenario, add it
     if not gto_actions:
-        stats = db.query(PlayerGTOStat).filter(
-            PlayerGTOStat.scenario_id == scenario.scenario_id
-        ).first()
+        # Fetch range data from gto_frequencies table
+        range_matrix = get_range_from_frequencies(db, scenario.scenario_id)
+        combos = calculate_combos_from_matrix(range_matrix) if range_matrix else None
 
-        if stats:
-            # Fetch range data from gto_frequencies table
-            range_matrix = get_range_from_frequencies(db, scenario.scenario_id)
-            combos = calculate_combos_from_matrix(range_matrix) if range_matrix else None
-
-            gto_actions.append(GTOAction(
-                action=scenario.action or request.hero_action,
-                frequency=float(stats.gto_frequency * 100) if stats.gto_frequency else 0.0,
-                range_string=None,
-                range_matrix=range_matrix if range_matrix else None,
-                combos=combos
-            ))
+        gto_actions.append(GTOAction(
+            action=scenario.action or request.hero_action,
+            frequency=float(scenario.gto_aggregate_freq * 100) if scenario.gto_aggregate_freq else 0.0,
+            range_string=None,
+            range_matrix=range_matrix if range_matrix else None,
+            combos=combos
+        ))
 
     return MatchScenarioResponse(
         found=True,
@@ -358,24 +348,18 @@ def get_scenario_details(scenario_id: int, db: Session = Depends(get_db)):
     if not scenario:
         raise HTTPException(status_code=404, detail="Scenario not found")
 
-    # Get GTO stats for this scenario
-    stats = db.query(PlayerGTOStat).filter(
-        PlayerGTOStat.scenario_id == scenario_id
-    ).first()
-
-    # Get range data
+    # Get range data from gto_frequencies table
     range_matrix = get_range_from_frequencies(db, scenario_id)
     combos = calculate_combos_from_matrix(range_matrix) if range_matrix else None
 
-    # Build GTO action
-    gto_action = None
-    if stats:
-        gto_action = {
-            "action": scenario.action or "unknown",
-            "frequency": float(stats.gto_frequency * 100) if stats.gto_frequency else 0.0,
-            "range_matrix": range_matrix if range_matrix else None,
-            "combos": combos
-        }
+    # Build GTO action using scenario's aggregate frequency
+    # gto_aggregate_freq is the overall frequency for this action (0.0-1.0)
+    gto_action = {
+        "action": scenario.action or "unknown",
+        "frequency": float(scenario.gto_aggregate_freq * 100) if scenario.gto_aggregate_freq else 0.0,
+        "range_matrix": range_matrix if range_matrix else None,
+        "combos": combos
+    }
 
     return {
         "scenario_id": scenario.scenario_id,

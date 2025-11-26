@@ -38,8 +38,18 @@ const POSITIONS = [
   { id: 'BB', label: 'BB', description: 'Big Blind' },
 ];
 
+const ACTION_FILTERS = [
+  { id: 'all', label: 'All Actions' },
+  { id: 'fold', label: 'Fold' },
+  { id: 'call', label: 'Call' },
+  { id: '3bet', label: '3-Bet' },
+  { id: '4bet', label: '4-Bet' },
+  { id: 'allin', label: 'All-In' },
+];
+
 const GTOBrowser: React.FC = () => {
   const [selectedPosition, setSelectedPosition] = useState('UTG');
+  const [selectedAction, setSelectedAction] = useState('all');
   const [allScenarios, setAllScenarios] = useState<Scenario[]>([]);
   const [groupedScenarios, setGroupedScenarios] = useState<GroupedScenarios>({
     opening: [],
@@ -58,10 +68,10 @@ const GTOBrowser: React.FC = () => {
     fetchAllScenarios();
   }, []);
 
-  // Group scenarios when position changes
+  // Group scenarios when position or action filter changes
   useEffect(() => {
     groupScenariosByType();
-  }, [selectedPosition, allScenarios]);
+  }, [selectedPosition, selectedAction, allScenarios]);
 
   const fetchAllScenarios = async () => {
     setLoading(true);
@@ -78,7 +88,12 @@ const GTOBrowser: React.FC = () => {
   };
 
   const groupScenariosByType = () => {
-    const positionScenarios = allScenarios.filter(s => s.position === selectedPosition);
+    let positionScenarios = allScenarios.filter(s => s.position === selectedPosition);
+
+    // Apply action filter
+    if (selectedAction !== 'all') {
+      positionScenarios = positionScenarios.filter(s => s.action === selectedAction);
+    }
 
     const grouped: GroupedScenarios = {
       opening: [],
@@ -90,14 +105,16 @@ const GTOBrowser: React.FC = () => {
 
     positionScenarios.forEach(scenario => {
       if (scenario.category === 'opening') {
+        // Opening ranges (RFI)
         grouped.opening.push(scenario);
-      } else if (scenario.category === 'defense' || (scenario.category === 'facing_3bet' && scenario.action === '3bet' && !scenario.scenario_name.includes('3bet_'))) {
-        // Defense (fold/call) OR 3-betting vs open (not facing a 3-bet)
+      } else if (scenario.category === 'defense') {
+        // Defense vs open: fold/call/3bet responses
         grouped.facingOpen.push(scenario);
-      } else if (scenario.category === 'facing_3bet' && scenario.action !== '3bet') {
-        // Facing a 3-bet (responding with fold/call/4bet/allin)
+      } else if (scenario.category === 'facing_3bet') {
+        // Facing a 3-bet after opening: fold/call/4bet/allin responses
         grouped.facing3Bet.push(scenario);
       } else if (scenario.category === 'facing_4bet') {
+        // Facing a 4-bet: fold/call/5bet/allin responses
         grouped.facing4Bet.push(scenario);
       } else if (scenario.category === 'multiway') {
         grouped.multiway.push(scenario);
@@ -361,6 +378,28 @@ const GTOBrowser: React.FC = () => {
                 <div className="text-xs font-normal opacity-75">{position.description}</div>
               </button>
             ))}
+          </div>
+
+          {/* Action Filter */}
+          <div className="mt-6 pt-6 border-t border-gray-200">
+            <h2 className="text-sm font-medium text-gray-700 mb-3">Filter by Action:</h2>
+            <div className="flex flex-wrap gap-2">
+              {ACTION_FILTERS.map((filter) => (
+                <button
+                  key={filter.id}
+                  onClick={() => setSelectedAction(filter.id)}
+                  className={`
+                    px-4 py-2 rounded-full text-sm font-medium transition-all
+                    ${selectedAction === filter.id
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }
+                  `}
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
