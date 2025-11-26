@@ -63,7 +63,7 @@ class SessionDetector:
             FROM player_hand_summary phs
             JOIN raw_hands rh ON phs.hand_id = rh.hand_id
             WHERE phs.player_name = :player_name
-            AND phs.session_id IS NULL
+            AND rh.session_id IS NULL
             ORDER BY rh.timestamp ASC
         """)
 
@@ -240,7 +240,7 @@ class SessionDetector:
             SELECT DISTINCT phs.player_name
             FROM player_hand_summary phs
             JOIN raw_hands rh ON phs.hand_id = rh.hand_id
-            WHERE phs.session_id IS NULL
+            WHERE rh.session_id IS NULL
             AND rh.raw_hand_text LIKE '%Dealt to ' || phs.player_name || '%'
         """)
 
