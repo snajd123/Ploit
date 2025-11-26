@@ -946,150 +946,85 @@ async def get_optimal_ranges(
     gto_service: GTOService = Depends(get_gto_service)
 ):
     """
-    Get optimal stat ranges calculated from GTO database.
+    Get optimal stat ranges for player statistics.
 
-    Returns optimal ranges for:
-    - VPIP, PFR, 3-bet%, Fold to 3-bet
-    - Position-specific VPIP/opening ranges
-    - Derived from actual GTOWizard preflop data
+    Returns:
+    - Overall optimal ranges for player stats (VPIP, PFR, 3-bet%, etc.)
+    - Position-specific RFI (raise first in) frequencies from GTO
+
+    Note: Overall player stat ranges are based on poker theory for 6-max cash.
+    The GTO scenario data represents action frequencies for SPECIFIC scenarios,
+    not overall player tendencies. A player's VPIP is ~22% because they fold
+    most hands, even though BTN should open 93% when folded to.
 
     Example: GET /api/gto/optimal-ranges
-
-    Frontend can use these to replace hardcoded values in statDefinitions.
     """
     from backend.models.gto_models import GTOScenario, GTOFrequency
-    from sqlalchemy import func
 
     try:
-        # Position weighting for 6-max (approximate hands per position)
-        position_weights = {
-            'UTG': 1.0,
-            'MP': 1.0,
-            'CO': 1.0,
-            'BTN': 1.0,
-            'SB': 1.0,
-            'BB': 1.0  # BB doesn't have opening range, but defends
+        # Overall optimal ranges for PLAYER STATS (not scenario frequencies)
+        # These are standard ranges for winning 6-max cash game players
+        overall = {
+            'vpip_pct': OptimalRangeItem(
+                stat_key='vpip_pct',
+                optimal_low=18,
+                optimal_high=25,
+                gto_value=22,
+                source='poker_theory',
+                description='Voluntarily put money in pot - overall player tendency'
+            ),
+            'pfr_pct': OptimalRangeItem(
+                stat_key='pfr_pct',
+                optimal_low=13,
+                optimal_high=20,
+                gto_value=17,
+                source='poker_theory',
+                description='Pre-flop raise percentage - overall player tendency'
+            ),
+            'three_bet_pct': OptimalRangeItem(
+                stat_key='three_bet_pct',
+                optimal_low=6,
+                optimal_high=12,
+                gto_value=8,
+                source='poker_theory',
+                description='3-bet percentage when facing a raise'
+            ),
+            'fold_to_three_bet_pct': OptimalRangeItem(
+                stat_key='fold_to_three_bet_pct',
+                optimal_low=50,
+                optimal_high=60,
+                gto_value=55,
+                source='poker_theory',
+                description='Fold to 3-bet after opening'
+            ),
+            'vpip_btn': OptimalRangeItem(
+                stat_key='vpip_btn',
+                optimal_low=43,
+                optimal_high=51,
+                gto_value=47,
+                source='poker_theory',
+                description='VPIP from button position'
+            )
         }
 
-        # Get opening frequencies by position
+        # Get position-specific RFI (raise first in) frequencies from GTO
+        # These show optimal OPENING ranges when folded to in each position
         opening_scenarios = gto_service.db.query(GTOScenario).filter(
             GTOScenario.category == 'opening'
         ).all()
 
         positional_data = []
-        opening_freqs = []
-
         for scenario in opening_scenarios:
             pos = scenario.position
-            freq = float(scenario.gto_aggregate_freq) * 100 if scenario.gto_aggregate_freq else 0
+            # RFI frequency - how often to open when folded to
+            rfi_freq = float(scenario.gto_aggregate_freq) * 100 if scenario.gto_aggregate_freq else 0
 
             positional_data.append(PositionalOptimalRange(
                 position=pos,
-                vpip_pct=round(freq, 1)
+                vpip_pct=round(rfi_freq, 1),  # This is RFI, not overall VPIP from this position
             ))
-            opening_freqs.append(freq)
 
-        # Calculate weighted average VPIP (opening only - this is PFR)
-        # For 6-max, true VPIP includes calling too, but we only have opening data
-        avg_pfr = sum(opening_freqs) / len(opening_freqs) if opening_freqs else 0
-
-        # Calculate 3-bet frequencies by position
-        threebet_scenarios = gto_service.db.query(GTOScenario).filter(
-            GTOScenario.action == '3bet',
-            GTOScenario.category == 'defense'
-        ).all()
-
-        threebet_freqs = [float(s.gto_aggregate_freq) * 100 for s in threebet_scenarios if s.gto_aggregate_freq]
-        avg_3bet = sum(threebet_freqs) / len(threebet_freqs) if threebet_freqs else 0
-
-        # Get fold to 3-bet frequencies
-        fold_to_3bet_scenarios = gto_service.db.query(GTOScenario).filter(
-            GTOScenario.action == 'fold',
-            GTOScenario.category == 'facing_3bet'
-        ).all()
-
-        fold_3bet_freqs = [float(s.gto_aggregate_freq) * 100 for s in fold_to_3bet_scenarios if s.gto_aggregate_freq]
-        avg_fold_to_3bet = sum(fold_3bet_freqs) / len(fold_3bet_freqs) if fold_3bet_freqs else 0
-
-        # Get BTN-specific opening frequency
-        btn_open = gto_service.db.query(GTOScenario).filter(
-            GTOScenario.scenario_name == 'BTN_open'
-        ).first()
-        btn_vpip = float(btn_open.gto_aggregate_freq) * 100 if btn_open and btn_open.gto_aggregate_freq else 92.5
-
-        # Build overall optimal ranges
-        # Use a range around the GTO value (typically +/- 5-10%)
-        overall = {
-            'vpip_pct': OptimalRangeItem(
-                stat_key='vpip_pct',
-                # VPIP is higher than PFR because it includes calling
-                # Estimate VPIP as PFR + some calling frequency
-                optimal_low=round(avg_pfr * 0.85, 0),  # Allow some tightness
-                optimal_high=round(avg_pfr * 1.1, 0),  # Allow some looseness
-                gto_value=round(avg_pfr, 1),
-                source='gto_database',
-                description='Average RFI frequency across positions'
-            ),
-            'pfr_pct': OptimalRangeItem(
-                stat_key='pfr_pct',
-                optimal_low=round(avg_pfr * 0.85, 0),
-                optimal_high=round(avg_pfr * 1.05, 0),
-                gto_value=round(avg_pfr, 1),
-                source='gto_database',
-                description='Average opening/raise frequency'
-            ),
-            'three_bet_pct': OptimalRangeItem(
-                stat_key='three_bet_pct',
-                optimal_low=round(avg_3bet * 0.7, 1),  # Allow range
-                optimal_high=round(avg_3bet * 1.2, 1),
-                gto_value=round(avg_3bet, 1),
-                source='gto_database',
-                description='Average 3-bet frequency when facing open'
-            ),
-            'fold_to_three_bet_pct': OptimalRangeItem(
-                stat_key='fold_to_three_bet_pct',
-                optimal_low=round(avg_fold_to_3bet * 0.85, 0),
-                optimal_high=round(avg_fold_to_3bet * 1.15, 0),
-                gto_value=round(avg_fold_to_3bet, 1),
-                source='gto_database',
-                description='Average fold to 3-bet frequency'
-            ),
-            'vpip_btn': OptimalRangeItem(
-                stat_key='vpip_btn',
-                optimal_low=round(btn_vpip * 0.9, 0),
-                optimal_high=round(btn_vpip * 1.05, 0),
-                gto_value=round(btn_vpip, 1),
-                source='gto_database',
-                description='Button opening frequency'
-            )
-        }
-
-        # Update positional data with 3-bet and fold stats
-        position_3bet_map = {}
-        position_fold3bet_map = {}
-
-        for s in threebet_scenarios:
-            pos = s.position
-            freq = float(s.gto_aggregate_freq) * 100 if s.gto_aggregate_freq else 0
-            if pos not in position_3bet_map:
-                position_3bet_map[pos] = []
-            position_3bet_map[pos].append(freq)
-
-        for s in fold_to_3bet_scenarios:
-            pos = s.position
-            freq = float(s.gto_aggregate_freq) * 100 if s.gto_aggregate_freq else 0
-            if pos not in position_fold3bet_map:
-                position_fold3bet_map[pos] = []
-            position_fold3bet_map[pos].append(freq)
-
-        # Enrich positional data
-        for pd in positional_data:
-            if pd.position in position_3bet_map:
-                pd.three_bet_pct = round(sum(position_3bet_map[pd.position]) / len(position_3bet_map[pd.position]), 1)
-            if pd.position in position_fold3bet_map:
-                pd.fold_to_3bet_pct = round(sum(position_fold3bet_map[pd.position]) / len(position_fold3bet_map[pd.position]), 1)
-
-        # Sort positional data by position order
+        # Sort by position order
         position_order = {'UTG': 1, 'MP': 2, 'CO': 3, 'BTN': 4, 'SB': 5, 'BB': 6}
         positional_data.sort(key=lambda x: position_order.get(x.position, 99))
 
