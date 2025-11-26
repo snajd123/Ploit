@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { Upload as UploadIcon, FileText, CheckCircle, XCircle, AlertCircle, X, Users, Calendar, Target, ArrowRight, Loader2 } from 'lucide-react';
+import { Upload as UploadIcon, FileText, CheckCircle, XCircle, AlertCircle, X, Users, Calendar, Target, ArrowRight, Loader2, Folder } from 'lucide-react';
 import { api } from '../services/api';
 import type { UploadResponse } from '../types';
 
@@ -12,6 +12,7 @@ interface SessionDetectionResult {
 
 const Upload = () => {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [folderName, setFolderName] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [result, setResult] = useState<UploadResponse | null>(null);
@@ -41,8 +42,21 @@ const Upload = () => {
         setSelectedFiles(files);
         setError(null);
         setResult(null);
+
+        // Extract folder name from webkitRelativePath if available
+        const firstFile = files[0] as File & { webkitRelativePath?: string };
+        if (firstFile.webkitRelativePath) {
+          const pathParts = firstFile.webkitRelativePath.split('/');
+          if (pathParts.length > 1) {
+            setFolderName(pathParts[0]);
+          }
+        } else {
+          // For drag & drop without folder info, set a generic name
+          setFolderName('Dropped files');
+        }
       } else {
-        setError('Please select .txt files only');
+        setError('Please drop a folder containing .txt files');
+        setFolderName(null);
       }
     }
   }, []);
@@ -54,14 +68,20 @@ const Upload = () => {
         setSelectedFiles(files);
         setError(null);
         setResult(null);
+
+        // Extract folder name from webkitRelativePath
+        const firstFile = files[0] as File & { webkitRelativePath?: string };
+        if (firstFile.webkitRelativePath) {
+          const pathParts = firstFile.webkitRelativePath.split('/');
+          if (pathParts.length > 1) {
+            setFolderName(pathParts[0]);
+          }
+        }
       } else {
-        setError('Please select .txt files only');
+        setError('Please select a folder containing .txt files');
+        setFolderName(null);
       }
     }
-  };
-
-  const removeFile = (index: number) => {
-    setSelectedFiles(files => files.filter((_, i) => i !== index));
   };
 
   const handleUpload = async () => {
@@ -80,6 +100,7 @@ const Upload = () => {
 
       setResult(response);
       setSelectedFiles([]);
+      setFolderName(null);
 
       // Auto-trigger session detection after successful upload
       setDetectingSessions(true);
@@ -108,7 +129,7 @@ const Upload = () => {
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Upload Hand History</h1>
         <p className="mt-2 text-gray-600">
-          Import PokerStars .txt hand history files for analysis (supports multiple files)
+          Import a folder containing PokerStars .txt hand history files for analysis
         </p>
       </div>
 
@@ -129,62 +150,79 @@ const Upload = () => {
           <div className="mt-4">
             <label htmlFor="file-upload" className="cursor-pointer">
               <span className="mt-2 block text-sm font-semibold text-gray-900">
-                Drop your files here, or{' '}
-                <span className="text-blue-600 hover:text-blue-500">browse</span>
+                Drop a folder here, or{' '}
+                <span className="text-blue-600 hover:text-blue-500">browse for folder</span>
               </span>
               <input
                 id="file-upload"
                 name="file-upload"
                 type="file"
                 accept=".txt"
-                multiple
                 className="sr-only"
                 onChange={handleFileSelect}
                 disabled={uploading}
+                {...{ webkitdirectory: '', directory: '' } as any}
               />
             </label>
             <p className="mt-1 text-xs text-gray-500">
-              PokerStars .txt files only • Multiple files supported
+              Select a folder containing PokerStars .txt files
             </p>
           </div>
         </div>
 
-        {/* Selected files */}
+        {/* Selected folder */}
         {selectedFiles.length > 0 && !uploading && !result && (
-          <div className="mt-4 space-y-2">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-medium text-gray-700">
-                {selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''} selected ({(totalSize / 1024).toFixed(2)} KB)
-              </p>
-              <button
-                onClick={handleUpload}
-                className="btn-primary"
-              >
-                Upload & Parse {selectedFiles.length > 1 ? 'All' : ''}
-              </button>
-            </div>
-            <div className="max-h-64 overflow-y-auto space-y-2">
-              {selectedFiles.map((file, index) => (
-                <div key={index} className="p-3 bg-gray-50 rounded-lg flex items-center justify-between group hover:bg-gray-100">
-                  <div className="flex items-center space-x-3 flex-1 min-w-0">
-                    <FileText className="text-gray-400 flex-shrink-0" size={20} />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-gray-900 truncate">{file.name}</p>
-                      <p className="text-xs text-gray-500">
-                        {(file.size / 1024).toFixed(2)} KB
-                      </p>
-                    </div>
+          <div className="mt-4 space-y-3">
+            {/* Folder card */}
+            <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-blue-100 rounded-lg">
+                    <Folder className="text-blue-600" size={24} />
                   </div>
-                  <button
-                    onClick={() => removeFile(index)}
-                    className="ml-2 p-1 rounded-full hover:bg-gray-200 opacity-0 group-hover:opacity-100 transition-opacity"
-                    title="Remove file"
-                  >
-                    <X size={16} className="text-gray-500" />
-                  </button>
+                  <div>
+                    <p className="font-semibold text-gray-900">{folderName || 'Selected Folder'}</p>
+                    <p className="text-sm text-gray-600">
+                      {selectedFiles.length} .txt file{selectedFiles.length > 1 ? 's' : ''} • {(totalSize / 1024).toFixed(2)} KB total
+                    </p>
+                  </div>
                 </div>
-              ))}
+                <button
+                  onClick={() => {
+                    setSelectedFiles([]);
+                    setFolderName(null);
+                  }}
+                  className="p-2 rounded-full hover:bg-blue-100 transition-colors"
+                  title="Clear selection"
+                >
+                  <X size={18} className="text-gray-500" />
+                </button>
+              </div>
             </div>
+
+            {/* Upload button */}
+            <button
+              onClick={handleUpload}
+              className="w-full btn-primary py-3"
+            >
+              Upload & Parse {selectedFiles.length} File{selectedFiles.length > 1 ? 's' : ''}
+            </button>
+
+            {/* Collapsible file list */}
+            <details className="text-sm">
+              <summary className="cursor-pointer text-gray-500 hover:text-gray-700">
+                View {selectedFiles.length} files
+              </summary>
+              <div className="mt-2 max-h-48 overflow-y-auto space-y-1 pl-2">
+                {selectedFiles.map((file, index) => (
+                  <div key={index} className="flex items-center space-x-2 text-gray-600 py-1">
+                    <FileText className="text-gray-400 flex-shrink-0" size={14} />
+                    <span className="truncate">{file.name}</span>
+                    <span className="text-gray-400 text-xs flex-shrink-0">({(file.size / 1024).toFixed(1)} KB)</span>
+                  </div>
+                ))}
+              </div>
+            </details>
           </div>
         )}
 
@@ -193,7 +231,7 @@ const Upload = () => {
           <div className="mt-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-medium text-gray-700">
-                Uploading {selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''}...
+                Uploading {folderName ? `"${folderName}"` : `${selectedFiles.length} files`}...
               </span>
               <span className="text-sm font-medium text-gray-700">{progress}%</span>
             </div>
@@ -368,7 +406,7 @@ const Upload = () => {
           </li>
           <li className="flex items-start">
             <span className="font-semibold text-blue-600 mr-2">2.</span>
-            <span>Select one or multiple .txt files, or drag them into the upload area</span>
+            <span>Select the folder containing your .txt files, or drag it into the upload area</span>
           </li>
           <li className="flex items-start">
             <span className="font-semibold text-blue-600 mr-2">3.</span>
