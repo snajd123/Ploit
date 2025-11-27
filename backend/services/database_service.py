@@ -27,6 +27,11 @@ from backend.services.board_categorizer import BoardCategorizer
 logger = logging.getLogger(__name__)
 
 
+class DatabaseConnectionError(Exception):
+    """Exception raised when database connection fails."""
+    pass
+
+
 class DatabaseService:
     """
     Service class for database operations.
@@ -612,6 +617,11 @@ class DatabaseService:
             }
 
         except SQLAlchemyError as e:
+            error_msg = str(e).lower()
+            # Check for connection-related errors
+            if any(term in error_msg for term in ['ssl', 'connection', 'timeout', 'closed', 'refused']):
+                logger.error(f"Database connection error getting stats for {player_name}: {str(e)}")
+                raise DatabaseConnectionError(f"Database connection error: {str(e)}")
             logger.error(f"Error getting stats for {player_name}: {str(e)}")
             return None
 

@@ -21,6 +21,7 @@ import logging
 
 from backend.database import get_db, check_db_connection
 from backend.services import DatabaseService, ClaudeService
+from backend.services.database_service import DatabaseConnectionError
 from backend.services.stats_calculator import StatsCalculator
 from backend.parser import PokerStarsParser
 from backend.config import get_settings
@@ -509,6 +510,12 @@ async def get_player_profile(
 
     except HTTPException:
         raise
+    except DatabaseConnectionError as e:
+        logger.error(f"Database connection error for player profile: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database temporarily unavailable. Please try again."
+        )
     except Exception as e:
         logger.error(f"Error getting player profile: {str(e)}")
         raise HTTPException(
@@ -570,6 +577,12 @@ async def get_player_leaks(
 
     except HTTPException:
         raise
+    except DatabaseConnectionError as e:
+        logger.error(f"Database connection error for player leaks: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database temporarily unavailable. Please try again."
+        )
     except Exception as e:
         logger.error(f"Error getting player leaks: {str(e)}")
         raise HTTPException(
@@ -1183,7 +1196,21 @@ async def get_player_gto_analysis(
 
     except HTTPException:
         raise
+    except DatabaseConnectionError as e:
+        logger.error(f"Database connection error for GTO analysis: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database temporarily unavailable. Please try again."
+        )
     except Exception as e:
+        error_msg = str(e).lower()
+        # Check for connection-related errors in the generic exception
+        if any(term in error_msg for term in ['ssl', 'connection', 'timeout', 'closed', 'refused']):
+            logger.error(f"Database connection error for GTO analysis: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database temporarily unavailable. Please try again."
+            )
         logger.error(f"Error getting player GTO analysis: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -1268,6 +1295,111 @@ def categorize_hand(hole_cards: Optional[str]) -> Dict[str, Any]:
         return {"category": "Offsuit Broadway", "tier": 4, "combo": combo}
     else:
         return {"category": "Weak/Trash", "tier": 5, "combo": combo}
+
+
+def get_hand_specific_gto_freqs(
+    db: Session,
+    scenario: str,
+    position: str,
+    hand_combo: str,
+    vs_position: Optional[str] = None
+) -> Optional[Dict[str, float]]:
+    """
+    Look up hand-specific GTO frequencies from the gto_frequencies table.
+
+    Args:
+        db: Database session
+        scenario: Scenario type (opening, defense, facing_3bet, facing_4bet)
+        position: Player position
+        hand_combo: Normalized hand combo (e.g., "QTs", "AKo", "JJ")
+        vs_position: Opponent position for defense scenarios
+
+    Returns:
+        Dict mapping action -> frequency (as percentage), or None if not found
+    """
+    from sqlalchemy import text
+
+    # Query to get all action frequencies for this hand combo in this scenario
+    # We need to join gto_scenarios with gto_frequencies and match the hand
+    query = text("""
+        SELECT gs.action, AVG(gf.frequency) * 100 as freq
+        FROM gto_scenarios gs
+        JOIN gto_frequencies gf ON gs.scenario_id = gf.scenario_id
+        WHERE gs.category = :scenario
+        AND gs.position = :position
+        AND (gs.opponent_position = :vs_position OR (:vs_position IS NULL AND gs.opponent_position IS NULL))
+        AND gf.position = :position
+        GROUP BY gs.action
+    """)
+
+    # First, get all possible combos that match this hand type
+    # The gto_frequencies table stores specific combos like "QdTc", we need to find all that match "QTs"
+    # We'll need to normalize the hands in the query
+
+    # Alternative approach: Get all frequencies for this scenario and filter in Python
+    all_freqs_query = text("""
+        SELECT gs.action, gf.hand, gf.frequency
+        FROM gto_scenarios gs
+        JOIN gto_frequencies gf ON gs.scenario_id = gf.scenario_id
+        WHERE gs.category = :scenario
+        AND gs.position = :position
+        AND (gs.opponent_position = :vs_position OR (:vs_position IS NULL AND gs.opponent_position IS NULL))
+    """)
+
+    result = db.execute(all_freqs_query, {
+        "scenario": scenario,
+        "position": position,
+        "vs_position": vs_position
+    })
+
+    # Normalize each hand and accumulate frequencies for matching combos
+    action_freqs: Dict[str, list] = {}
+    rank_order = "23456789TJQKA"
+
+    for row in result:
+        action, hand, freq = row[0], row[1], float(row[2]) if row[2] else 0
+
+        # Normalize the hand from database (e.g., "QdTc" -> "QTs")
+        hand = hand.replace(' ', '')
+        if len(hand) < 4:
+            continue
+
+        r1, s1 = hand[0].upper(), hand[1].lower()
+        r2, s2 = hand[2].upper(), hand[3].lower()
+
+        # Ensure higher rank first
+        if rank_order.index(r1) < rank_order.index(r2):
+            r1, r2 = r2, r1
+            s1, s2 = s2, s1
+
+        # Build combo string
+        if r1 == r2:
+            normalized = f"{r1}{r2}"
+        elif s1 == s2:
+            normalized = f"{r1}{r2}s"
+        else:
+            normalized = f"{r1}{r2}o"
+
+        # Check if this matches our target hand combo
+        if normalized == hand_combo:
+            if action not in action_freqs:
+                action_freqs[action] = []
+            action_freqs[action].append(freq * 100)  # Convert to percentage
+
+    if not action_freqs:
+        return None
+
+    # Average frequencies for each action
+    result_freqs = {action: sum(freqs) / len(freqs) for action, freqs in action_freqs.items()}
+
+    # Ensure frequencies sum to ~100%
+    total = sum(result_freqs.values())
+    if total > 0 and abs(total - 100) > 1:
+        # Normalize
+        for action in result_freqs:
+            result_freqs[action] = result_freqs[action] / total * 100
+
+    return result_freqs
 
 
 def classify_deviation(player_action: str, action_gto_freq: float, gto_freqs: Dict[str, float]) -> Dict[str, Any]:
@@ -1632,21 +1764,42 @@ async def get_scenario_hands(
         result = db.execute(hands_query, params)
         hands = []
 
+        # Cache for hand-specific GTO frequencies to avoid repeated queries
+        hand_gto_cache: Dict[str, Dict[str, float]] = {}
+
         for row in result.mappings():
             player_action = row['player_action']
-
-            # Get GTO frequency for the action taken
-            action_freq = gto_freqs.get(player_action, 0)
-
-            # Find what GTO recommends most
-            gto_recommended = max(gto_freqs.keys(), key=lambda k: gto_freqs[k]) if gto_freqs else None
-
-            # Enhanced deviation classification
-            deviation = classify_deviation(player_action, action_freq, gto_freqs)
 
             # Get hole cards and categorize them
             hole_cards = row.get('hole_cards')
             hand_info = categorize_hand(hole_cards)
+            hand_combo = hand_info.get('combo')
+
+            # Try to get hand-specific GTO frequencies if we have hole cards
+            hand_specific_gto = None
+            if hand_combo and hand_combo not in ['Unknown', None]:
+                # Check cache first
+                if hand_combo in hand_gto_cache:
+                    hand_specific_gto = hand_gto_cache[hand_combo]
+                else:
+                    # Query hand-specific frequencies
+                    hand_specific_gto = get_hand_specific_gto_freqs(
+                        db, scenario, position, hand_combo, vs_position
+                    )
+                    # Cache the result (even if None)
+                    hand_gto_cache[hand_combo] = hand_specific_gto
+
+            # Use hand-specific GTO if available, otherwise fall back to aggregate
+            effective_gto_freqs = hand_specific_gto if hand_specific_gto else gto_freqs
+
+            # Get GTO frequency for the action taken
+            action_freq = effective_gto_freqs.get(player_action, 0)
+
+            # Find what GTO recommends most
+            gto_recommended = max(effective_gto_freqs.keys(), key=lambda k: effective_gto_freqs[k]) if effective_gto_freqs else None
+
+            # Enhanced deviation classification
+            deviation = classify_deviation(player_action, action_freq, effective_gto_freqs)
 
             # Get effective stack
             effective_stack = row.get('effective_stack_bb')
@@ -1666,8 +1819,8 @@ async def get_scenario_hands(
                 'hand_tier': hand_info['tier'],
                 # Enhanced: Stack info
                 'effective_stack_bb': effective_stack,
-                # GTO comparison
-                'gto_frequencies': gto_freqs,
+                # GTO comparison - use hand-specific frequencies when available
+                'gto_frequencies': effective_gto_freqs,
                 'gto_recommended': gto_recommended,
                 'action_gto_freq': round(action_freq, 1),
                 # Enhanced: Deviation classification
@@ -1712,7 +1865,20 @@ async def get_scenario_hands(
 
     except HTTPException:
         raise
+    except DatabaseConnectionError as e:
+        logger.error(f"Database connection error for scenario hands: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database temporarily unavailable. Please try again."
+        )
     except Exception as e:
+        error_msg = str(e).lower()
+        if any(term in error_msg for term in ['ssl', 'connection', 'timeout', 'closed', 'refused']):
+            logger.error(f"Database connection error for scenario hands: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database temporarily unavailable. Please try again."
+            )
         logger.error(f"Error getting scenario hands: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
