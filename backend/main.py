@@ -1765,7 +1765,8 @@ async def get_scenario_hands(
         hands = []
 
         # Cache for hand-specific GTO frequencies to avoid repeated queries
-        hand_gto_cache: Dict[str, Dict[str, float]] = {}
+        # Key is (hand_combo, actual_vs_position) since GTO varies by matchup
+        hand_gto_cache: Dict[tuple, Dict[str, float]] = {}
 
         for row in result.mappings():
             player_action = row['player_action']
@@ -1775,19 +1776,25 @@ async def get_scenario_hands(
             hand_info = categorize_hand(hole_cards)
             hand_combo = hand_info.get('combo')
 
+            # Get the actual raiser position for THIS hand (may differ from filter)
+            actual_vs_pos = row.get('vs_pos') or vs_position
+
             # Try to get hand-specific GTO frequencies if we have hole cards
             hand_specific_gto = None
             if hand_combo and hand_combo not in ['Unknown', None]:
+                # Cache key includes both hand and opponent position
+                cache_key = (hand_combo, actual_vs_pos)
+
                 # Check cache first
-                if hand_combo in hand_gto_cache:
-                    hand_specific_gto = hand_gto_cache[hand_combo]
+                if cache_key in hand_gto_cache:
+                    hand_specific_gto = hand_gto_cache[cache_key]
                 else:
-                    # Query hand-specific frequencies
+                    # Query hand-specific frequencies using the actual raiser position
                     hand_specific_gto = get_hand_specific_gto_freqs(
-                        db, scenario, position, hand_combo, vs_position
+                        db, scenario, position, hand_combo, actual_vs_pos
                     )
                     # Cache the result (even if None)
-                    hand_gto_cache[hand_combo] = hand_specific_gto
+                    hand_gto_cache[cache_key] = hand_specific_gto
 
             # Use hand-specific GTO if available, otherwise fall back to aggregate
             effective_gto_freqs = hand_specific_gto if hand_specific_gto else gto_freqs
