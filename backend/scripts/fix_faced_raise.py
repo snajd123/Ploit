@@ -1,15 +1,18 @@
 """
 Fix faced_raise bug in player_hand_summary table.
 
-The bug: faced_raise was being set to True for ALL preflop actions because
-current_bet > 0 (due to big blind). This meant RFI (raise first in) hands
-were incorrectly marked as facing a raise.
+The bug: faced_raise was being set incorrectly. Players who acted BEFORE
+the first raise should have faced_raise=False (they had RFI opportunity).
 
-The fix: Reparse all hands and recalculate the faced_raise flag properly.
+Correct logic:
+- Players who fold/limp BEFORE any raise: faced_raise = False (had RFI opp)
+- The first raiser: faced_raise = False (had RFI opp and took it)
+- Players who act AFTER the first raise: faced_raise = True (face a raise)
 """
 
 import os
 import sys
+import re
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -32,9 +35,9 @@ def fix_faced_raise():
 
     For each hand:
     1. Get the raw_hand_text
-    2. Find first raise action (above BB)
-    3. Mark faced_raise=False for the raiser
-    4. Mark faced_raise=True for everyone who acted after the raise
+    2. Parse preflop actions in order
+    3. Track which players acted before vs after first raise
+    4. Update faced_raise accordingly
     """
     engine = create_engine(DATABASE_URL)
     Session = sessionmaker(bind=engine)
@@ -58,6 +61,9 @@ def fix_faced_raise():
         updated = 0
         errors = 0
 
+        # Action patterns
+        action_pattern = re.compile(r'([^:\n]+): (folds|checks|calls|bets|raises)')
+
         for i, row in enumerate(hands):
             hand_id = row[0]
             raw_text = row[1]
@@ -67,42 +73,61 @@ def fix_faced_raise():
                 logger.info(f"Processing hand {i+1}/{total}...")
 
             try:
-                # Parse the hand to find first raiser
-                import re
-
-                # Find all preflop actions before FLOP
+                # Find preflop section
                 preflop_match = re.search(r'\*\*\* HOLE CARDS \*\*\*(.*?)(?:\*\*\* FLOP|\*\*\* SUMMARY)', raw_text, re.DOTALL)
                 if not preflop_match:
                     continue
 
                 preflop_text = preflop_match.group(1)
 
-                # Find the first raise action
-                raise_pattern = r'([^:\n]+): raises [\$€]?[\d.]+ to [\$€]?([\d.]+)'
-                first_raise_match = re.search(raise_pattern, preflop_text)
+                # Parse actions in order to find who acted before/after first raise
+                players_before_raise = set()  # Players who acted before any raise
+                first_raiser = None
 
-                if first_raise_match:
-                    first_raiser = first_raise_match.group(1).strip()
+                for line in preflop_text.split('\n'):
+                    line = line.strip()
+                    if not line or line.startswith('Dealt to') or line.startswith('***'):
+                        continue
 
-                    # Get all players who acted before the first raise
-                    lines_before_raise = preflop_text[:first_raise_match.start()]
+                    match = action_pattern.match(line)
+                    if match:
+                        player_name = match.group(1).strip()
+                        action = match.group(2)
 
-                    # Players who acted before the raise faced_raise=False
-                    # Players who acted after (or at) the raise faced_raise=True (except the raiser)
+                        if action == 'raises':
+                            # Found first raise - stop tracking
+                            first_raiser = player_name
+                            players_before_raise.add(player_name)  # Raiser also had RFI opp
+                            break
+                        else:
+                            # Player acted before any raise (fold, call/limp, check)
+                            players_before_raise.add(player_name)
 
-                    # Update the first raiser: faced_raise should be False (they opened)
-                    session.execute(text("""
-                        UPDATE player_hand_summary
-                        SET faced_raise = false
-                        WHERE hand_id = :hand_id AND player_name = :player_name
-                    """), {"hand_id": hand_id, "player_name": first_raiser})
+                # Now update the database
+                if first_raiser:
+                    # There was a raise
+                    # Players who acted before raise (including raiser): faced_raise = False
+                    # Everyone else: faced_raise = True
 
-                    # Update everyone else who VPIP'd or folded after the raise: faced_raise=True
-                    session.execute(text("""
-                        UPDATE player_hand_summary
-                        SET faced_raise = true
-                        WHERE hand_id = :hand_id AND player_name != :player_name
-                    """), {"hand_id": hand_id, "player_name": first_raiser})
+                    if players_before_raise:
+                        # Set faced_raise=False for players who acted before/at raise
+                        placeholders = ', '.join([f':p{i}' for i in range(len(players_before_raise))])
+                        params = {"hand_id": hand_id}
+                        for i, p in enumerate(players_before_raise):
+                            params[f'p{i}'] = p
+
+                        session.execute(text(f"""
+                            UPDATE player_hand_summary
+                            SET faced_raise = false
+                            WHERE hand_id = :hand_id AND player_name IN ({placeholders})
+                        """), params)
+
+                        # Set faced_raise=True for everyone else
+                        session.execute(text(f"""
+                            UPDATE player_hand_summary
+                            SET faced_raise = true
+                            WHERE hand_id = :hand_id AND player_name NOT IN ({placeholders})
+                        """), params)
 
                     updated += 1
                 else:
@@ -131,14 +156,25 @@ def fix_faced_raise():
             FROM player_hand_summary
             WHERE player_name = 'snajd'
             GROUP BY position
-            ORDER BY position;
+            ORDER BY CASE position
+                WHEN 'UTG' THEN 1 WHEN 'MP' THEN 2 WHEN 'CO' THEN 3
+                WHEN 'BTN' THEN 4 WHEN 'SB' THEN 5 WHEN 'BB' THEN 6
+            END;
         """))
 
         logger.info("\nVerification for player 'snajd':")
-        logger.info("Position | RFI Opps | RFI Raised | Total")
-        logger.info("-" * 45)
+        logger.info("Position | RFI Opps | RFI Raised | Total | RFI %")
+        logger.info("-" * 55)
+        total_rfi_opps = 0
+        total_hands = 0
         for row in result:
-            logger.info(f"{row[0]:8} | {row[1]:8} | {row[2]:10} | {row[3]}")
+            rfi_pct = round(100 * row[1] / row[3], 1) if row[3] > 0 else 0
+            logger.info(f"{row[0]:8} | {row[1]:8} | {row[2]:10} | {row[3]:5} | {rfi_pct}%")
+            total_rfi_opps += row[1]
+            total_hands += row[3]
+
+        logger.info("-" * 55)
+        logger.info(f"Total RFI opps: {total_rfi_opps}, Total hands: {total_hands}")
 
     except Exception as e:
         session.rollback()
