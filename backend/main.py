@@ -655,6 +655,9 @@ async def get_player_gto_analysis(
         # ============================================
         # 2. DEFENSE VS OPENS (call/3bet/fold)
         # ============================================
+        # Note: Only include positions that can actually defend against an open
+        # UTG is first to act, so they can never "defend" - exclude them
+        # Valid defense positions: BB, SB, BTN, CO, MP (can face opens from earlier positions)
         defense_query = text("""
             SELECT
                 position,
@@ -670,7 +673,7 @@ async def get_player_gto_analysis(
                     NULLIF(COUNT(*) FILTER (WHERE faced_raise = true), 0), 1) as three_bet_pct
             FROM player_hand_summary
             WHERE player_name = :player_name
-            AND position IS NOT NULL
+            AND position IN ('BB', 'SB', 'BTN', 'CO', 'MP')
             GROUP BY position
             HAVING COUNT(*) FILTER (WHERE faced_raise = true) >= 5
             ORDER BY position
