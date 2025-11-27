@@ -10,7 +10,14 @@
       "Bash(export DATABASE_URL=\"postgresql://postgres.lyvnuiuatuggtirdxiht:r7e2fQfDBrkIRYHD@aws-1-eu-west-1.pooler.supabase.com:5432/postgres\")",
       "Bash(pip3 install:*)",
       "Bash(PGPASSWORD=\"SourBeer2027\" psql:*)",
-      "Bash(export DATABASE_URL:*)"
+      "Bash(export DATABASE_URL:*)",
+      "Bash(PGPASSWORD=\"SourBeer2027\" psql \"postgresql://postgres.lyvnuiuatuggtirdxiht:SourBeer2027@aws-1-eu-west-1.pooler.supabase.com:5432/postgres?sslmode=require\" -c \"\\d player_scenario_stats\")",
+      "Bash(PGPASSWORD=SourBeer2027 psql:*)",
+      "Bash(curl:*)",
+      "Bash(timeout 5 python:*)",
+      "Bash(timeout 10 python3:*)",
+      "Bash(convert:*)",
+      "Bash(git restore:*)"
     ],
     "deny": [],
     "ask": []
