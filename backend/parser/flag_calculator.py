@@ -558,7 +558,7 @@ class FlagCalculator:
         return len(raises)
 
     def _player_faced_raise_number(self, player_name: str, raise_num: int) -> bool:
-        """Check if player faced the Nth raise"""
+        """Check if player faced the Nth raise (but didn't make it themselves)"""
         preflop_actions = [a for a in self.hand.actions if a.street == Street.PREFLOP]
 
         raises = []
@@ -569,8 +569,13 @@ class FlagCalculator:
         if len(raises) < raise_num:
             return False
 
-        # Check if player acted after the Nth raise
         nth_raise = raises[raise_num - 1]
+
+        # If player made this raise, they didn't "face" it
+        if nth_raise.player_name == player_name:
+            return False
+
+        # Check if player acted after the Nth raise
         nth_raise_idx = preflop_actions.index(nth_raise)
 
         player_actions_after = [a for a in preflop_actions[nth_raise_idx + 1:]

@@ -280,12 +280,19 @@ class PokerStarsParser:
             List of Player objects with positions assigned
         """
         players = []
-        seat_matches = re.finditer(self.SEAT_PATTERN, hand_text, re.MULTILINE)
+        # Pattern to match seat lines including sitting out status
+        seat_pattern_full = r"Seat (\d+): ([^\(]+) \([\$€]?([\d.]+) in chips\)( is sitting out)?"
+        seat_matches = re.finditer(seat_pattern_full, hand_text, re.MULTILINE)
 
         for match in seat_matches:
             seat_num = int(match.group(1))
             player_name = match.group(2).strip()
             stack = Decimal(match.group(3))
+            is_sitting_out = match.group(4) is not None
+
+            # Skip players who are sitting out - they don't get positions
+            if is_sitting_out:
+                continue
 
             player = Player(
                 name=player_name,
