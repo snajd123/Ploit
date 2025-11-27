@@ -38,6 +38,8 @@ class ActionParser:
         self.current_bet = Decimal("0")
         self.player_investments: Dict[str, Decimal] = {p.name: Decimal("0") for p in players}
         self.player_stacks: Dict[str, Decimal] = {p.name: p.starting_stack for p in players}
+        # Track if there's been a raise above the big blind (for RFI detection)
+        self.has_preflop_raise = False
 
     def parse_actions(self, hand_text: str) -> List[Action]:
         """
@@ -237,7 +239,13 @@ class ActionParser:
         amount = Decimal("0")
         action_type = None
         is_aggressive = False
-        facing_bet = self.current_bet > Decimal("0")
+
+        # For preflop, facing_bet should only be True if someone RAISED (above BB)
+        # For postflop, facing_bet is True if current_bet > 0
+        if street == Street.PREFLOP:
+            facing_bet = self.has_preflop_raise
+        else:
+            facing_bet = self.current_bet > Decimal("0")
 
         if action_name == 'fold':
             action_type = ActionType.FOLD
@@ -254,6 +262,9 @@ class ActionParser:
             amount = Decimal(match.group(2))
             action_type = ActionType.RAISE
             is_aggressive = True
+            # Mark that there's been a preflop raise (for future actions)
+            if street == Street.PREFLOP:
+                self.has_preflop_raise = True
 
         if action_type is None:
             return None
