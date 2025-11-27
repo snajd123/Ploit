@@ -83,18 +83,25 @@ const createStatTooltip = (statDefinitions: Record<string, any>) => (statKey: st
 // GTO Scenario Table Component
 const GTOScenarioTable = ({
   title,
+  subtitle,
   data,
-  columns
+  columns,
+  onRowClick
 }: {
   title: string;
+  subtitle?: string;
   data: any[];
-  columns: { key: string; label: string; isPlayer?: boolean; isGTO?: boolean; isDiff?: boolean }[]
+  columns: { key: string; label: string; isPlayer?: boolean; isGTO?: boolean; isDiff?: boolean }[];
+  onRowClick?: (row: any) => void;
 }) => {
   if (!data || data.length === 0) return null;
 
+  const isClickable = !!onRowClick;
+
   return (
     <div className="card mb-6">
-      <h3 className="font-semibold text-gray-900 mb-4">{title}</h3>
+      <h3 className="font-semibold text-gray-900 mb-2">{title}</h3>
+      {subtitle && <p className="text-sm text-gray-500 mb-4">{subtitle}</p>}
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -111,7 +118,15 @@ const GTOScenarioTable = ({
           </thead>
           <tbody>
             {data.map((row, idx) => (
-              <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
+              <tr
+                key={idx}
+                className={`border-b border-gray-100 ${
+                  isClickable
+                    ? 'hover:bg-blue-50 cursor-pointer transition-colors'
+                    : 'hover:bg-gray-50'
+                }`}
+                onClick={() => onRowClick?.(row)}
+              >
                 {columns.map(col => {
                   const value = row[col.key];
                   const isPosition = col.key === 'position';
@@ -141,6 +156,7 @@ const GTOScenarioTable = ({
           </tbody>
         </table>
       </div>
+      {isClickable && <p className="text-xs text-gray-400 mt-2">Click a row to see individual hands and GTO mistakes</p>}
     </div>
   );
 };
@@ -813,6 +829,7 @@ const PlayerProfile = () => {
                 {/* Opening Ranges */}
                 <GTOScenarioTable
                   title="Opening Ranges (RFI)"
+                  subtitle="Your raise first in frequency by position compared to GTO"
                   data={gtoAnalysis.opening_ranges}
                   columns={[
                     { key: 'position', label: 'Position' },
@@ -821,11 +838,16 @@ const PlayerProfile = () => {
                     { key: 'gto_frequency', label: 'GTO', isGTO: true },
                     { key: 'frequency_diff', label: 'Diff', isDiff: true },
                   ]}
+                  onRowClick={(row) => setSelectedScenario({
+                    scenario: 'opening',
+                    position: row.position,
+                  })}
                 />
 
                 {/* Defense vs Opens */}
                 <GTOScenarioTable
                   title="Defense vs Opens (Fold/Call/3-Bet)"
+                  subtitle="Aggregate defense frequencies by your position (see matchups below for details)"
                   data={gtoAnalysis.defense_vs_open}
                   columns={[
                     { key: 'position', label: 'Position' },
@@ -840,11 +862,16 @@ const PlayerProfile = () => {
                     { key: 'gto_3bet', label: 'GTO 3-Bet', isGTO: true },
                     { key: '3bet_diff', label: 'Diff', isDiff: true },
                   ]}
+                  onRowClick={(row) => setSelectedScenario({
+                    scenario: 'defense',
+                    position: row.position,
+                  })}
                 />
 
                 {/* Facing 3-Bet */}
                 <GTOScenarioTable
                   title="Facing 3-Bet (After Opening)"
+                  subtitle="Aggregate response when facing a 3-bet (see matchups below for details)"
                   data={gtoAnalysis.facing_3bet}
                   columns={[
                     { key: 'position', label: 'Position' },
@@ -859,6 +886,10 @@ const PlayerProfile = () => {
                     { key: 'gto_4bet', label: 'GTO 4-Bet', isGTO: true },
                     { key: '4bet_diff', label: 'Diff', isDiff: true },
                   ]}
+                  onRowClick={(row) => setSelectedScenario({
+                    scenario: 'facing_3bet',
+                    position: row.position,
+                  })}
                 />
 
                 {/* Facing 3-Bet by Matchup */}
@@ -925,6 +956,7 @@ const PlayerProfile = () => {
                 {/* Blind Defense */}
                 <GTOScenarioTable
                   title="Blind Defense vs Steals"
+                  subtitle="How you defend your blinds against late position opens"
                   data={gtoAnalysis.blind_defense}
                   columns={[
                     { key: 'position', label: 'Position' },
@@ -939,11 +971,16 @@ const PlayerProfile = () => {
                     { key: 'gto_3bet', label: 'GTO 3-Bet', isGTO: true },
                     { key: '3bet_diff', label: 'Diff', isDiff: true },
                   ]}
+                  onRowClick={(row) => setSelectedScenario({
+                    scenario: 'defense',
+                    position: row.position,
+                  })}
                 />
 
                 {/* Steal Attempts */}
                 <GTOScenarioTable
                   title="Steal Attempts (Late Position)"
+                  subtitle="Your open raise frequency from steal positions (CO, BTN, SB)"
                   data={gtoAnalysis.steal_attempts}
                   columns={[
                     { key: 'position', label: 'Position' },
@@ -952,6 +989,10 @@ const PlayerProfile = () => {
                     { key: 'gto_frequency', label: 'GTO', isGTO: true },
                     { key: 'frequency_diff', label: 'Diff', isDiff: true },
                   ]}
+                  onRowClick={(row) => setSelectedScenario({
+                    scenario: 'opening',
+                    position: row.position,
+                  })}
                 />
 
                 {/* Position-Specific Defense Matchups with Player Data */}
