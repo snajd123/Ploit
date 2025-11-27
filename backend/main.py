@@ -1297,67 +1297,39 @@ def categorize_hand(hole_cards: Optional[str]) -> Dict[str, Any]:
         return {"category": "Weak/Trash", "tier": 5, "combo": combo}
 
 
-def get_hand_specific_gto_freqs(
+def build_gto_lookup_table(
     db: Session,
     scenario: str,
-    position: str,
-    hand_combo: str,
-    vs_position: Optional[str] = None
-) -> Optional[Dict[str, float]]:
+    position: str
+) -> Dict[tuple, Dict[str, float]]:
     """
-    Look up hand-specific GTO frequencies from the gto_frequencies table.
+    Pre-fetch ALL GTO frequencies for a scenario/position and build a lookup table.
 
-    Args:
-        db: Database session
-        scenario: Scenario type (opening, defense, facing_3bet, facing_4bet)
-        position: Player position
-        hand_combo: Normalized hand combo (e.g., "QTs", "AKo", "JJ")
-        vs_position: Opponent position for defense scenarios
-
-    Returns:
-        Dict mapping action -> frequency (as percentage), or None if not found
+    Returns a dict mapping (hand_combo, opponent_position) -> {action: frequency}
+    This allows O(1) lookups instead of O(n) database queries.
     """
     from sqlalchemy import text
 
-    # Query to get all action frequencies for this hand combo in this scenario
-    # We need to join gto_scenarios with gto_frequencies and match the hand
-    query = text("""
-        SELECT gs.action, AVG(gf.frequency) * 100 as freq
-        FROM gto_scenarios gs
-        JOIN gto_frequencies gf ON gs.scenario_id = gf.scenario_id
-        WHERE gs.category = :scenario
-        AND gs.position = :position
-        AND (gs.opponent_position = :vs_position OR (:vs_position IS NULL AND gs.opponent_position IS NULL))
-        AND gf.position = :position
-        GROUP BY gs.action
-    """)
-
-    # First, get all possible combos that match this hand type
-    # The gto_frequencies table stores specific combos like "QdTc", we need to find all that match "QTs"
-    # We'll need to normalize the hands in the query
-
-    # Alternative approach: Get all frequencies for this scenario and filter in Python
+    # Fetch all frequencies for this scenario/position in ONE query
     all_freqs_query = text("""
-        SELECT gs.action, gf.hand, gf.frequency
+        SELECT gs.action, gs.opponent_position, gf.hand, gf.frequency
         FROM gto_scenarios gs
         JOIN gto_frequencies gf ON gs.scenario_id = gf.scenario_id
         WHERE gs.category = :scenario
         AND gs.position = :position
-        AND (gs.opponent_position = :vs_position OR (:vs_position IS NULL AND gs.opponent_position IS NULL))
     """)
 
     result = db.execute(all_freqs_query, {
         "scenario": scenario,
-        "position": position,
-        "vs_position": vs_position
+        "position": position
     })
 
-    # Normalize each hand and accumulate frequencies for matching combos
-    action_freqs: Dict[str, list] = {}
+    # Build lookup table: (hand_combo, opponent_pos) -> {action -> [frequencies]}
+    temp_lookup: Dict[tuple, Dict[str, list]] = {}
     rank_order = "23456789TJQKA"
 
     for row in result:
-        action, hand, freq = row[0], row[1], float(row[2]) if row[2] else 0
+        action, opp_pos, hand, freq = row[0], row[1], row[2], float(row[3]) if row[3] else 0
 
         # Normalize the hand from database (e.g., "QdTc" -> "QTs")
         hand = hand.replace(' ', '')
@@ -1380,26 +1352,27 @@ def get_hand_specific_gto_freqs(
         else:
             normalized = f"{r1}{r2}o"
 
-        # Check if this matches our target hand combo
-        if normalized == hand_combo:
-            if action not in action_freqs:
-                action_freqs[action] = []
-            action_freqs[action].append(freq * 100)  # Convert to percentage
+        key = (normalized, opp_pos)
+        if key not in temp_lookup:
+            temp_lookup[key] = {}
+        if action not in temp_lookup[key]:
+            temp_lookup[key][action] = []
+        temp_lookup[key][action].append(freq * 100)  # Convert to percentage
 
-    if not action_freqs:
-        return None
+    # Average and normalize frequencies
+    lookup_table: Dict[tuple, Dict[str, float]] = {}
+    for key, actions in temp_lookup.items():
+        avg_freqs = {action: sum(freqs) / len(freqs) for action, freqs in actions.items()}
 
-    # Average frequencies for each action
-    result_freqs = {action: sum(freqs) / len(freqs) for action, freqs in action_freqs.items()}
+        # Normalize to sum to ~100%
+        total = sum(avg_freqs.values())
+        if total > 0 and abs(total - 100) > 1:
+            for action in avg_freqs:
+                avg_freqs[action] = avg_freqs[action] / total * 100
 
-    # Ensure frequencies sum to ~100%
-    total = sum(result_freqs.values())
-    if total > 0 and abs(total - 100) > 1:
-        # Normalize
-        for action in result_freqs:
-            result_freqs[action] = result_freqs[action] / total * 100
+        lookup_table[key] = avg_freqs
 
-    return result_freqs
+    return lookup_table
 
 
 def classify_deviation(player_action: str, action_gto_freq: float, gto_freqs: Dict[str, float]) -> Dict[str, Any]:
@@ -1764,9 +1737,9 @@ async def get_scenario_hands(
         result = db.execute(hands_query, params)
         hands = []
 
-        # Cache for hand-specific GTO frequencies to avoid repeated queries
-        # Key is (hand_combo, actual_vs_position) since GTO varies by matchup
-        hand_gto_cache: Dict[tuple, Dict[str, float]] = {}
+        # Pre-fetch ALL GTO frequencies for this scenario in ONE query
+        # Returns dict mapping (hand_combo, opponent_pos) -> {action: frequency}
+        gto_lookup = build_gto_lookup_table(db, scenario, position)
 
         for row in result.mappings():
             player_action = row['player_action']
@@ -1779,22 +1752,11 @@ async def get_scenario_hands(
             # Get the actual raiser position for THIS hand (may differ from filter)
             actual_vs_pos = row.get('vs_pos') or vs_position
 
-            # Try to get hand-specific GTO frequencies if we have hole cards
+            # Look up hand-specific GTO frequencies from pre-fetched data
             hand_specific_gto = None
             if hand_combo and hand_combo not in ['Unknown', None]:
-                # Cache key includes both hand and opponent position
-                cache_key = (hand_combo, actual_vs_pos)
-
-                # Check cache first
-                if cache_key in hand_gto_cache:
-                    hand_specific_gto = hand_gto_cache[cache_key]
-                else:
-                    # Query hand-specific frequencies using the actual raiser position
-                    hand_specific_gto = get_hand_specific_gto_freqs(
-                        db, scenario, position, hand_combo, actual_vs_pos
-                    )
-                    # Cache the result (even if None)
-                    hand_gto_cache[cache_key] = hand_specific_gto
+                # O(1) lookup from pre-built table
+                hand_specific_gto = gto_lookup.get((hand_combo, actual_vs_pos))
 
             # Use hand-specific GTO if available, otherwise fall back to aggregate
             effective_gto_freqs = hand_specific_gto if hand_specific_gto else gto_freqs
