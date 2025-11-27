@@ -1208,6 +1208,8 @@ async def get_scenario_hands(
     Returns hands where the player was in the specified scenario, showing
     what action they took vs what GTO recommends.
     """
+    from sqlalchemy import text
+
     try:
         # Validate inputs
         validated_name = InputValidator.validate_player_name(player_name)
