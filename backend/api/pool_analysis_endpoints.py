@@ -12,7 +12,7 @@ from decimal import Decimal
 
 from ..database import get_db
 from ..models.database_models import PlayerStats
-from ..models.gto_models import PlayerGTOStat, GTOScenario
+from ..models.gto_models import GTOScenario
 
 logger = logging.getLogger(__name__)
 
@@ -148,76 +148,9 @@ def get_comprehensive_pool_analysis(
             })
 
         # 4. Common Pool GTO Deviations
-        # Get top 10 most common GTO leaks across the pool
-        gto_deviations = db.query(
-            GTOScenario.scenario_name,
-            GTOScenario.position,
-            GTOScenario.action,
-            func.avg(PlayerGTOStat.gto_frequency).label("avg_gto_freq"),
-            func.avg(PlayerGTOStat.player_frequency).label("avg_player_freq"),
-            func.avg(PlayerGTOStat.avg_ev_loss_bb).label("avg_ev_loss"),
-            func.count(PlayerGTOStat.player_name).label("num_players"),
-            func.avg(func.abs(PlayerGTOStat.frequency_diff)).label("avg_deviation")
-        ).join(
-            PlayerGTOStat, PlayerGTOStat.scenario_id == GTOScenario.scenario_id
-        ).group_by(
-            GTOScenario.scenario_id,
-            GTOScenario.scenario_name,
-            GTOScenario.position,
-            GTOScenario.action
-        ).having(
-            func.avg(func.abs(PlayerGTOStat.frequency_diff)) > 0.10
-        ).order_by(
-            desc(func.avg(PlayerGTOStat.avg_ev_loss_bb))
-        ).limit(10).all()
-
+        # Note: GTO deviations data requires player_gto_stats table which was removed
+        # This section returns empty data - GTO analysis is now done on-the-fly per player
         common_leaks = []
-        for leak in gto_deviations:
-            # Format the scenario name for readability
-            scenario_parts = leak.scenario_name.split('_')
-            if len(scenario_parts) >= 3:
-                position_action = f"{scenario_parts[0]} {scenario_parts[-1]}"
-            else:
-                position_action = leak.scenario_name
-
-            # Determine exploit recommendation based on deviation
-            deviation = float(leak.avg_player_freq or 0) - float(leak.avg_gto_freq or 0)
-            if abs(deviation) < 0.1:
-                exploit = "Minor deviation - no major exploit"
-            elif deviation > 0.3:
-                if "open" in leak.scenario_name.lower():
-                    exploit = "Pool opens way too much from this position - 3-bet them aggressively"
-                elif "3bet" in leak.scenario_name.lower():
-                    exploit = "Pool 3-bets too much - 4-bet light or call with wider range"
-                elif "cbet" in leak.scenario_name.lower():
-                    exploit = "Pool c-bets too frequently - call down lighter and raise as bluff-catch"
-                else:
-                    exploit = f"Pool over-does this action by {deviation*100:.1f}% - exploit by defending wider"
-            elif deviation > 0.15:
-                exploit = f"Pool slightly over-aggressive here (+{deviation*100:.1f}%) - defend a bit wider"
-            elif deviation < -0.3:
-                if "open" in leak.scenario_name.lower():
-                    exploit = "Pool doesn't open enough - steal their blinds relentlessly"
-                elif "3bet" in leak.scenario_name.lower():
-                    exploit = "Pool doesn't 3-bet enough - open wider and fold less to their 3-bets"
-                elif "fold" in leak.scenario_name.lower():
-                    exploit = "Pool folds way too much - bluff them aggressively"
-                else:
-                    exploit = f"Pool under-does this action by {abs(deviation)*100:.1f}% - attack them when they show weakness"
-            else:
-                exploit = f"Pool slightly passive here ({deviation*100:.1f}%) - apply more pressure"
-
-            common_leaks.append({
-                "scenario": position_action,
-                "position": leak.position,
-                "action": leak.action,
-                "pool_frequency": float(leak.avg_player_freq or 0) * 100,
-                "gto_frequency": float(leak.avg_gto_freq or 0) * 100,
-                "deviation_percentage": abs(deviation) * 100,
-                "avg_ev_loss": float(leak.avg_ev_loss or 0),
-                "num_players_with_leak": leak.num_players,
-                "exploit_recommendation": exploit
-            })
 
         # 5. Aggression Patterns by Street
         aggression_by_street = db.query(
@@ -247,31 +180,9 @@ def get_comprehensive_pool_analysis(
         }
 
         # 6. Positional Play Analysis
-        # Get GTO stats grouped by position to see where pool is weakest
-        positional_analysis = db.query(
-            GTOScenario.position,
-            func.avg(func.abs(PlayerGTOStat.frequency_diff)).label("avg_deviation"),
-            func.avg(PlayerGTOStat.avg_ev_loss_bb).label("avg_ev_loss"),
-            func.count(func.distinct(PlayerGTOStat.player_name)).label("sample_size")
-        ).join(
-            PlayerGTOStat, PlayerGTOStat.scenario_id == GTOScenario.scenario_id
-        ).filter(
-            GTOScenario.position.in_(['UTG', 'MP', 'CO', 'BTN', 'SB', 'BB'])
-        ).group_by(
-            GTOScenario.position
-        ).all()
-
+        # Note: GTO positional data requires player_gto_stats table which was removed
+        # This section returns empty data - GTO analysis is now done on-the-fly per player
         positional_tendencies = {}
-        for pos in positional_analysis:
-            if pos.position:
-                deviation = float(pos.avg_deviation or 0)
-                positional_tendencies[pos.position] = {
-                    "avg_gto_deviation": deviation * 100,
-                    "avg_ev_loss": float(pos.avg_ev_loss or 0),
-                    "sample_size": pos.sample_size,
-                    "assessment": "Major leaks" if deviation > 0.20 else
-                                 "Exploitable" if deviation > 0.10 else "Solid"
-                }
 
         # 7. Profit Distribution
         profit_distribution = db.query(
