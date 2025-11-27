@@ -347,10 +347,32 @@ export interface ScenarioHand {
   stake_level: string | null;
   vs_position: string | null;
   player_action: string;
+  // Enhanced: Hole card info
+  hole_cards: string | null;
+  hand_combo: string | null;
+  hand_category: string | null;
+  hand_tier: number | null;  // 1=Premium, 2=Strong, 3=Playable, 4=Speculative, 5=Weak
+  // Enhanced: Stack info
+  effective_stack_bb: number | null;
+  // GTO comparison
   gto_frequencies: Record<string, number>;
   gto_recommended: string | null;
-  is_mistake: boolean;
   action_gto_freq: number;
+  // Enhanced: Deviation classification
+  deviation_type: 'correct' | 'suboptimal' | 'mistake';
+  deviation_severity: 'minor' | 'moderate' | 'major' | null;
+  deviation_description: string;
+  // Legacy field
+  is_mistake: boolean;
+}
+
+export interface ScenarioHandsSummary {
+  correct: number;
+  correct_pct: number;
+  suboptimal: number;
+  suboptimal_pct: number;
+  mistakes: number;
+  mistake_pct: number;
 }
 
 export interface ScenarioHandsResponse {
@@ -360,6 +382,10 @@ export interface ScenarioHandsResponse {
   vs_position: string | null;
   gto_frequencies: Record<string, number>;
   total_hands: number;
+  hands_with_hole_cards: number;
+  // Enhanced summary
+  summary: ScenarioHandsSummary;
+  // Legacy fields
   mistakes: number;
   mistake_rate: number;
   hands: ScenarioHand[];

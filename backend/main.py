@@ -1191,6 +1191,119 @@ async def get_player_gto_analysis(
         )
 
 
+def categorize_hand(hole_cards: Optional[str]) -> Dict[str, Any]:
+    """
+    Categorize a hand into type, tier, and provide context.
+
+    Tiers: 1 = Premium (top 5%), 2 = Strong (5-15%), 3 = Playable (15-30%),
+           4 = Speculative (30-50%), 5 = Weak (50%+)
+    """
+    if not hole_cards:
+        return {"category": "Unknown", "tier": None, "combo": None}
+
+    # Parse hole cards like "5d Qc" or "Ah Ks"
+    cards = hole_cards.strip().split()
+    if len(cards) != 2:
+        return {"category": "Unknown", "tier": None, "combo": hole_cards}
+
+    # Extract ranks and suits
+    rank_order = "23456789TJQKA"
+    card1, card2 = cards[0], cards[1]
+    rank1, suit1 = card1[0].upper(), card1[1].lower()
+    rank2, suit2 = card2[0].upper(), card2[1].lower()
+
+    # Normalize so higher rank is first
+    if rank_order.index(rank1) < rank_order.index(rank2):
+        rank1, rank2 = rank2, rank1
+        suit1, suit2 = suit2, suit1
+
+    is_suited = suit1 == suit2
+    is_pair = rank1 == rank2
+
+    # Build combo string
+    if is_pair:
+        combo = f"{rank1}{rank2}"
+    elif is_suited:
+        combo = f"{rank1}{rank2}s"
+    else:
+        combo = f"{rank1}{rank2}o"
+
+    # Categorization logic
+    premium_pairs = ["AA", "KK", "QQ"]
+    strong_pairs = ["JJ", "TT"]
+    medium_pairs = ["99", "88", "77"]
+    small_pairs = ["66", "55", "44", "33", "22"]
+
+    premium_broadways = ["AKs", "AKo"]
+    strong_broadways = ["AQs", "AQo", "AJs", "KQs"]
+    playable_broadways = ["ATs", "AJo", "KJs", "KQo", "QJs", "ATo", "KTs"]
+
+    suited_connectors = ["JTs", "T9s", "98s", "87s", "76s", "65s", "54s"]
+    suited_aces = ["A5s", "A4s", "A3s", "A2s", "A9s", "A8s", "A7s", "A6s"]
+
+    # Determine category and tier
+    if combo in premium_pairs:
+        return {"category": "Premium Pair", "tier": 1, "combo": combo}
+    elif combo in premium_broadways:
+        return {"category": "Premium Broadway", "tier": 1, "combo": combo}
+    elif combo in strong_pairs:
+        return {"category": "Strong Pair", "tier": 2, "combo": combo}
+    elif combo in strong_broadways:
+        return {"category": "Strong Broadway", "tier": 2, "combo": combo}
+    elif combo in medium_pairs:
+        return {"category": "Medium Pair", "tier": 3, "combo": combo}
+    elif combo in playable_broadways:
+        return {"category": "Playable Broadway", "tier": 3, "combo": combo}
+    elif combo in suited_connectors:
+        return {"category": "Suited Connector", "tier": 3, "combo": combo}
+    elif combo in suited_aces:
+        return {"category": "Suited Ace", "tier": 3, "combo": combo}
+    elif combo in small_pairs:
+        return {"category": "Small Pair", "tier": 4, "combo": combo}
+    elif is_suited and rank1 in "AKQJT":
+        return {"category": "Suited Broadway", "tier": 3, "combo": combo}
+    elif is_suited:
+        return {"category": "Suited Speculative", "tier": 4, "combo": combo}
+    elif rank1 in "AKQJT" and rank2 in "AKQJT":
+        return {"category": "Offsuit Broadway", "tier": 4, "combo": combo}
+    else:
+        return {"category": "Weak/Trash", "tier": 5, "combo": combo}
+
+
+def classify_deviation(player_action: str, action_gto_freq: float, gto_freqs: Dict[str, float]) -> Dict[str, Any]:
+    """
+    Classify a deviation from GTO as correct, suboptimal, mistake, or exploitative.
+
+    Based on poker professor's recommendations:
+    - Correct: action has GTO freq >= 40%
+    - Suboptimal: action has GTO freq 15-40%
+    - Mistake: action has GTO freq < 15%
+    """
+    if action_gto_freq >= 40:
+        return {
+            "type": "correct",
+            "severity": None,
+            "description": "Within GTO range"
+        }
+    elif action_gto_freq >= 15:
+        # Find what GTO prefers
+        best_action = max(gto_freqs.keys(), key=lambda k: gto_freqs[k]) if gto_freqs else None
+        best_freq = gto_freqs.get(best_action, 0) if best_action else 0
+        return {
+            "type": "suboptimal",
+            "severity": "minor",
+            "description": f"GTO prefers {best_action} ({best_freq:.0f}%)"
+        }
+    else:
+        best_action = max(gto_freqs.keys(), key=lambda k: gto_freqs[k]) if gto_freqs else None
+        best_freq = gto_freqs.get(best_action, 0) if best_action else 0
+        return {
+            "type": "mistake",
+            "severity": "major" if action_gto_freq < 5 else "moderate",
+            "description": f"GTO strongly prefers {best_action} ({best_freq:.0f}%)"
+        }
+
+
 @app.get(
     "/api/players/{player_name}/scenario-hands",
     tags=["Players"],
@@ -1209,7 +1322,10 @@ async def get_scenario_hands(
     Get individual hands for a specific scenario to analyze GTO deviations.
 
     Returns hands where the player was in the specified scenario, showing
-    what action they took vs what GTO recommends.
+    what action they took vs what GTO recommends, including:
+    - Hole cards and hand category
+    - Effective stack depth
+    - Deviation classification (correct/suboptimal/mistake)
     """
     from sqlalchemy import text
 
@@ -1256,6 +1372,9 @@ async def get_scenario_hands(
             gto_freqs = {row[0]: float(row[1]) if row[1] else 0 for row in gto_avg_result}
 
         # Build the query based on scenario type
+        # All queries now include:
+        # - hole_cards extracted from raw_hand_text using regex
+        # - effective_stack_bb from hand_actions
         if scenario == 'opening':
             # Opening: hands where player was first to act and could open
             hands_query = text("""
@@ -1269,9 +1388,24 @@ async def get_scenario_hands(
                         WHEN phs.pfr = true THEN 'raise'
                         WHEN phs.vpip = false THEN 'fold'
                         ELSE 'limp'
-                    END as player_action
+                    END as player_action,
+                    -- Extract hole cards from raw hand text (format: "Dealt to player [Ah Ks]")
+                    (regexp_match(rh.raw_hand_text, 'Dealt to ' || phs.player_name || ' \\[([^\\]]+)\\]'))[1] as hole_cards,
+                    -- Get effective stack in BB
+                    ha.stack_size,
+                    CASE
+                        WHEN rh.stake_level ~ '€([0-9.]+)/€([0-9.]+)' THEN
+                            ha.stack_size / NULLIF((regexp_match(rh.stake_level, '€[0-9.]+/€([0-9.]+)'))[1]::numeric, 0)
+                        ELSE NULL
+                    END as effective_stack_bb
                 FROM player_hand_summary phs
                 JOIN raw_hands rh ON phs.hand_id = rh.hand_id
+                LEFT JOIN (
+                    SELECT DISTINCT ON (hand_id, player_name) hand_id, player_name, stack_size
+                    FROM hand_actions
+                    WHERE street = 'preflop'
+                    ORDER BY hand_id, player_name, action_id
+                ) ha ON ha.hand_id = phs.hand_id AND ha.player_name = phs.player_name
                 WHERE phs.player_name = :player_name
                 AND phs.position = :position
                 AND phs.faced_raise = false
@@ -1293,9 +1427,21 @@ async def get_scenario_hands(
                             WHEN phs.vpip = false THEN 'fold'
                             WHEN phs.made_three_bet = true THEN '3bet'
                             ELSE 'call'
-                        END as player_action
+                        END as player_action,
+                        (regexp_match(rh.raw_hand_text, 'Dealt to ' || phs.player_name || ' \\[([^\\]]+)\\]'))[1] as hole_cards,
+                        ha.stack_size,
+                        CASE
+                            WHEN rh.stake_level ~ '€([0-9.]+)/€([0-9.]+)' THEN
+                                ha.stack_size / NULLIF((regexp_match(rh.stake_level, '€[0-9.]+/€([0-9.]+)'))[1]::numeric, 0)
+                            ELSE NULL
+                        END as effective_stack_bb
                     FROM player_hand_summary phs
                     JOIN raw_hands rh ON phs.hand_id = rh.hand_id
+                    LEFT JOIN (
+                        SELECT DISTINCT ON (hand_id, player_name) hand_id, player_name, stack_size
+                        FROM hand_actions WHERE street = 'preflop'
+                        ORDER BY hand_id, player_name, action_id
+                    ) ha ON ha.hand_id = phs.hand_id AND ha.player_name = phs.player_name
                     WHERE phs.player_name = :player_name
                     AND phs.position = :position
                     AND phs.faced_raise = true
@@ -1315,9 +1461,21 @@ async def get_scenario_hands(
                             WHEN phs.vpip = false THEN 'fold'
                             WHEN phs.made_three_bet = true THEN '3bet'
                             ELSE 'call'
-                        END as player_action
+                        END as player_action,
+                        (regexp_match(rh.raw_hand_text, 'Dealt to ' || phs.player_name || ' \\[([^\\]]+)\\]'))[1] as hole_cards,
+                        ha.stack_size,
+                        CASE
+                            WHEN rh.stake_level ~ '€([0-9.]+)/€([0-9.]+)' THEN
+                                ha.stack_size / NULLIF((regexp_match(rh.stake_level, '€[0-9.]+/€([0-9.]+)'))[1]::numeric, 0)
+                            ELSE NULL
+                        END as effective_stack_bb
                     FROM player_hand_summary phs
                     JOIN raw_hands rh ON phs.hand_id = rh.hand_id
+                    LEFT JOIN (
+                        SELECT DISTINCT ON (hand_id, player_name) hand_id, player_name, stack_size
+                        FROM hand_actions WHERE street = 'preflop'
+                        ORDER BY hand_id, player_name, action_id
+                    ) ha ON ha.hand_id = phs.hand_id AND ha.player_name = phs.player_name
                     WHERE phs.player_name = :player_name
                     AND phs.position = :position
                     AND phs.faced_raise = true
@@ -1340,9 +1498,21 @@ async def get_scenario_hands(
                             WHEN phs.four_bet = true THEN '4bet'
                             WHEN phs.called_three_bet = true THEN 'call'
                             ELSE 'unknown'
-                        END as player_action
+                        END as player_action,
+                        (regexp_match(rh.raw_hand_text, 'Dealt to ' || phs.player_name || ' \\[([^\\]]+)\\]'))[1] as hole_cards,
+                        ha.stack_size,
+                        CASE
+                            WHEN rh.stake_level ~ '€([0-9.]+)/€([0-9.]+)' THEN
+                                ha.stack_size / NULLIF((regexp_match(rh.stake_level, '€[0-9.]+/€([0-9.]+)'))[1]::numeric, 0)
+                            ELSE NULL
+                        END as effective_stack_bb
                     FROM player_hand_summary phs
                     JOIN raw_hands rh ON phs.hand_id = rh.hand_id
+                    LEFT JOIN (
+                        SELECT DISTINCT ON (hand_id, player_name) hand_id, player_name, stack_size
+                        FROM hand_actions WHERE street = 'preflop'
+                        ORDER BY hand_id, player_name, action_id
+                    ) ha ON ha.hand_id = phs.hand_id AND ha.player_name = phs.player_name
                     WHERE phs.player_name = :player_name
                     AND phs.position = :position
                     AND phs.faced_three_bet = true
@@ -1363,9 +1533,21 @@ async def get_scenario_hands(
                             WHEN phs.four_bet = true THEN '4bet'
                             WHEN phs.called_three_bet = true THEN 'call'
                             ELSE 'unknown'
-                        END as player_action
+                        END as player_action,
+                        (regexp_match(rh.raw_hand_text, 'Dealt to ' || phs.player_name || ' \\[([^\\]]+)\\]'))[1] as hole_cards,
+                        ha.stack_size,
+                        CASE
+                            WHEN rh.stake_level ~ '€([0-9.]+)/€([0-9.]+)' THEN
+                                ha.stack_size / NULLIF((regexp_match(rh.stake_level, '€[0-9.]+/€([0-9.]+)'))[1]::numeric, 0)
+                            ELSE NULL
+                        END as effective_stack_bb
                     FROM player_hand_summary phs
                     JOIN raw_hands rh ON phs.hand_id = rh.hand_id
+                    LEFT JOIN (
+                        SELECT DISTINCT ON (hand_id, player_name) hand_id, player_name, stack_size
+                        FROM hand_actions WHERE street = 'preflop'
+                        ORDER BY hand_id, player_name, action_id
+                    ) ha ON ha.hand_id = phs.hand_id AND ha.player_name = phs.player_name
                     WHERE phs.player_name = :player_name
                     AND phs.position = :position
                     AND phs.faced_three_bet = true
@@ -1388,9 +1570,21 @@ async def get_scenario_hands(
                             WHEN phs.five_bet = true THEN '5bet'
                             WHEN phs.called_four_bet = true THEN 'call'
                             ELSE 'unknown'
-                        END as player_action
+                        END as player_action,
+                        (regexp_match(rh.raw_hand_text, 'Dealt to ' || phs.player_name || ' \\[([^\\]]+)\\]'))[1] as hole_cards,
+                        ha.stack_size,
+                        CASE
+                            WHEN rh.stake_level ~ '€([0-9.]+)/€([0-9.]+)' THEN
+                                ha.stack_size / NULLIF((regexp_match(rh.stake_level, '€[0-9.]+/€([0-9.]+)'))[1]::numeric, 0)
+                            ELSE NULL
+                        END as effective_stack_bb
                     FROM player_hand_summary phs
                     JOIN raw_hands rh ON phs.hand_id = rh.hand_id
+                    LEFT JOIN (
+                        SELECT DISTINCT ON (hand_id, player_name) hand_id, player_name, stack_size
+                        FROM hand_actions WHERE street = 'preflop'
+                        ORDER BY hand_id, player_name, action_id
+                    ) ha ON ha.hand_id = phs.hand_id AND ha.player_name = phs.player_name
                     WHERE phs.player_name = :player_name
                     AND phs.position = :position
                     AND phs.faced_four_bet = true
@@ -1411,9 +1605,21 @@ async def get_scenario_hands(
                             WHEN phs.five_bet = true THEN '5bet'
                             WHEN phs.called_four_bet = true THEN 'call'
                             ELSE 'unknown'
-                        END as player_action
+                        END as player_action,
+                        (regexp_match(rh.raw_hand_text, 'Dealt to ' || phs.player_name || ' \\[([^\\]]+)\\]'))[1] as hole_cards,
+                        ha.stack_size,
+                        CASE
+                            WHEN rh.stake_level ~ '€([0-9.]+)/€([0-9.]+)' THEN
+                                ha.stack_size / NULLIF((regexp_match(rh.stake_level, '€[0-9.]+/€([0-9.]+)'))[1]::numeric, 0)
+                            ELSE NULL
+                        END as effective_stack_bb
                     FROM player_hand_summary phs
                     JOIN raw_hands rh ON phs.hand_id = rh.hand_id
+                    LEFT JOIN (
+                        SELECT DISTINCT ON (hand_id, player_name) hand_id, player_name, stack_size
+                        FROM hand_actions WHERE street = 'preflop'
+                        ORDER BY hand_id, player_name, action_id
+                    ) ha ON ha.hand_id = phs.hand_id AND ha.player_name = phs.player_name
                     WHERE phs.player_name = :player_name
                     AND phs.position = :position
                     AND phs.faced_four_bet = true
@@ -1429,13 +1635,23 @@ async def get_scenario_hands(
         for row in result.mappings():
             player_action = row['player_action']
 
-            # Determine if this was a GTO mistake
-            # A "mistake" is taking an action that GTO does very rarely
+            # Get GTO frequency for the action taken
             action_freq = gto_freqs.get(player_action, 0)
-            is_mistake = action_freq < 15  # If GTO does this less than 15%, it's likely a mistake
 
             # Find what GTO recommends most
             gto_recommended = max(gto_freqs.keys(), key=lambda k: gto_freqs[k]) if gto_freqs else None
+
+            # Enhanced deviation classification
+            deviation = classify_deviation(player_action, action_freq, gto_freqs)
+
+            # Get hole cards and categorize them
+            hole_cards = row.get('hole_cards')
+            hand_info = categorize_hand(hole_cards)
+
+            # Get effective stack
+            effective_stack = row.get('effective_stack_bb')
+            if effective_stack is not None:
+                effective_stack = round(float(effective_stack), 1)
 
             hands.append({
                 'hand_id': row['hand_id'],
@@ -1443,15 +1659,33 @@ async def get_scenario_hands(
                 'stake_level': row['stake_level'],
                 'vs_position': row.get('vs_pos'),
                 'player_action': player_action,
+                # Enhanced: Hole card info
+                'hole_cards': hole_cards,
+                'hand_combo': hand_info['combo'],
+                'hand_category': hand_info['category'],
+                'hand_tier': hand_info['tier'],
+                # Enhanced: Stack info
+                'effective_stack_bb': effective_stack,
+                # GTO comparison
                 'gto_frequencies': gto_freqs,
                 'gto_recommended': gto_recommended,
-                'is_mistake': is_mistake,
-                'action_gto_freq': round(action_freq, 1)
+                'action_gto_freq': round(action_freq, 1),
+                # Enhanced: Deviation classification
+                'deviation_type': deviation['type'],
+                'deviation_severity': deviation['severity'],
+                'deviation_description': deviation['description'],
+                # Legacy field for backwards compatibility
+                'is_mistake': deviation['type'] == 'mistake'
             })
 
         # Calculate summary stats
         total_hands = len(hands)
-        mistakes = sum(1 for h in hands if h['is_mistake'])
+        mistakes = sum(1 for h in hands if h['deviation_type'] == 'mistake')
+        suboptimal = sum(1 for h in hands if h['deviation_type'] == 'suboptimal')
+        correct = sum(1 for h in hands if h['deviation_type'] == 'correct')
+
+        # Hands with hole cards (for hero only)
+        hands_with_cards = sum(1 for h in hands if h['hole_cards'])
 
         return {
             'player': validated_name,
@@ -1460,6 +1694,17 @@ async def get_scenario_hands(
             'vs_position': vs_position,
             'gto_frequencies': gto_freqs,
             'total_hands': total_hands,
+            'hands_with_hole_cards': hands_with_cards,
+            # Enhanced summary
+            'summary': {
+                'correct': correct,
+                'correct_pct': round(correct / total_hands * 100, 1) if total_hands > 0 else 0,
+                'suboptimal': suboptimal,
+                'suboptimal_pct': round(suboptimal / total_hands * 100, 1) if total_hands > 0 else 0,
+                'mistakes': mistakes,
+                'mistake_pct': round(mistakes / total_hands * 100, 1) if total_hands > 0 else 0,
+            },
+            # Legacy fields
             'mistakes': mistakes,
             'mistake_rate': round(mistakes / total_hands * 100, 1) if total_hands > 0 else 0,
             'hands': hands
