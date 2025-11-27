@@ -197,6 +197,129 @@ async def list_scenarios(
     return [s.to_dict() for s in scenarios]
 
 
+@router.get("/range-matrix")
+async def get_scenario_range_matrix(
+    category: str = Query(..., description="Category: opening, defense, facing_3bet, facing_4bet"),
+    position: str = Query(..., description="Player position: UTG, MP, CO, BTN, SB, BB"),
+    opponent_position: Optional[str] = Query(None, description="Opponent position for defense scenarios"),
+    gto_service: GTOService = Depends(get_gto_service)
+):
+    """
+    Get complete GTO action matrix for all 169 hands in a scenario.
+
+    Returns a matrix suitable for the RangeGrid component with actions
+    for each hand combo (e.g., AKo, JTs, 22).
+
+    Example: GET /api/gto/range-matrix?category=defense&position=BB&opponent_position=BTN
+
+    Returns:
+        {
+            "AKo": {"fold": 0.0, "call": 0.35, "3bet": 0.65},
+            "AKs": {"fold": 0.0, "call": 0.15, "3bet": 0.85},
+            ...
+        }
+    """
+    from backend.models.gto_models import GTOScenario, GTOFrequency
+    from sqlalchemy import text
+    import re
+
+    try:
+        # Get all scenarios for this category/position/opponent combo
+        query = gto_service.db.query(GTOScenario).filter(
+            GTOScenario.category == category,
+            GTOScenario.position == position.upper()
+        )
+
+        if opponent_position:
+            query = query.filter(GTOScenario.opponent_position == opponent_position.upper())
+        else:
+            query = query.filter(GTOScenario.opponent_position.is_(None))
+
+        scenarios = query.all()
+
+        if not scenarios:
+            # Return empty matrix if no scenarios found
+            return {}
+
+        # Build action matrix
+        action_matrix: Dict[str, Dict[str, float]] = {}
+
+        # Helper to normalize card combo to standard format (e.g., "Ah Kd" -> "AKo")
+        def normalize_hand(hand: str) -> str:
+            # Handle format like "AhKd" or "Ah Kd"
+            hand = hand.replace(' ', '')
+            if len(hand) < 4:
+                return hand
+
+            rank1, suit1 = hand[0].upper(), hand[1].lower()
+            rank2, suit2 = hand[2].upper(), hand[3].lower()
+
+            # Rank ordering for comparison
+            rank_order = "23456789TJQKA"
+
+            # Pairs
+            if rank1 == rank2:
+                return f"{rank1}{rank2}"
+
+            # Ensure higher rank comes first
+            if rank_order.index(rank1) < rank_order.index(rank2):
+                rank1, rank2 = rank2, rank1
+                suit1, suit2 = suit2, suit1
+
+            # Suited or offsuit
+            if suit1 == suit2:
+                return f"{rank1}{rank2}s"
+            else:
+                return f"{rank1}{rank2}o"
+
+        # Process each scenario (fold, call, 3bet, etc.)
+        for scenario in scenarios:
+            action = scenario.action
+            if not action:
+                continue
+
+            # Get all frequencies for this scenario
+            frequencies = gto_service.db.query(GTOFrequency).filter(
+                GTOFrequency.scenario_id == scenario.scenario_id
+            ).all()
+
+            # Aggregate by normalized hand combo
+            hand_freqs: Dict[str, List[float]] = {}
+
+            for freq in frequencies:
+                try:
+                    normalized = normalize_hand(freq.hand)
+                    if normalized not in hand_freqs:
+                        hand_freqs[normalized] = []
+                    hand_freqs[normalized].append(float(freq.frequency))
+                except (ValueError, IndexError):
+                    continue
+
+            # Average the frequencies for each hand combo
+            for hand_combo, freqs in hand_freqs.items():
+                if hand_combo not in action_matrix:
+                    action_matrix[hand_combo] = {}
+
+                # Average all combos of this hand type
+                action_matrix[hand_combo][action] = sum(freqs) / len(freqs) if freqs else 0
+
+        # Normalize frequencies to ensure they sum to ~1.0 for each hand
+        for hand_combo, actions in action_matrix.items():
+            total = sum(actions.values())
+            if total > 0 and total != 1.0:
+                # Normalize
+                for action in actions:
+                    actions[action] = actions[action] / total
+
+        return action_matrix
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error retrieving range matrix: {str(e)}"
+        )
+
+
 @router.get("/health")
 async def health_check(gto_service: GTOService = Depends(get_gto_service)):
     """

@@ -136,6 +136,25 @@ class ApiClient {
     return response.data;
   }
 
+  // Get GTO range matrix for a scenario (for RangeGrid display)
+  async getGTORangeMatrix(
+    category: string,
+    position: string,
+    opponentPosition?: string
+  ): Promise<Record<string, Record<string, number>>> {
+    const params = new URLSearchParams({
+      category,
+      position
+    });
+    if (opponentPosition) {
+      params.append('opponent_position', opponentPosition);
+    }
+    const response = await this.client.get<Record<string, Record<string, number>>>(
+      `/api/gto/range-matrix?${params}`
+    );
+    return response.data;
+  }
+
   // Get database statistics
   async getDatabaseStats(): Promise<DatabaseStats> {
     const response = await this.client.get<DatabaseStats>('/api/database/stats');

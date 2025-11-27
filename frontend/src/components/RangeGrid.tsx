@@ -1,12 +1,42 @@
 import React, { useState } from 'react';
 
+// Multi-action frequencies for defense scenarios
+export interface HandActions {
+  fold?: number;
+  call?: number;
+  raise?: number;
+  '3bet'?: number;
+  '4bet'?: number;
+  '5bet'?: number;
+  limp?: number;
+  allin?: number;
+}
+
 interface RangeGridProps {
+  // Single action mode (simple range display)
   rangeString?: string;
   rangeMatrix?: Record<string, number>;
+  // Multi-action mode (for defense scenarios with call/3bet/fold)
+  actionMatrix?: Record<string, HandActions>;
   title?: string;
+  highlightedHand?: string;  // Hand combo to highlight (e.g., "AKo")
+  showFolds?: boolean;
+  onHandClick?: (hand: string) => void;
 }
 
 const RANKS = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2'];
+
+// Standard solver colors (PioSOLVER convention)
+const ACTION_COLORS: Record<string, { r: number; g: number; b: number }> = {
+  raise: { r: 229, g: 57, b: 53 },    // Red
+  '3bet': { r: 229, g: 57, b: 53 },   // Red
+  '4bet': { r: 180, g: 40, b: 40 },   // Darker Red
+  '5bet': { r: 140, g: 20, b: 20 },   // Even darker Red
+  call: { r: 67, g: 160, b: 71 },     // Green
+  fold: { r: 200, g: 200, b: 200 },   // Light gray
+  limp: { r: 255, g: 193, b: 7 },     // Yellow
+  allin: { r: 142, g: 36, b: 170 },   // Purple
+};
 
 // Parse simple range strings like "AA,KK,QQ,AKs,AKo"
 const parseRangeString = (rangeString: string): Record<string, number> => {
@@ -53,36 +83,7 @@ const parseRangeString = (rangeString: string): Record<string, number> => {
   return matrix;
 };
 
-// Get frequency for a hand combo
-const getHandFrequency = (rank1: string, rank2: string, rangeMatrix: Record<string, number>): number => {
-  const rankIndex1 = RANKS.indexOf(rank1);
-  const rankIndex2 = RANKS.indexOf(rank2);
-
-  // Pairs (diagonal)
-  if (rank1 === rank2) {
-    return rangeMatrix[rank1 + rank2] || 0;
-  }
-
-  // Suited (above diagonal)
-  if (rankIndex1 < rankIndex2) {
-    return rangeMatrix[rank1 + rank2 + 's'] || 0;
-  }
-
-  // Offsuit (below diagonal)
-  return rangeMatrix[rank2 + rank1 + 'o'] || 0;
-};
-
-// Get color based on frequency
-const getFrequencyColor = (frequency: number): string => {
-  if (frequency === 0) return 'bg-white border-gray-200';
-  if (frequency >= 0.99) return 'bg-green-700 text-white border-green-800';
-  if (frequency >= 0.75) return 'bg-green-600 text-white border-green-700';
-  if (frequency >= 0.50) return 'bg-yellow-400 text-gray-900 border-yellow-500';
-  if (frequency >= 0.25) return 'bg-orange-400 text-gray-900 border-orange-500';
-  return 'bg-gray-300 text-gray-700 border-gray-400';
-};
-
-// Get hand label
+// Get hand label from grid position
 const getHandLabel = (rank1: string, rank2: string): string => {
   const rankIndex1 = RANKS.indexOf(rank1);
   const rankIndex2 = RANKS.indexOf(rank2);
@@ -92,24 +93,106 @@ const getHandLabel = (rank1: string, rank2: string): string => {
   return rank2 + rank1 + 'o';
 };
 
-// Count combos for a hand
+// Count combos for a hand (FIXED: offsuit is 12, not 4)
 const getHandCombos = (rank1: string, rank2: string): number => {
   if (rank1 === rank2) return 6;  // Pairs have 6 combos
-  return 4;  // Suited/offsuit have 4 combos each
+  const rankIndex1 = RANKS.indexOf(rank1);
+  const rankIndex2 = RANKS.indexOf(rank2);
+  if (rankIndex1 < rankIndex2) return 4;   // Suited has 4 combos
+  return 12;  // Offsuit has 12 combos
 };
 
-const RangeGrid: React.FC<RangeGridProps> = ({ rangeString, rangeMatrix, title }) => {
+// Get frequency for a hand combo (single action mode)
+const getHandFrequency = (rank1: string, rank2: string, rangeMatrix: Record<string, number>): number => {
+  const handLabel = getHandLabel(rank1, rank2);
+  return rangeMatrix[handLabel] || 0;
+};
+
+// Get blended color for multi-action hands
+const getBlendedColor = (actions: HandActions, showFolds: boolean = true): string => {
+  let r = 0, g = 0, b = 0, totalFreq = 0;
+
+  for (const [action, freq] of Object.entries(actions)) {
+    if (!showFolds && action === 'fold') continue;
+    const color = ACTION_COLORS[action] || ACTION_COLORS.fold;
+    r += color.r * (freq || 0);
+    g += color.g * (freq || 0);
+    b += color.b * (freq || 0);
+    totalFreq += freq || 0;
+  }
+
+  if (totalFreq === 0) return 'rgb(255, 255, 255)';
+
+  return `rgb(${Math.round(r/totalFreq)}, ${Math.round(g/totalFreq)}, ${Math.round(b/totalFreq)})`;
+};
+
+// Get color based on single frequency (gradient mode)
+const getFrequencyColor = (frequency: number): string => {
+  if (frequency === 0) return 'rgb(255, 255, 255)';
+
+  // Interpolate from white to green based on frequency
+  const r = Math.round(255 - (255 - 34) * frequency);
+  const g = Math.round(255 - (255 - 139) * frequency);
+  const b = Math.round(255 - (255 - 34) * frequency);
+
+  return `rgb(${r}, ${g}, ${b})`;
+};
+
+const RangeGrid: React.FC<RangeGridProps> = ({
+  rangeString,
+  rangeMatrix,
+  actionMatrix,
+  title,
+  highlightedHand,
+  showFolds = false,
+  onHandClick
+}) => {
   const [hoveredHand, setHoveredHand] = useState<string | null>(null);
 
   // Parse range string if provided, otherwise use rangeMatrix
   const matrix = rangeMatrix || parseRangeString(rangeString || '');
 
+  // Determine if we're in multi-action mode
+  const isMultiAction = !!actionMatrix && Object.keys(actionMatrix).length > 0;
+
+  // Get hand data based on mode
+  const getHandData = (rank1: string, rank2: string) => {
+    const handLabel = getHandLabel(rank1, rank2);
+
+    if (isMultiAction && actionMatrix[handLabel]) {
+      const actions = actionMatrix[handLabel];
+      const totalFreq = Object.values(actions).reduce((a, b) => a + (b || 0), 0);
+      return {
+        actions,
+        frequency: totalFreq,
+        color: getBlendedColor(actions, showFolds)
+      };
+    }
+
+    const freq = getHandFrequency(rank1, rank2, matrix);
+    return {
+      actions: { call: freq } as HandActions,
+      frequency: freq,
+      color: getFrequencyColor(freq)
+    };
+  };
+
   // Calculate total combos in range
   const totalCombos = RANKS.reduce((sum, rank1) => {
     return sum + RANKS.reduce((innerSum, rank2) => {
-      const freq = getHandFrequency(rank1, rank2, matrix);
-      if (freq > 0) {
-        return innerSum + getHandCombos(rank1, rank2) * freq;
+      const { frequency } = getHandData(rank1, rank2);
+      if (frequency > 0) {
+        const combos = getHandCombos(rank1, rank2);
+        // For multi-action, we only count "continuing" (non-fold) combos
+        if (isMultiAction) {
+          const handLabel = getHandLabel(rank1, rank2);
+          const actions = actionMatrix?.[handLabel] || {};
+          const continuingFreq = (actions.call || 0) + (actions.raise || 0) +
+                                  (actions['3bet'] || 0) + (actions['4bet'] || 0) +
+                                  (actions['5bet'] || 0) + (actions.allin || 0);
+          return innerSum + combos * continuingFreq;
+        }
+        return innerSum + combos * frequency;
       }
       return innerSum;
     }, 0);
@@ -117,6 +200,31 @@ const RangeGrid: React.FC<RangeGridProps> = ({ rangeString, rangeMatrix, title }
 
   const totalPossibleCombos = 1326;
   const rangePercentage = ((totalCombos / totalPossibleCombos) * 100).toFixed(1);
+
+  // Get hover info for tooltip
+  const getHoverInfo = (handLabel: string) => {
+    // Find the hand in the grid
+    const rank1 = handLabel[0];
+    let rank2: string;
+    let isSuited = false;
+    let isPair = false;
+
+    if (handLabel.length === 2) {
+      rank2 = handLabel[1];
+      isPair = true;
+    } else {
+      rank2 = handLabel[1];
+      isSuited = handLabel[2] === 's';
+    }
+
+    const data = isPair
+      ? getHandData(rank1, rank2)
+      : (isSuited
+          ? getHandData(rank1, rank2)  // Suited: rank1 < rank2 in index
+          : getHandData(rank2, rank1)); // Offsuit: swap to get correct position
+
+    return data;
+  };
 
   return (
     <div className="space-y-4">
@@ -129,29 +237,49 @@ const RangeGrid: React.FC<RangeGridProps> = ({ rangeString, rangeMatrix, title }
         </div>
       )}
 
-      <div className="bg-white rounded-lg border border-gray-200 p-4 overflow-x-auto">
+      <div className="bg-white rounded-lg border border-gray-200 p-2 overflow-x-auto">
         <div className="inline-block min-w-full">
-          <div className="grid grid-cols-13 gap-1" style={{ gridTemplateColumns: 'repeat(13, minmax(0, 1fr))' }}>
+          <div
+            className="grid gap-0.5"
+            style={{
+              gridTemplateColumns: 'repeat(13, minmax(28px, 1fr))',
+              minWidth: '364px'
+            }}
+          >
             {RANKS.map((rank1) => (
               RANKS.map((rank2) => {
-                const frequency = getHandFrequency(rank1, rank2, matrix);
                 const handLabel = getHandLabel(rank1, rank2);
-                const combos = getHandCombos(rank1, rank2);
-                const colorClass = getFrequencyColor(frequency);
+                const { frequency, color, actions } = getHandData(rank1, rank2);
+                const isHighlighted = highlightedHand === handLabel;
                 const isHovered = hoveredHand === handLabel;
+
+                // Determine text color based on background brightness
+                const textColor = frequency > 0.5 ? 'text-white' : 'text-gray-800';
+
+                // Get continuing frequency (non-fold)
+                const continuingFreq = isMultiAction
+                  ? (actions.call || 0) + (actions.raise || 0) + (actions['3bet'] || 0) +
+                    (actions['4bet'] || 0) + (actions['5bet'] || 0) + (actions.allin || 0)
+                  : frequency;
 
                 return (
                   <div
                     key={`${rank1}-${rank2}`}
                     className={`
-                      relative aspect-square flex items-center justify-center text-xs sm:text-sm font-bold
-                      border transition-all cursor-pointer
-                      ${colorClass}
-                      ${isHovered ? 'ring-2 ring-blue-500 scale-110 z-10 shadow-lg' : ''}
+                      relative aspect-square flex items-center justify-center
+                      text-[9px] sm:text-[10px] font-bold cursor-pointer transition-all
+                      border border-gray-200
+                      ${isHighlighted ? 'ring-4 ring-yellow-400 z-30 scale-125 shadow-xl' : ''}
+                      ${isHovered && !isHighlighted ? 'ring-2 ring-blue-500 z-20 scale-110 shadow-lg' : ''}
+                      ${textColor}
                     `}
+                    style={{
+                      backgroundColor: continuingFreq > 0 ? color : 'white',
+                      opacity: continuingFreq > 0 ? 1 : 0.5
+                    }}
                     onMouseEnter={() => setHoveredHand(handLabel)}
                     onMouseLeave={() => setHoveredHand(null)}
-                    title={`${handLabel}: ${(frequency * 100).toFixed(0)}% (${Math.round(combos * frequency)} combos)`}
+                    onClick={() => onHandClick?.(handLabel)}
                   >
                     <span className="select-none">{handLabel}</span>
                   </div>
@@ -162,53 +290,96 @@ const RangeGrid: React.FC<RangeGridProps> = ({ rangeString, rangeMatrix, title }
         </div>
       </div>
 
-      {/* Legend */}
-      <div className="flex flex-wrap items-center gap-4 text-xs text-gray-600">
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 bg-green-700 border border-green-800 rounded"></div>
-          <span>Always (100%)</span>
+      {/* Multi-action Legend */}
+      {isMultiAction && (
+        <div className="flex flex-wrap items-center gap-3 text-xs text-gray-600">
+          <span className="font-medium">Actions:</span>
+          <div className="flex items-center gap-1">
+            <div className="w-3 h-3 rounded" style={{ backgroundColor: `rgb(${ACTION_COLORS.raise.r}, ${ACTION_COLORS.raise.g}, ${ACTION_COLORS.raise.b})` }}></div>
+            <span>Raise/3bet</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="w-3 h-3 rounded" style={{ backgroundColor: `rgb(${ACTION_COLORS.call.r}, ${ACTION_COLORS.call.g}, ${ACTION_COLORS.call.b})` }}></div>
+            <span>Call</span>
+          </div>
+          {showFolds && (
+            <div className="flex items-center gap-1">
+              <div className="w-3 h-3 rounded" style={{ backgroundColor: `rgb(${ACTION_COLORS.fold.r}, ${ACTION_COLORS.fold.g}, ${ACTION_COLORS.fold.b})` }}></div>
+              <span>Fold</span>
+            </div>
+          )}
         </div>
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 bg-green-600 border border-green-700 rounded"></div>
-          <span>Often (75-99%)</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 bg-yellow-400 border border-yellow-500 rounded"></div>
-          <span>Sometimes (50-74%)</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 bg-orange-400 border border-orange-500 rounded"></div>
-          <span>Rarely (25-49%)</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 bg-gray-300 border border-gray-400 rounded"></div>
-          <span>Very Rare (1-24%)</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 bg-white border border-gray-200 rounded"></div>
-          <span>Never (0%)</span>
-        </div>
-      </div>
+      )}
 
-      {hoveredHand && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-          <div className="text-sm">
-            <span className="font-bold text-blue-900">{hoveredHand}</span>
-            <span className="text-gray-600 ml-2">
-              Frequency: {(getHandFrequency(hoveredHand[0], hoveredHand[1], matrix) * 100).toFixed(1)}%
-            </span>
-            <span className="text-gray-600 ml-2">
-              Combos: {Math.round(getHandCombos(hoveredHand[0], hoveredHand[1]) * getHandFrequency(hoveredHand[0], hoveredHand[1], matrix))}
-            </span>
+      {/* Single-action Legend */}
+      {!isMultiAction && (
+        <div className="flex flex-wrap items-center gap-3 text-xs text-gray-600">
+          <div className="flex items-center gap-1">
+            <div className="w-3 h-3 rounded" style={{ backgroundColor: 'rgb(34, 139, 34)' }}></div>
+            <span>100%</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="w-3 h-3 rounded" style={{ backgroundColor: 'rgb(144, 197, 144)' }}></div>
+            <span>50%</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="w-3 h-3 rounded border border-gray-200" style={{ backgroundColor: 'white' }}></div>
+            <span>0%</span>
           </div>
         </div>
       )}
 
-      {rangeString && (
-        <div className="bg-gray-50 rounded-lg p-3">
-          <div className="text-xs font-mono text-gray-700 break-all">
-            {rangeString}
+      {/* Hover Tooltip */}
+      {hoveredHand && (
+        <div className="bg-gray-800 text-white rounded-lg p-3 text-sm">
+          <div className="font-bold text-lg mb-2">{hoveredHand}</div>
+          {isMultiAction && actionMatrix?.[hoveredHand] ? (
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+              {Object.entries(actionMatrix[hoveredHand])
+                .filter(([_, freq]) => (freq || 0) > 0)
+                .sort((a, b) => (b[1] || 0) - (a[1] || 0))
+                .map(([action, freq]) => (
+                  <div key={action} className="flex justify-between gap-2">
+                    <span className="capitalize text-gray-300">{action}:</span>
+                    <span className="font-mono font-bold">{((freq || 0) * 100).toFixed(0)}%</span>
+                  </div>
+                ))}
+            </div>
+          ) : (
+            <div className="flex justify-between">
+              <span className="text-gray-300">Frequency:</span>
+              <span className="font-mono font-bold">
+                {(getHoverInfo(hoveredHand).frequency * 100).toFixed(0)}%
+              </span>
+            </div>
+          )}
+          <div className="text-gray-400 text-xs mt-2">
+            {hoveredHand.length === 2 ? '6 combos (pair)' :
+             hoveredHand.endsWith('s') ? '4 combos (suited)' : '12 combos (offsuit)'}
           </div>
+        </div>
+      )}
+
+      {/* Highlighted Hand Info */}
+      {highlightedHand && (
+        <div className="bg-yellow-50 border-2 border-yellow-400 rounded-lg p-3">
+          <div className="flex items-center gap-2">
+            <span className="text-yellow-600 font-bold text-lg">Your Hand:</span>
+            <span className="bg-yellow-400 text-yellow-900 px-3 py-1 rounded font-bold text-lg">
+              {highlightedHand}
+            </span>
+          </div>
+          {isMultiAction && actionMatrix?.[highlightedHand] && (
+            <div className="mt-2 text-sm text-yellow-800">
+              GTO recommends: {
+                Object.entries(actionMatrix[highlightedHand])
+                  .filter(([_, freq]) => (freq || 0) > 0.1)
+                  .sort((a, b) => (b[1] || 0) - (a[1] || 0))
+                  .map(([action, freq]) => `${action} ${((freq || 0) * 100).toFixed(0)}%`)
+                  .join(', ')
+              }
+            </div>
+          )}
         </div>
       )}
     </div>

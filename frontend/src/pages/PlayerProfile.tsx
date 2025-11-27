@@ -1,7 +1,7 @@
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useState, useMemo } from 'react';
-import { ArrowLeft, TrendingUp, Target, Shield, Crosshair, AlertTriangle, BarChart3, User, X, CheckCircle, XCircle } from 'lucide-react';
+import { ArrowLeft, TrendingUp, Target, Shield, Crosshair, AlertTriangle, BarChart3, User, X, CheckCircle, XCircle, Grid3X3 } from 'lucide-react';
 import { api } from '../services/api';
 import PlayerBadge from '../components/PlayerBadge';
 import StatCard from '../components/StatCard';
@@ -9,6 +9,8 @@ import { Tooltip } from '../components/Tooltip';
 import MetricChart from '../components/MetricChart';
 import PositionalVPIPChart from '../components/PositionalVPIPChart';
 import PreflopAggressionChart from '../components/PreflopAggressionChart';
+import RangeGrid from '../components/RangeGrid';
+import type { HandActions } from '../components/RangeGrid';
 // Note: ExploitDashboard, BaselineComparison, DeviationHeatmap disabled - require player_scenario_stats table
 import { LeakSummary, LeaksList } from '../components/LeakCard';
 import { STAT_DEFINITIONS, getStatDefinitionsWithGTO, GTOOptimalRange } from '../config/statDefinitions';
@@ -155,6 +157,21 @@ const ScenarioHandsModal = ({
   onClose: () => void;
   selection: ScenarioSelection;
 }) => {
+  const [selectedHand, setSelectedHand] = useState<string | null>(null);
+  const [showRangeGrid, setShowRangeGrid] = useState(false);
+
+  // Fetch GTO range matrix for this scenario
+  const { data: rangeMatrix, isLoading: rangeLoading } = useQuery({
+    queryKey: ['rangeMatrix', selection.scenario, selection.position, selection.vsPosition],
+    queryFn: () => api.getGTORangeMatrix(
+      selection.scenario,
+      selection.position,
+      selection.vsPosition || undefined
+    ),
+    enabled: showRangeGrid,
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  });
+
   const scenarioLabels: Record<string, string> = {
     opening: 'Opening Range',
     defense: 'Defense vs Open',
@@ -186,6 +203,14 @@ const ScenarioHandsModal = ({
     mistake: { bg: 'bg-red-50', text: 'text-red-700', icon: <XCircle size={14} className="mr-1" /> },
   };
 
+  // Handle clicking a hand row to show it in the range grid
+  const handleHandClick = (handCombo: string | null) => {
+    if (handCombo) {
+      setSelectedHand(handCombo);
+      setShowRangeGrid(true);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden">
@@ -203,12 +228,26 @@ const ScenarioHandsModal = ({
               </p>
             )}
           </div>
-          <button
-            onClick={onClose}
-            className="text-white/80 hover:text-white transition-colors"
-          >
-            <X size={24} />
-          </button>
+          <div className="flex items-center gap-3">
+            {/* Range Grid Toggle */}
+            <button
+              onClick={() => setShowRangeGrid(!showRangeGrid)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors ${
+                showRangeGrid
+                  ? 'bg-white text-blue-600'
+                  : 'bg-blue-500/30 text-white hover:bg-blue-500/50'
+              }`}
+            >
+              <Grid3X3 size={18} />
+              <span className="text-sm font-medium">Range Grid</span>
+            </button>
+            <button
+              onClick={onClose}
+              className="text-white/80 hover:text-white transition-colors"
+            >
+              <X size={24} />
+            </button>
+          </div>
         </div>
 
         {/* Enhanced Summary Bar */}
@@ -259,100 +298,142 @@ const ScenarioHandsModal = ({
           </div>
         )}
 
-        {/* Content */}
-        <div className="overflow-y-auto max-h-[55vh] p-6">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="animate-spin h-8 w-8 border-2 border-blue-600 border-t-transparent rounded-full" />
+        {/* Content - Split view when range grid is shown */}
+        <div className={`overflow-hidden ${showRangeGrid ? 'flex' : ''}`} style={{ maxHeight: '55vh' }}>
+          {/* Range Grid Panel */}
+          {showRangeGrid && (
+            <div className="w-96 flex-shrink-0 border-r border-gray-200 p-4 overflow-y-auto bg-gray-50">
+              <div className="sticky top-0 bg-gray-50 pb-2 mb-2">
+                <h3 className="text-sm font-semibold text-gray-700 mb-1">
+                  GTO Range: {selection.position}
+                  {selection.vsPosition && ` vs ${selection.vsPosition}`}
+                </h3>
+                <p className="text-xs text-gray-500">
+                  Click a hand in the table to highlight it
+                </p>
+              </div>
+              {rangeLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin h-6 w-6 border-2 border-blue-600 border-t-transparent rounded-full" />
+                </div>
+              ) : rangeMatrix && Object.keys(rangeMatrix).length > 0 ? (
+                <RangeGrid
+                  actionMatrix={rangeMatrix as Record<string, HandActions>}
+                  highlightedHand={selectedHand || undefined}
+                  showFolds={false}
+                  onHandClick={(hand) => setSelectedHand(hand)}
+                />
+              ) : (
+                <div className="text-center text-gray-500 py-8 text-sm">
+                  No GTO data available for this scenario
+                </div>
+              )}
             </div>
-          ) : data && data.hands.length > 0 ? (
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-white">
-                <tr className="border-b-2 border-gray-200">
-                  <th className="text-left py-3 px-2 font-semibold text-gray-700">Hand</th>
-                  <th className="text-left py-3 px-2 font-semibold text-gray-700">Category</th>
-                  <th className="text-center py-3 px-2 font-semibold text-gray-700">Stack</th>
-                  {selection.vsPosition === undefined && (
-                    <th className="text-left py-3 px-2 font-semibold text-gray-700">vs</th>
-                  )}
-                  <th className="text-left py-3 px-2 font-semibold text-gray-700">Action</th>
-                  <th className="text-right py-3 px-2 font-semibold text-gray-700">GTO%</th>
-                  <th className="text-left py-3 px-2 font-semibold text-gray-700">Assessment</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.hands.map((hand) => {
-                  const devStyle = deviationStyles[hand.deviation_type] || deviationStyles.correct;
-                  return (
-                    <tr
-                      key={hand.hand_id}
-                      className={`border-b border-gray-100 hover:bg-gray-50 ${devStyle.bg}`}
-                    >
-                      {/* Hole Cards */}
-                      <td className="py-3 px-2">
-                        {hand.hole_cards ? (
-                          <div>
-                            <span className="font-mono font-bold text-gray-800">
-                              {hand.hand_combo || hand.hole_cards}
-                            </span>
-                            {hand.hand_tier && (
-                              <span className={`ml-2 px-1.5 py-0.5 rounded text-xs ${tierColors[hand.hand_tier]}`}>
-                                T{hand.hand_tier}
+          )}
+
+          {/* Hands Table */}
+          <div className={`overflow-y-auto p-6 ${showRangeGrid ? 'flex-1' : 'w-full'}`}>
+            {isLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="animate-spin h-8 w-8 border-2 border-blue-600 border-t-transparent rounded-full" />
+              </div>
+            ) : data && data.hands.length > 0 ? (
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-white">
+                  <tr className="border-b-2 border-gray-200">
+                    <th className="text-left py-3 px-2 font-semibold text-gray-700">Hand</th>
+                    <th className="text-left py-3 px-2 font-semibold text-gray-700">Category</th>
+                    <th className="text-center py-3 px-2 font-semibold text-gray-700">Stack</th>
+                    {selection.vsPosition === undefined && (
+                      <th className="text-left py-3 px-2 font-semibold text-gray-700">vs</th>
+                    )}
+                    <th className="text-left py-3 px-2 font-semibold text-gray-700">Action</th>
+                    <th className="text-right py-3 px-2 font-semibold text-gray-700">GTO%</th>
+                    <th className="text-left py-3 px-2 font-semibold text-gray-700">Assessment</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.hands.map((hand) => {
+                    const devStyle = deviationStyles[hand.deviation_type] || deviationStyles.correct;
+                    const isSelected = selectedHand === hand.hand_combo;
+                    return (
+                      <tr
+                        key={hand.hand_id}
+                        className={`border-b border-gray-100 cursor-pointer transition-colors ${
+                          isSelected ? 'bg-yellow-100 ring-2 ring-yellow-400' : `hover:bg-gray-50 ${devStyle.bg}`
+                        }`}
+                        onClick={() => handleHandClick(hand.hand_combo)}
+                      >
+                        {/* Hole Cards */}
+                        <td className="py-3 px-2">
+                          {hand.hole_cards ? (
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono font-bold text-gray-800">
+                                {hand.hand_combo || hand.hole_cards}
                               </span>
+                              {hand.hand_tier && (
+                                <span className={`px-1.5 py-0.5 rounded text-xs ${tierColors[hand.hand_tier]}`}>
+                                  T{hand.hand_tier}
+                                </span>
+                              )}
+                              {showRangeGrid && (
+                                <span title="Click to view in range grid">
+                                  <Grid3X3 size={14} className="text-blue-400" />
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-gray-400 italic">Unknown</span>
+                          )}
+                        </td>
+                        {/* Hand Category */}
+                        <td className="py-3 px-2 text-gray-600 text-xs">
+                          {hand.hand_category || '-'}
+                        </td>
+                        {/* Effective Stack */}
+                        <td className="py-3 px-2 text-center">
+                          {hand.effective_stack_bb ? (
+                            <span className="font-mono text-gray-700">
+                              {hand.effective_stack_bb.toFixed(0)}bb
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </td>
+                        {/* vs Position */}
+                        {selection.vsPosition === undefined && (
+                          <td className="py-3 px-2 text-gray-600">{hand.vs_position || '-'}</td>
+                        )}
+                        {/* Player Action */}
+                        <td className="py-3 px-2">
+                          <span className={`px-2 py-1 rounded font-medium text-xs ${
+                            actionColors[hand.player_action] || 'bg-gray-100'
+                          }`}>
+                            {hand.player_action}
+                          </span>
+                        </td>
+                        {/* GTO Frequency */}
+                        <td className="py-3 px-2 text-right">
+                          <span className={`font-mono ${
+                            hand.action_gto_freq < 15 ? 'text-red-600 font-bold' :
+                            hand.action_gto_freq < 40 ? 'text-yellow-600' : 'text-gray-600'
+                          }`}>
+                            {hand.action_gto_freq.toFixed(0)}%
+                          </span>
+                        </td>
+                        {/* Assessment */}
+                        <td className="py-3 px-2">
+                          <div className={`inline-flex items-center text-xs font-medium ${devStyle.text}`}>
+                            {devStyle.icon}
+                            <span className="capitalize">{hand.deviation_type}</span>
+                            {hand.deviation_severity && (
+                              <span className="ml-1 opacity-75">({hand.deviation_severity})</span>
                             )}
                           </div>
-                        ) : (
-                          <span className="text-gray-400 italic">Unknown</span>
-                        )}
-                      </td>
-                      {/* Hand Category */}
-                      <td className="py-3 px-2 text-gray-600 text-xs">
-                        {hand.hand_category || '-'}
-                      </td>
-                      {/* Effective Stack */}
-                      <td className="py-3 px-2 text-center">
-                        {hand.effective_stack_bb ? (
-                          <span className="font-mono text-gray-700">
-                            {hand.effective_stack_bb.toFixed(0)}bb
-                          </span>
-                        ) : (
-                          <span className="text-gray-400">-</span>
-                        )}
-                      </td>
-                      {/* vs Position */}
-                      {selection.vsPosition === undefined && (
-                        <td className="py-3 px-2 text-gray-600">{hand.vs_position || '-'}</td>
-                      )}
-                      {/* Player Action */}
-                      <td className="py-3 px-2">
-                        <span className={`px-2 py-1 rounded font-medium text-xs ${
-                          actionColors[hand.player_action] || 'bg-gray-100'
-                        }`}>
-                          {hand.player_action}
-                        </span>
-                      </td>
-                      {/* GTO Frequency */}
-                      <td className="py-3 px-2 text-right">
-                        <span className={`font-mono ${
-                          hand.action_gto_freq < 15 ? 'text-red-600 font-bold' :
-                          hand.action_gto_freq < 40 ? 'text-yellow-600' : 'text-gray-600'
-                        }`}>
-                          {hand.action_gto_freq.toFixed(0)}%
-                        </span>
-                      </td>
-                      {/* Assessment */}
-                      <td className="py-3 px-2">
-                        <div className={`inline-flex items-center text-xs font-medium ${devStyle.text}`}>
-                          {devStyle.icon}
-                          <span className="capitalize">{hand.deviation_type}</span>
-                          {hand.deviation_severity && (
-                            <span className="ml-1 opacity-75">({hand.deviation_severity})</span>
-                          )}
-                        </div>
-                        {hand.deviation_type !== 'correct' && (
-                          <div className="text-xs text-gray-500 mt-0.5">
-                            {hand.deviation_description}
-                          </div>
+                          {hand.deviation_type !== 'correct' && (
+                            <div className="text-xs text-gray-500 mt-0.5">
+                              {hand.deviation_description}
+                            </div>
                         )}
                       </td>
                     </tr>
@@ -365,6 +446,7 @@ const ScenarioHandsModal = ({
               No hands found for this scenario
             </div>
           )}
+          </div>
         </div>
 
         {/* Footer Legend */}
