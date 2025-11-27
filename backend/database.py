@@ -22,11 +22,12 @@ settings = get_settings()
 
 # Create SQLAlchemy engine with connection pooling for better performance
 # Using QueuePool instead of NullPool to reuse connections and avoid SSL overhead
+# Pool settings from config to avoid maxing out Supabase connection limits
 engine = create_engine(
     settings.database_url,
     poolclass=QueuePool,
-    pool_size=5,  # Keep 5 connections in the pool
-    max_overflow=10,  # Allow up to 10 additional connections
+    pool_size=settings.database_pool_size,  # From config (default: 2)
+    max_overflow=settings.database_pool_max_overflow,  # From config (default: 1)
     pool_timeout=30,  # Wait up to 30 seconds for a connection
     pool_recycle=300,  # Recycle connections after 5 minutes to avoid stale SSL
     pool_pre_ping=True,  # Verify connections before using
