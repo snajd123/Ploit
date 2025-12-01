@@ -1,7 +1,7 @@
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useState, useMemo } from 'react';
-import { ArrowLeft, TrendingUp, Target, Shield, Crosshair, AlertTriangle, BarChart3, User, X, CheckCircle, XCircle, Grid3X3 } from 'lucide-react';
+import { ArrowLeft, TrendingUp, Target, Shield, Crosshair, AlertTriangle, BarChart3, User, X, CheckCircle, XCircle, Grid3X3, Play } from 'lucide-react';
 import { api } from '../services/api';
 import PlayerBadge from '../components/PlayerBadge';
 import StatCard from '../components/StatCard';
@@ -14,6 +14,7 @@ import type { HandActions } from '../components/RangeGrid';
 // Note: ExploitDashboard, BaselineComparison, DeviationHeatmap disabled - require player_scenario_stats table
 import LeakAnalysisView from '../components/LeakAnalysisView';
 import { GTOCategorySummaryCard, GTOCategoryDetailView } from '../components/gto';
+import HandReplayModal from '../components/HandReplayModal';
 import { STAT_DEFINITIONS, getStatDefinitionsWithGTO, GTOOptimalRange } from '../config/statDefinitions';
 import type { ScenarioHandsResponse, GTOAnalysisResponse } from '../types';
 
@@ -491,6 +492,7 @@ const ScenarioHandsModal = ({
 }) => {
   const [selectedHand, setSelectedHand] = useState<string | null>(null);
   const [showRangeGrid, setShowRangeGrid] = useState(false);
+  const [replayHandId, setReplayHandId] = useState<number | null>(null);
 
   // Fetch GTO range matrix for this scenario
   const { data: rangeMatrix, isLoading: rangeLoading } = useQuery({
@@ -502,6 +504,14 @@ const ScenarioHandsModal = ({
     ),
     enabled: showRangeGrid,
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  });
+
+  // Fetch hand replay data when a hand is selected for replay
+  const { data: replayData, isLoading: replayLoading } = useQuery({
+    queryKey: ['handReplay', replayHandId],
+    queryFn: () => api.getHandReplay(replayHandId!),
+    enabled: replayHandId !== null,
+    staleTime: 5 * 60 * 1000,
   });
 
   const scenarioLabels: Record<string, string> = {
@@ -682,6 +692,7 @@ const ScenarioHandsModal = ({
                     <th className="text-left py-3 px-2 font-semibold text-gray-700">Action</th>
                     <th className="text-right py-3 px-2 font-semibold text-gray-700">GTO%</th>
                     <th className="text-left py-3 px-2 font-semibold text-gray-700">Assessment</th>
+                    <th className="text-center py-3 px-2 font-semibold text-gray-700 w-16">Replay</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -768,6 +779,19 @@ const ScenarioHandsModal = ({
                             </div>
                         )}
                       </td>
+                        {/* Replay Button */}
+                        <td className="py-3 px-2 text-center">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setReplayHandId(hand.hand_id);
+                            }}
+                            className="p-1.5 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors"
+                            title="Replay this hand"
+                          >
+                            <Play size={14} />
+                          </button>
+                        </td>
                     </tr>
                   );
                 })}
@@ -801,6 +825,24 @@ const ScenarioHandsModal = ({
           </div>
         </div>
       </div>
+
+      {/* Hand Replay Modal */}
+      {replayHandId && replayData && (
+        <HandReplayModal
+          data={replayData}
+          onClose={() => setReplayHandId(null)}
+        />
+      )}
+
+      {/* Loading overlay for replay */}
+      {replayHandId && replayLoading && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-60">
+          <div className="bg-white rounded-lg p-6 shadow-xl flex items-center gap-3">
+            <div className="animate-spin h-6 w-6 border-2 border-emerald-600 border-t-transparent rounded-full" />
+            <span className="text-gray-700">Loading hand...</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

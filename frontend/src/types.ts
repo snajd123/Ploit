@@ -391,6 +391,63 @@ export interface ScenarioHandsResponse {
   hands: ScenarioHand[];
 }
 
+// Hand Replay Types
+export interface HandReplayAction {
+  player: string;
+  action: string;
+  amount: number;
+  amount_bb: number;
+  pot_before: number;
+  pot_after: number;
+  pot_before_bb: number;
+  pot_after_bb: number;
+  stack: number;
+  stack_bb: number;
+  is_aggressive: boolean;
+  is_all_in: boolean;
+  facing_bet: boolean;
+}
+
+export interface HandReplayStreet {
+  actions: HandReplayAction[];
+  board: string[] | null;
+}
+
+export interface HandReplayPlayer {
+  name: string;
+  position: string | null;
+  seat: number;
+  stack: number;
+  stack_bb: number | null;
+  hole_cards: string | null;
+  is_hero: boolean;
+}
+
+export interface HandReplayResult {
+  won: boolean;
+  profit_loss: number;
+  profit_loss_bb: number;
+  showdown: boolean;
+}
+
+export interface HandReplayResponse {
+  hand_id: number;
+  timestamp: string | null;
+  table_name: string;
+  stake_level: string;
+  big_blind: number;
+  game_type: string;
+  button_seat: number;
+  pot_size: number;
+  pot_size_bb: number;
+  rake: number;
+  players: HandReplayPlayer[];
+  hero: string | null;
+  streets: Record<string, HandReplayStreet>;
+  board: string[];
+  results: Record<string, HandReplayResult>;
+}
+
 // GTO Scenario Types (Preflop-only)
 export type GTOCategory = 'opening' | 'defense' | 'facing_3bet' | 'facing_4bet';
 

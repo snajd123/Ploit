@@ -23,6 +23,7 @@ import type {
   GTOOptimalRangesResponse,
   GTOAnalysisResponse,
   ScenarioHandsResponse,
+  HandReplayResponse,
 } from '../types';
 
 class ApiClient {
@@ -132,6 +133,14 @@ class ApiClient {
     }
     const response = await this.client.get<ScenarioHandsResponse>(
       `/api/players/${encodeURIComponent(playerName)}/scenario-hands?${params}`
+    );
+    return response.data;
+  }
+
+  // Get full hand history for replay
+  async getHandReplay(handId: number): Promise<HandReplayResponse> {
+    const response = await this.client.get<HandReplayResponse>(
+      `/api/hands/${handId}/replay`
     );
     return response.data;
   }

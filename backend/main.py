@@ -1856,6 +1856,171 @@ async def get_scenario_hands(
 
 
 @app.get(
+    "/api/hands/{hand_id}/replay",
+    tags=["Hands"],
+    summary="Get full hand history for replay",
+    description="Retrieves complete hand data including street-by-street actions for visual replay"
+)
+async def get_hand_replay(
+    hand_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Get complete hand history for visual hand replay.
+
+    Returns:
+        - Game info (stakes, table, timestamp)
+        - All players with positions and starting stacks
+        - Hero hole cards
+        - Street-by-street actions with pot sizes
+        - Board cards for each street
+        - Final result
+    """
+    from sqlalchemy import text
+    from backend.parser.pokerstars_parser import PokerStarsParser
+
+    try:
+        # Get raw hand text
+        raw_query = text("""
+            SELECT hand_id, timestamp, table_name, stake_level, game_type, raw_hand_text
+            FROM raw_hands
+            WHERE hand_id = :hand_id
+        """)
+        raw_result = db.execute(raw_query, {"hand_id": hand_id}).fetchone()
+
+        if not raw_result:
+            raise HTTPException(status_code=404, detail=f"Hand {hand_id} not found")
+
+        # Parse the hand
+        parser = PokerStarsParser()
+        hand = parser.parse_single_hand(raw_result.raw_hand_text)
+
+        if not hand:
+            raise HTTPException(status_code=500, detail="Failed to parse hand history")
+
+        # Extract big blind for stack calculations
+        bb_match = None
+        stake_level = raw_result.stake_level or ""
+        import re
+        bb_pattern = r'[€$]?([\d.]+)/[€$]?([\d.]+)'
+        bb_match = re.search(bb_pattern, stake_level)
+        big_blind = float(bb_match.group(2)) if bb_match else 1.0
+
+        # Build player list with positions
+        players = []
+        hero_name = None
+        for player in hand.players:
+            player_data = {
+                'name': player.name,
+                'position': player.position,
+                'seat': player.seat_number,
+                'stack': float(player.starting_stack),
+                'stack_bb': round(float(player.starting_stack) / big_blind, 1) if big_blind else None,
+                'hole_cards': player.hole_cards,
+                'is_hero': player.hole_cards is not None
+            }
+            if player.hole_cards:
+                hero_name = player.name
+            players.append(player_data)
+
+        # Build street-by-street actions
+        streets_data = {}
+        street_order = ['preflop', 'flop', 'turn', 'river']
+
+        for street_name in street_order:
+            from backend.parser.data_structures import Street
+            street_enum = Street(street_name)
+            street_actions = hand.get_actions_for_street(street_enum)
+
+            if street_actions or (street_name in ['flop', 'turn', 'river'] and street_name in (hand.board_cards or {})):
+                actions = []
+                for action in street_actions:
+                    actions.append({
+                        'player': action.player_name,
+                        'action': action.action_type.value,
+                        'amount': float(action.amount) if action.amount else 0,
+                        'amount_bb': round(float(action.amount) / big_blind, 1) if action.amount and big_blind else 0,
+                        'pot_before': float(action.pot_size_before) if action.pot_size_before else 0,
+                        'pot_after': float(action.pot_size_after) if action.pot_size_after else 0,
+                        'pot_before_bb': round(float(action.pot_size_before) / big_blind, 1) if action.pot_size_before and big_blind else 0,
+                        'pot_after_bb': round(float(action.pot_size_after) / big_blind, 1) if action.pot_size_after and big_blind else 0,
+                        'stack': float(action.stack_size) if action.stack_size else 0,
+                        'stack_bb': round(float(action.stack_size) / big_blind, 1) if action.stack_size and big_blind else 0,
+                        'is_aggressive': action.is_aggressive,
+                        'is_all_in': action.is_all_in,
+                        'facing_bet': action.facing_bet
+                    })
+
+                # Get board cards for this street
+                board = None
+                if street_name == 'flop' and 'flop' in (hand.board_cards or {}):
+                    board = hand.board_cards.get('flop', '').split()
+                elif street_name == 'turn' and 'turn' in (hand.board_cards or {}):
+                    board = [hand.board_cards.get('turn', '')]
+                elif street_name == 'river' and 'river' in (hand.board_cards or {}):
+                    board = [hand.board_cards.get('river', '')]
+
+                streets_data[street_name] = {
+                    'actions': actions,
+                    'board': board
+                }
+
+        # Get result info from player_hand_summary
+        result_query = text("""
+            SELECT player_name, won_hand, profit_loss, went_to_showdown
+            FROM player_hand_summary
+            WHERE hand_id = :hand_id
+        """)
+        result_rows = db.execute(result_query, {"hand_id": hand_id}).fetchall()
+
+        results = {}
+        for row in result_rows:
+            results[row.player_name] = {
+                'won': row.won_hand,
+                'profit_loss': float(row.profit_loss) if row.profit_loss else 0,
+                'profit_loss_bb': round(float(row.profit_loss) / big_blind, 1) if row.profit_loss and big_blind else 0,
+                'showdown': row.went_to_showdown
+            }
+
+        # Build full board
+        full_board = []
+        if hand.board_cards:
+            if 'flop' in hand.board_cards:
+                full_board.extend(hand.board_cards['flop'].split())
+            if 'turn' in hand.board_cards:
+                full_board.append(hand.board_cards['turn'])
+            if 'river' in hand.board_cards:
+                full_board.append(hand.board_cards['river'])
+
+        return {
+            'hand_id': hand_id,
+            'timestamp': raw_result.timestamp.isoformat() if raw_result.timestamp else None,
+            'table_name': raw_result.table_name,
+            'stake_level': stake_level,
+            'big_blind': big_blind,
+            'game_type': raw_result.game_type,
+            'button_seat': hand.button_seat,
+            'pot_size': float(hand.pot_size) if hand.pot_size else 0,
+            'pot_size_bb': round(float(hand.pot_size) / big_blind, 1) if hand.pot_size and big_blind else 0,
+            'rake': float(hand.rake) if hand.rake else 0,
+            'players': players,
+            'hero': hero_name,
+            'streets': streets_data,
+            'board': full_board,
+            'results': results
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting hand replay for {hand_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving hand: {str(e)}"
+        )
+
+
+@app.get(
     "/api/database/stats",
     response_model=DatabaseStatsResponse,
     tags=["Database"],
