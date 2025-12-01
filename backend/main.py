@@ -1498,7 +1498,7 @@ async def get_scenario_hands(
                     phs.pfr as raised,
                     phs.vpip,
                     CASE
-                        WHEN phs.pfr = true THEN 'raise'
+                        WHEN phs.pfr = true THEN 'open'
                         WHEN phs.vpip = false THEN 'fold'
                         ELSE 'limp'
                     END as player_action,
