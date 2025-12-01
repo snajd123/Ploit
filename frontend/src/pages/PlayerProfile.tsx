@@ -12,7 +12,7 @@ import PreflopAggressionChart from '../components/PreflopAggressionChart';
 import RangeGrid from '../components/RangeGrid';
 import type { HandActions } from '../components/RangeGrid';
 // Note: ExploitDashboard, BaselineComparison, DeviationHeatmap disabled - require player_scenario_stats table
-import { LeaksList } from '../components/LeakCard';
+import LeakAnalysisView from '../components/LeakAnalysisView';
 import { GTOCategorySummaryCard, GTOCategoryDetailView } from '../components/gto';
 import { STAT_DEFINITIONS, getStatDefinitionsWithGTO, GTOOptimalRange } from '../config/statDefinitions';
 import type { ScenarioHandsResponse, GTOAnalysisResponse } from '../types';
@@ -1205,185 +1205,12 @@ const PlayerProfile = () => {
 
         {/* LEAKS TAB */}
         {activeTab === 'leaks' && (
-          <div className="space-y-6">
-            {(() => {
-              // Use pre-computed filtered leaks (with statistical significance)
-              const gtoLeaks = filteredGTOLeaks.all;
-              const gtoMajorLeaks = filteredGTOLeaks.major;
-              const gtoModerateLeaks = filteredGTOLeaks.moderate;
-
-              return (
-                <>
-                  {/* Combined Leak Summary */}
-                  <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg p-4 border border-purple-200">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="font-semibold text-gray-900">Leak Analysis Summary</h3>
-                      <span className={`text-sm ${
-                        leakAnalysis?.leak_summary?.reliability === 'high'
-                          ? 'text-green-600'
-                          : leakAnalysis?.leak_summary?.reliability === 'moderate'
-                          ? 'text-yellow-600'
-                          : 'text-gray-500'
-                      }`}>
-                        {leakAnalysis?.leak_summary?.reliability || 'N/A'} confidence
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                      <div className="text-center">
-                        <div className="text-2xl font-bold text-red-600">{gtoMajorLeaks.length}</div>
-                        <div className="text-xs text-gray-600">Major Positional</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-2xl font-bold text-yellow-600">{gtoModerateLeaks.length}</div>
-                        <div className="text-xs text-gray-600">Moderate Positional</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-2xl font-bold text-gray-900">{leakAnalysis?.leak_summary?.total_leaks || 0}</div>
-                        <div className="text-xs text-gray-600">Stat-Based Leaks</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-2xl font-bold text-purple-600">{gtoLeaks.length + (leakAnalysis?.leaks?.length || 0)}</div>
-                        <div className="text-xs text-gray-600">Total All Leaks</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-2xl font-bold text-green-600">+{(leakAnalysis?.leak_summary?.total_ev_opportunity || 0).toFixed(1)}</div>
-                        <div className="text-xs text-gray-600">BB/100 Potential</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Player Type Exploit Info */}
-                  {leakAnalysis?.player_type && (
-                    <div className="card bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200">
-                      <div className="flex items-center justify-between mb-2">
-                        <h3 className="font-semibold text-gray-900">
-                          Player Profile: {leakAnalysis.player_type.type}
-                        </h3>
-                        <span className={`text-xs px-2 py-1 rounded-full ${
-                          leakAnalysis.player_type.confidence === 'high' ? 'bg-green-100 text-green-700' :
-                          leakAnalysis.player_type.confidence === 'good' ? 'bg-green-100 text-green-700' :
-                          leakAnalysis.player_type.confidence === 'moderate' ? 'bg-yellow-100 text-yellow-700' :
-                          'bg-gray-100 text-gray-600'
-                        }`}>
-                          {leakAnalysis.player_type.confidence} confidence ({leakAnalysis.player_type.sample_size} hands)
-                        </span>
-                      </div>
-                      <div className="grid md:grid-cols-2 gap-4">
-                        <div>
-                          <h4 className="text-xs font-semibold text-gray-600 uppercase mb-1">Stats</h4>
-                          <div className="text-sm text-gray-700 space-y-1">
-                            <div>VPIP: <span className="font-medium">{leakAnalysis.player_type.vpip?.toFixed(1) ?? 'N/A'}%</span></div>
-                            <div>PFR: <span className="font-medium">{leakAnalysis.player_type.pfr?.toFixed(1) ?? 'N/A'}%</span></div>
-                            <div>Aggression: <span className="font-medium">{leakAnalysis.player_type.aggression_ratio.toFixed(2)}</span></div>
-                          </div>
-                        </div>
-                        <div>
-                          <h4 className="text-xs font-semibold text-gray-600 uppercase mb-1">How to Exploit</h4>
-                          <ul className="text-sm text-gray-700 space-y-1">
-                            {leakAnalysis.player_type.exploits.map((exploit, i) => (
-                              <li key={i} className="flex items-start gap-1">
-                                <span className="text-purple-500 mt-1">•</span>
-                                <span>{exploit}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* GTO Positional Leaks */}
-                  {gtoLeaks.length > 0 && (
-                    <div className="card">
-                      <h3 className="font-semibold text-gray-900 mb-2">
-                        Positional GTO Leaks ({gtoLeaks.length})
-                        <span className="ml-2 text-sm font-normal text-gray-500">Statistically significant deviations only</span>
-                      </h3>
-                      <p className="text-xs text-gray-500 mb-4">
-                        Only showing leaks with sufficient sample size. Confidence:
-                        <span className="ml-1 text-green-600">High</span> = reliable,
-                        <span className="ml-1 text-yellow-600">Moderate</span> = likely accurate,
-                        <span className="ml-1 text-orange-500">Low</span> = needs more data
-                      </p>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="border-b border-gray-200 bg-gray-50">
-                              <th className="py-2 px-3 text-left font-medium text-gray-600">Severity</th>
-                              <th className="py-2 px-3 text-left font-medium text-gray-600">Category</th>
-                              <th className="py-2 px-3 text-left font-medium text-gray-600">Position</th>
-                              <th className="py-2 px-3 text-left font-medium text-gray-600">Action</th>
-                              <th className="py-2 px-3 text-right font-medium text-gray-600">Player</th>
-                              <th className="py-2 px-3 text-right font-medium text-blue-600 bg-blue-50">GTO</th>
-                              <th className="py-2 px-3 text-right font-medium text-gray-600">Deviation</th>
-                              <th className="py-2 px-3 text-right font-medium text-gray-600">Sample</th>
-                              <th className="py-2 px-3 text-center font-medium text-gray-600">Conf.</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {gtoLeaks.map((leak, idx) => (
-                              <tr key={idx} className={`border-b border-gray-100 hover:bg-gray-50 ${
-                                leak.confidence === 'low' ? 'opacity-70' : ''
-                              }`}>
-                                <td className="py-2 px-3">
-                                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                                    leak.severity === 'major' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'
-                                  }`}>
-                                    {leak.severity}
-                                  </span>
-                                </td>
-                                <td className="py-2 px-3 text-gray-900">{leak.category}</td>
-                                <td className="py-2 px-3 font-medium">
-                                  {leak.position}{leak.vsPosition ? ` vs ${leak.vsPosition}` : ''}
-                                </td>
-                                <td className="py-2 px-3 text-gray-600">{leak.action}</td>
-                                <td className="py-2 px-3 text-right">{leak.playerValue.toFixed(1)}%</td>
-                                <td className="py-2 px-3 text-right text-blue-600 bg-blue-50/50">{leak.gtoValue.toFixed(1)}%</td>
-                                <td className={`py-2 px-3 text-right font-medium ${
-                                  Math.abs(leak.deviation) > 15 ? 'text-red-600' : 'text-yellow-600'
-                                }`}>
-                                  {leak.deviation > 0 ? '+' : ''}{leak.deviation.toFixed(1)}%
-                                </td>
-                                <td className="py-2 px-3 text-right text-gray-500">{leak.sampleSize}</td>
-                                <td className="py-2 px-3 text-center">
-                                  <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
-                                    leak.confidence === 'high' ? 'bg-green-100 text-green-700' :
-                                    leak.confidence === 'moderate' ? 'bg-yellow-100 text-yellow-700' :
-                                    'bg-orange-100 text-orange-700'
-                                  }`}>
-                                    {leak.confidence === 'high' ? '✓' : leak.confidence === 'moderate' ? '~' : '?'}
-                                  </span>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Stat-Based Leaks List */}
-                  {leakAnalysis && leakAnalysis.leaks.length > 0 && (
-                    <div className="card">
-                      <h3 className="font-semibold text-gray-900 mb-4">
-                        Stat-Based Leaks ({leakAnalysis.leaks.length})
-                        <span className="ml-2 text-sm font-normal text-gray-500">Overall aggregate stat deviations</span>
-                      </h3>
-                      <LeaksList leaks={leakAnalysis.leaks} maxLeaks={100} />
-                    </div>
-                  )}
-
-                  {/* No data message */}
-                  {!gtoAnalysis && !leakAnalysis && (
-                    <div className="card text-center text-gray-500 py-12">
-                      No leak analysis data available. Upload more hands to see leak analysis.
-                    </div>
-                  )}
-                </>
-              );
-            })()}
-          </div>
+          <LeakAnalysisView
+            gtoLeaks={filteredGTOLeaks.all}
+            statLeaks={leakAnalysis?.leaks || []}
+            playerName={player.player_name}
+            totalHands={gtoAnalysis?.adherence?.total_hands || player.total_hands || 0}
+          />
         )}
 
         {/* CHARTS TAB */}
