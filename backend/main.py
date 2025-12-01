@@ -2007,7 +2007,10 @@ async def get_hand_replay(
                 first_raiser_pos = None
                 three_bettor_name = None
                 three_bettor_pos = None
+                four_bettor_name = None
+                four_bettor_pos = None
                 hero_opened = False
+                hero_3bet = False
                 hero_final_action = None
                 raise_count = 0
 
@@ -2031,6 +2034,11 @@ async def get_hand_replay(
                         elif raise_count == 2:
                             three_bettor_name = player
                             three_bettor_pos = next((p['position'] for p in players if p['name'] == player), None)
+                            if player == hero_name:
+                                hero_3bet = True
+                        elif raise_count == 3:
+                            four_bettor_name = player
+                            four_bettor_pos = next((p['position'] for p in players if p['name'] == player), None)
 
                     # Track hero's final preflop action (last action they take)
                     if player == hero_name and action_type not in ['post_sb', 'post_bb']:
@@ -2042,7 +2050,18 @@ async def get_hand_replay(
                 hero_gto_action = None
 
                 if hero_final_action:
-                    if hero_opened and raise_count >= 2:
+                    if hero_3bet and raise_count >= 3:
+                        # Hero 3-bet and faced a 4-bet
+                        gto_scenario = 'facing_4bet'
+                        gto_vs_position = four_bettor_pos
+                        # Hero's response to the 4-bet
+                        if hero_final_action == 'raise':
+                            hero_gto_action = '5bet'
+                        elif hero_final_action == 'call':
+                            hero_gto_action = 'call'
+                        else:
+                            hero_gto_action = 'fold'
+                    elif hero_opened and raise_count >= 2:
                         # Hero opened and faced a 3-bet
                         gto_scenario = 'facing_3bet'
                         gto_vs_position = three_bettor_pos
