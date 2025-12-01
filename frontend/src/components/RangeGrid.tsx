@@ -109,6 +109,7 @@ const getHandFrequency = (rank1: string, rank2: string, rangeMatrix: Record<stri
 };
 
 // Get blended color for multi-action hands
+// Color intensity is proportional to total frequency (4% call = very faint green)
 const getBlendedColor = (actions: HandActions, showFolds: boolean = true): string => {
   let r = 0, g = 0, b = 0, totalFreq = 0;
 
@@ -121,9 +122,20 @@ const getBlendedColor = (actions: HandActions, showFolds: boolean = true): strin
     totalFreq += freq || 0;
   }
 
-  if (totalFreq === 0) return 'rgb(255, 255, 255)';
+  if (totalFreq === 0) return 'rgb(245, 245, 245)';
 
-  return `rgb(${Math.round(r/totalFreq)}, ${Math.round(g/totalFreq)}, ${Math.round(b/totalFreq)})`;
+  // First get the weighted action color
+  const actionR = r / totalFreq;
+  const actionG = g / totalFreq;
+  const actionB = b / totalFreq;
+
+  // Then blend with white based on total frequency
+  // totalFreq of 1.0 = full action color, 0.04 = 4% action color + 96% white
+  const finalR = Math.round(255 - (255 - actionR) * totalFreq);
+  const finalG = Math.round(255 - (255 - actionG) * totalFreq);
+  const finalB = Math.round(255 - (255 - actionB) * totalFreq);
+
+  return `rgb(${finalR}, ${finalG}, ${finalB})`;
 };
 
 // Get color based on single frequency (gradient mode)
