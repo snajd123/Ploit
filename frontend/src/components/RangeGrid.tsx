@@ -288,12 +288,7 @@ const RangeGrid: React.FC<RangeGridProps> = ({
                     onMouseLeave={() => setHoveredHand(null)}
                     onClick={() => onHandClick?.(handLabel)}
                   >
-                    <span
-                      className="select-none"
-                      style={{
-                        color: continuingFreq > 0 && frequency > 0.5 ? 'white' : '#374151',
-                      }}
-                    >
+                    <span className="select-none text-gray-900">
                       {handLabel}
                     </span>
                   </div>
