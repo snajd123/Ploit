@@ -41,11 +41,30 @@ interface TendencyBucket {
   totalEvImpact: number;
 }
 
+// Scenario selection for drill-down
+interface ScenarioSelection {
+  scenario: 'opening' | 'defense' | 'facing_3bet' | 'facing_4bet';
+  position: string;
+  vsPosition?: string;
+}
+
 interface LeakAnalysisViewProps {
   gtoLeaks: GTOPositionalLeak[];
   statLeaks: StatBasedLeak[];
   totalHands: number;
+  onLeakClick?: (selection: ScenarioSelection) => void;
 }
+
+// Map leak category to scenario type
+const mapCategoryToScenario = (category: string): ScenarioSelection['scenario'] | null => {
+  switch (category) {
+    case 'Opening': return 'opening';
+    case 'Defense': return 'defense';
+    case 'Facing 3-Bet': return 'facing_3bet';
+    case 'Facing 4-Bet': return 'facing_4bet';
+    default: return null;
+  }
+};
 
 // Categorize a leak into a tendency bucket
 const categorizeLeak = (leak: GTOPositionalLeak): TendencyType | null => {
@@ -225,7 +244,8 @@ const PriorityFix: React.FC<{
 // Leak detail row
 const LeakDetailRow: React.FC<{
   leak: GTOPositionalLeak;
-}> = ({ leak }) => {
+  onViewHands?: () => void;
+}> = ({ leak, onViewHands }) => {
   const isMajor = leak.severity === 'major';
   const absDeviation = Math.abs(leak.deviation);
 
@@ -284,7 +304,17 @@ const LeakDetailRow: React.FC<{
         <span className={`font-medium ${absDeviation > 15 ? 'text-red-600' : 'text-yellow-600'}`}>
           Gap: {leak.deviation > 0 ? '+' : ''}{leak.deviation.toFixed(0)}%
         </span>
-        <span className="text-gray-500">{leak.category}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-gray-500">{leak.category}</span>
+          {onViewHands && (
+            <button
+              onClick={onViewHands}
+              className="px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+            >
+              View Hands →
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -295,6 +325,7 @@ const LeakAnalysisView: React.FC<LeakAnalysisViewProps> = ({
   gtoLeaks,
   statLeaks,
   totalHands,
+  onLeakClick,
 }) => {
   const [expandedTendency, setExpandedTendency] = useState<TendencyType | null>(null);
 
@@ -476,9 +507,24 @@ const LeakAnalysisView: React.FC<LeakAnalysisViewProps> = ({
             {expandedLeaks
               .filter((leak): leak is GTOPositionalLeak => !('isStatBased' in leak))
               .sort((a, b) => Math.abs(b.deviation) - Math.abs(a.deviation))
-              .map((leak, idx) => (
-                <LeakDetailRow key={idx} leak={leak} />
-              ))
+              .map((leak, idx) => {
+                const scenario = mapCategoryToScenario(leak.category);
+                const handleViewHands = scenario && onLeakClick
+                  ? () => onLeakClick({
+                      scenario,
+                      position: leak.position,
+                      vsPosition: leak.vsPosition,
+                    })
+                  : undefined;
+
+                return (
+                  <LeakDetailRow
+                    key={idx}
+                    leak={leak}
+                    onViewHands={handleViewHands}
+                  />
+                );
+              })
             }
           </div>
 
