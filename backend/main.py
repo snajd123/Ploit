@@ -2076,8 +2076,19 @@ async def get_hand_replay(
                         # Hero opened and wasn't 3-bet (just opened)
                         gto_scenario = 'opening'
                         hero_gto_action = 'open'
-                    elif not hero_opened and raise_count >= 1:
-                        # Hero faced an open (defense scenario)
+                    elif not hero_opened and raise_count >= 2:
+                        # Hero faced a squeeze/3-bet (someone opened, someone else 3-bet)
+                        # This is different from simple defense - hero is facing the 3-bettor
+                        gto_scenario = 'defense'  # Still defense but vs the 3-bettor
+                        gto_vs_position = three_bettor_pos  # The 3-bettor, not original raiser
+                        if hero_final_action == 'raise':
+                            hero_gto_action = '3bet'  # Would be a cold 4-bet
+                        elif hero_final_action == 'call':
+                            hero_gto_action = 'call'
+                        else:
+                            hero_gto_action = 'fold'
+                    elif not hero_opened and raise_count == 1:
+                        # Hero faced a single open (simple defense scenario)
                         gto_scenario = 'defense'
                         gto_vs_position = first_raiser_pos
                         if hero_final_action == 'raise':
