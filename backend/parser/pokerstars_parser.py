@@ -35,7 +35,10 @@ class PokerStarsParser:
     SEAT_PATTERN = r"Seat (\d+): ([^\(]+) \([\$€]?([\d.]+) in chips\)"
     BLIND_PATTERN = r"([^:]+): posts (small blind|big blind|small & big blinds) [\$€]?([\d.]+)"
     ACTION_PATTERN = r"([^:]+): (folds|checks|calls|bets|raises)(?: [\$€]?([\d.]+))?(?: to [\$€]?([\d.]+))?( and is all-in)?"
-    BOARD_PATTERN = r"\*\*\* (FLOP|TURN|RIVER) \*\*\* \[([^\]]+)\]"
+    # Board patterns - turn/river have the new card in a second bracket
+    FLOP_PATTERN = r"\*\*\* FLOP \*\*\* \[([^\]]+)\]"
+    TURN_PATTERN = r"\*\*\* TURN \*\*\* \[[^\]]+\] \[([^\]]+)\]"
+    RIVER_PATTERN = r"\*\*\* RIVER \*\*\* \[[^\]]+\] \[([^\]]+)\]"
     POT_PATTERN = r"Total pot [\$€]?([\d.]+)"
     RAKE_PATTERN = r"Rake [\$€]?([\d.]+)"
     UNCALLED_PATTERN = r"Uncalled bet \([\$€]?([\d.]+)\) returned to ([^\n]+)"
@@ -158,6 +161,9 @@ class PokerStarsParser:
 
             # Extract players and positions
             hand.players = self._extract_players(hand_text, button_seat, game_type)
+
+            # Extract hole cards for hero and showdown
+            self._extract_hole_cards(hand_text, hand.players)
 
             # Parse all actions
             hand.actions = self._parse_all_actions(hand_text, hand.players)
@@ -309,6 +315,34 @@ class PokerStarsParser:
 
         return players
 
+    def _extract_hole_cards(self, hand_text: str, players: List[Player]) -> None:
+        """
+        Extract hole cards for hero (from "Dealt to") and other players (from showdown).
+
+        Args:
+            hand_text: Hand history text
+            players: List of Player objects to update with hole cards
+        """
+        # Create a name -> player mapping for quick lookup
+        player_map = {p.name: p for p in players}
+
+        # Extract hero's hole cards: "Dealt to snajd [5d Qc]"
+        dealt_pattern = r'Dealt to ([^\[]+) \[([^\]]+)\]'
+        dealt_match = re.search(dealt_pattern, hand_text)
+        if dealt_match:
+            player_name = dealt_match.group(1).strip()
+            hole_cards = dealt_match.group(2).strip()
+            if player_name in player_map:
+                player_map[player_name].hole_cards = hole_cards
+
+        # Extract shown cards from showdown: "PlayerName: shows [Td Ts]"
+        shows_pattern = r'([^:]+): shows \[([^\]]+)\]'
+        for match in re.finditer(shows_pattern, hand_text):
+            player_name = match.group(1).strip()
+            hole_cards = match.group(2).strip()
+            if player_name in player_map and not player_map[player_name].hole_cards:
+                player_map[player_name].hole_cards = hole_cards
+
     def _assign_positions(self, players: List[Player], button_seat: int, game_type: str) -> List[Player]:
         """
         Assign poker positions to players based on button.
@@ -415,27 +449,24 @@ class PokerStarsParser:
             hand_text: Hand history text
 
         Returns:
-            Dictionary mapping street to cards (e.g., {'flop': 'Ah 7c 3d'})
+            Dictionary mapping street to cards (e.g., {'flop': 'Ah 7c 3d', 'turn': 'Ks', 'river': '2h'})
         """
         board = {}
-        board_matches = re.finditer(self.BOARD_PATTERN, hand_text)
 
-        for match in board_matches:
-            street = match.group(1).lower()
-            cards = match.group(2).strip()
+        # Extract flop (3 cards): *** FLOP *** [5d 3d 8s]
+        flop_match = re.search(self.FLOP_PATTERN, hand_text)
+        if flop_match:
+            board['flop'] = flop_match.group(1).strip()
 
-            if street == "flop":
-                board['flop'] = cards
-            elif street == "turn":
-                # Turn shows all 4 cards, extract just the turn card
-                all_cards = cards.split()
-                if len(all_cards) >= 4:
-                    board['turn'] = all_cards[3]
-            elif street == "river":
-                # River shows all 5 cards, extract just the river card
-                all_cards = cards.split()
-                if len(all_cards) >= 5:
-                    board['river'] = all_cards[4]
+        # Extract turn (1 card): *** TURN *** [5d 3d 8s] [2d]
+        turn_match = re.search(self.TURN_PATTERN, hand_text)
+        if turn_match:
+            board['turn'] = turn_match.group(1).strip()
+
+        # Extract river (1 card): *** RIVER *** [5d 3d 8s 2d] [5h]
+        river_match = re.search(self.RIVER_PATTERN, hand_text)
+        if river_match:
+            board['river'] = river_match.group(1).strip()
 
         return board
 
