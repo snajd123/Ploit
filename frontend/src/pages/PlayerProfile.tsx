@@ -12,7 +12,7 @@ import PreflopAggressionChart from '../components/PreflopAggressionChart';
 import RangeGrid from '../components/RangeGrid';
 import type { HandActions } from '../components/RangeGrid';
 // Note: ExploitDashboard, BaselineComparison, DeviationHeatmap disabled - require player_scenario_stats table
-import { LeakSummary, LeaksList } from '../components/LeakCard';
+import { LeaksList } from '../components/LeakCard';
 import { GTOCategorySummaryCard, GTOCategoryDetailView } from '../components/gto';
 import { STAT_DEFINITIONS, getStatDefinitionsWithGTO, GTOOptimalRange } from '../config/statDefinitions';
 import type { ScenarioHandsResponse, GTOAnalysisResponse } from '../types';
@@ -1142,7 +1142,7 @@ const PlayerProfile = () => {
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="font-semibold text-gray-900">Leak Analysis Summary</h3>
                       <span className={`text-sm ${
-                        leakAnalysis?.leak_summary?.reliability === 'high' || leakAnalysis?.leak_summary?.reliability === 'good'
+                        leakAnalysis?.leak_summary?.reliability === 'high'
                           ? 'text-green-600'
                           : leakAnalysis?.leak_summary?.reliability === 'moderate'
                           ? 'text-yellow-600'
