@@ -671,24 +671,25 @@ async def get_player_gto_analysis(
         # Note: Only include positions that can actually defend against an open
         # UTG is first to act, so they can never "defend" - exclude them
         # Valid defense positions: BB, SB, BTN, CO, MP (can face opens from earlier positions)
+        # IMPORTANT: Exclude hands where hero faced a 3-bet (squeeze) - those are different scenarios
         defense_query = text("""
             SELECT
                 position,
-                COUNT(*) FILTER (WHERE faced_raise = true) as faced_open,
-                COUNT(*) FILTER (WHERE faced_raise = true AND vpip = false) as folded,
-                COUNT(*) FILTER (WHERE faced_raise = true AND vpip = true AND pfr = false) as called,
-                COUNT(*) FILTER (WHERE faced_raise = true AND made_three_bet = true) as three_bets,
-                ROUND(100.0 * COUNT(*) FILTER (WHERE faced_raise = true AND vpip = false) /
-                    NULLIF(COUNT(*) FILTER (WHERE faced_raise = true), 0), 1) as fold_pct,
-                ROUND(100.0 * COUNT(*) FILTER (WHERE faced_raise = true AND vpip = true AND pfr = false) /
-                    NULLIF(COUNT(*) FILTER (WHERE faced_raise = true), 0), 1) as call_pct,
-                ROUND(100.0 * COUNT(*) FILTER (WHERE faced_raise = true AND made_three_bet = true) /
-                    NULLIF(COUNT(*) FILTER (WHERE faced_raise = true), 0), 1) as three_bet_pct
+                COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false) as faced_open,
+                COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND vpip = false) as folded,
+                COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND vpip = true AND pfr = false) as called,
+                COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND made_three_bet = true) as three_bets,
+                ROUND(100.0 * COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND vpip = false) /
+                    NULLIF(COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false), 0), 1) as fold_pct,
+                ROUND(100.0 * COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND vpip = true AND pfr = false) /
+                    NULLIF(COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false), 0), 1) as call_pct,
+                ROUND(100.0 * COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND made_three_bet = true) /
+                    NULLIF(COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false), 0), 1) as three_bet_pct
             FROM player_hand_summary
             WHERE player_name = :player_name
             AND position IN ('BB', 'SB', 'BTN', 'CO', 'MP')
             GROUP BY position
-            HAVING COUNT(*) FILTER (WHERE faced_raise = true) >= 5
+            HAVING COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false) >= 5
             ORDER BY position
         """)
         defense_result = db.execute(defense_query, {"player_name": validated_name})
@@ -880,25 +881,26 @@ async def get_player_gto_analysis(
 
         # ============================================
         # 4. BLIND DEFENSE (vs steals) - Using actual GTO from database
+        # IMPORTANT: Exclude hands where hero faced a 3-bet (squeeze) - those are different scenarios
         # ============================================
         blind_defense_query = text("""
             SELECT
                 position,
-                COUNT(*) FILTER (WHERE faced_steal = true) as faced_steal,
-                COUNT(*) FILTER (WHERE fold_to_steal = true) as folded,
-                COUNT(*) FILTER (WHERE call_steal = true) as called,
-                COUNT(*) FILTER (WHERE three_bet_vs_steal = true) as three_bet,
-                ROUND(100.0 * COUNT(*) FILTER (WHERE fold_to_steal = true) /
-                    NULLIF(COUNT(*) FILTER (WHERE faced_steal = true), 0), 1) as fold_pct,
-                ROUND(100.0 * COUNT(*) FILTER (WHERE call_steal = true) /
-                    NULLIF(COUNT(*) FILTER (WHERE faced_steal = true), 0), 1) as call_pct,
-                ROUND(100.0 * COUNT(*) FILTER (WHERE three_bet_vs_steal = true) /
-                    NULLIF(COUNT(*) FILTER (WHERE faced_steal = true), 0), 1) as three_bet_pct
+                COUNT(*) FILTER (WHERE faced_steal = true AND faced_three_bet = false) as faced_steal,
+                COUNT(*) FILTER (WHERE fold_to_steal = true AND faced_three_bet = false) as folded,
+                COUNT(*) FILTER (WHERE call_steal = true AND faced_three_bet = false) as called,
+                COUNT(*) FILTER (WHERE three_bet_vs_steal = true AND faced_three_bet = false) as three_bet,
+                ROUND(100.0 * COUNT(*) FILTER (WHERE fold_to_steal = true AND faced_three_bet = false) /
+                    NULLIF(COUNT(*) FILTER (WHERE faced_steal = true AND faced_three_bet = false), 0), 1) as fold_pct,
+                ROUND(100.0 * COUNT(*) FILTER (WHERE call_steal = true AND faced_three_bet = false) /
+                    NULLIF(COUNT(*) FILTER (WHERE faced_steal = true AND faced_three_bet = false), 0), 1) as call_pct,
+                ROUND(100.0 * COUNT(*) FILTER (WHERE three_bet_vs_steal = true AND faced_three_bet = false) /
+                    NULLIF(COUNT(*) FILTER (WHERE faced_steal = true AND faced_three_bet = false), 0), 1) as three_bet_pct
             FROM player_hand_summary
             WHERE player_name = :player_name
             AND position IN ('BB', 'SB')
             GROUP BY position
-            HAVING COUNT(*) FILTER (WHERE faced_steal = true) >= 5
+            HAVING COUNT(*) FILTER (WHERE faced_steal = true AND faced_three_bet = false) >= 5
             ORDER BY position
         """)
         blind_result = db.execute(blind_defense_query, {"player_name": validated_name})
@@ -1008,6 +1010,7 @@ async def get_player_gto_analysis(
             gto_matchups[key][action] = freq
 
         # Get player's position-specific defense frequencies using raiser_position
+        # IMPORTANT: Exclude hands where hero faced a 3-bet (squeeze) - those are different scenarios
         player_matchups_result = db.execute(text("""
             SELECT
                 position,
@@ -1019,6 +1022,7 @@ async def get_player_gto_analysis(
             FROM player_hand_summary
             WHERE player_name = :player_name
               AND faced_raise = true
+              AND faced_three_bet = false
               AND raiser_position IS NOT NULL
               AND position IS NOT NULL
             GROUP BY position, raiser_position
@@ -1520,7 +1524,8 @@ async def get_scenario_hands(
             params = {"player_name": validated_name, "position": position, "limit": limit}
 
         elif scenario == 'defense':
-            # Defense: hands where player faced an open
+            # Defense: hands where player faced an open (but NOT a subsequent 3-bet)
+            # Hands where hero faced a 3-bet (squeeze) are excluded - those are different scenarios
             if vs_position:
                 hands_query = text("""
                     SELECT
@@ -1550,6 +1555,7 @@ async def get_scenario_hands(
                     WHERE phs.player_name = :player_name
                     AND phs.position = :position
                     AND phs.faced_raise = true
+                    AND phs.faced_three_bet = false
                     AND phs.raiser_position = :vs_position
                     ORDER BY rh.timestamp DESC
                     LIMIT :limit
@@ -1584,6 +1590,7 @@ async def get_scenario_hands(
                     WHERE phs.player_name = :player_name
                     AND phs.position = :position
                     AND phs.faced_raise = true
+                    AND phs.faced_three_bet = false
                     ORDER BY rh.timestamp DESC
                     LIMIT :limit
                 """)
