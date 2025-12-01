@@ -1026,8 +1026,8 @@ const PlayerProfile = () => {
 
                 {/* Detailed Leaks List */}
                 <div className="card">
-                  <h3 className="font-semibold text-gray-900 mb-4">Identified Leaks</h3>
-                  <LeaksList leaks={leakAnalysis.leaks} maxLeaks={15} />
+                  <h3 className="font-semibold text-gray-900 mb-4">Identified Leaks ({leakAnalysis.leaks.length})</h3>
+                  <LeaksList leaks={leakAnalysis.leaks} maxLeaks={100} />
                 </div>
 
                 {/* Exploit Analysis - temporarily disabled while player_scenario_stats is being populated */}
