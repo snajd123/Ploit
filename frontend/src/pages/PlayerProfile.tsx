@@ -63,44 +63,153 @@ const GTO_CATEGORY_CONFIG: Record<GTOCategoryKey, {
   },
 };
 
+// Enhanced category stats with detailed info
+interface CategoryStats {
+  avgDeviation: number;
+  totalHands: number;
+  leakCount: number;
+  worstLeak: { position: string; deviation: number } | null;
+  tendency: string;
+  positionStats: { position: string; deviation: number; status: 'good' | 'warning' | 'bad' }[];
+  actionBreakdown: { playerFold: number; gtoFold: number; playerRaise: number; gtoRaise: number } | null;
+}
+
 // Calculate aggregate stats for a category
-const calculateCategoryStats = (category: GTOCategoryKey, data: GTOAnalysisResponse) => {
+const calculateCategoryStats = (category: GTOCategoryKey, data: GTOAnalysisResponse): CategoryStats => {
   let totalHands = 0;
   let weightedDeviation = 0;
   let leakCount = 0;
+  let worstLeak: { position: string; deviation: number } | null = null;
+  const positionStats: { position: string; deviation: number; status: 'good' | 'warning' | 'bad' }[] = [];
+  let actionBreakdown: CategoryStats['actionBreakdown'] = null;
 
-  const addStats = (rows: any[] | undefined, diffKeys: string[], handsKey: string) => {
-    if (!rows) return;
-    rows.forEach(row => {
-      const hands = row[handsKey] || 0;
-      totalHands += hands;
-      diffKeys.forEach(key => {
-        const diff = Math.abs(row[key] ?? 0);
-        weightedDeviation += diff * hands;
-        if (diff > 10) leakCount++;
-      });
-    });
+  // Track tendency (positive = too aggressive/loose, negative = too passive/tight)
+  let tendencySum = 0;
+  let tendencyCount = 0;
+
+  const processRow = (row: any, diffKey: string, handsKey: string, isRaiseDiff: boolean = false) => {
+    const hands = row[handsKey] || 0;
+    const diff = row[diffKey] ?? 0;
+    const absDiff = Math.abs(diff);
+
+    totalHands += hands;
+    weightedDeviation += absDiff * hands;
+    if (absDiff > 10) leakCount++;
+
+    // Track worst leak
+    if (!worstLeak || absDiff > Math.abs(worstLeak.deviation)) {
+      worstLeak = { position: row.position + (row.vs_position ? ` vs ${row.vs_position}` : ''), deviation: diff };
+    }
+
+    // Track tendency (raise diffs: positive = too aggressive, fold diffs: positive = too passive)
+    if (isRaiseDiff) {
+      tendencySum += diff; // positive = raises more than GTO
+    } else {
+      tendencySum -= diff; // positive fold diff means folding more = passive
+    }
+    tendencyCount++;
+  };
+
+  const addPositionStat = (position: string, deviation: number) => {
+    const absDev = Math.abs(deviation);
+    const status = absDev < 5 ? 'good' : absDev < 10 ? 'warning' : 'bad';
+    positionStats.push({ position, deviation, status });
   };
 
   switch (category) {
     case 'opening':
-      addStats(data.opening_ranges, ['frequency_diff'], 'total_hands');
-      addStats(data.steal_attempts, ['frequency_diff'], 'sample_size');
+      data.opening_ranges?.forEach(row => {
+        processRow(row, 'frequency_diff', 'total_hands', true);
+        addPositionStat(row.position, row.frequency_diff);
+      });
+      // Calculate tendency for opening
+      if (data.opening_ranges?.length) {
+        const avgDiff = data.opening_ranges.reduce((sum, r) => sum + (r.frequency_diff || 0), 0) / data.opening_ranges.length;
+        tendencySum = avgDiff;
+      }
       break;
+
     case 'defense':
-      addStats(data.defense_vs_open, ['fold_diff', 'call_diff', '3bet_diff'], 'sample_size');
-      addStats(data.blind_defense, ['fold_diff', 'call_diff', '3bet_diff'], 'sample_size');
+      let totalPlayerFold = 0, totalGtoFold = 0, totalPlayer3bet = 0, totalGto3bet = 0, defenseCount = 0;
+      data.defense_vs_open?.forEach(row => {
+        const maxDiff = Math.max(Math.abs(row.fold_diff || 0), Math.abs(row.call_diff || 0), Math.abs(row['3bet_diff'] || 0));
+        processRow({ ...row, maxDiff }, 'fold_diff', 'sample_size', false);
+        addPositionStat(row.position, row.fold_diff || 0);
+        totalPlayerFold += row.player_fold || 0;
+        totalGtoFold += row.gto_fold || 0;
+        totalPlayer3bet += row.player_3bet || 0;
+        totalGto3bet += row.gto_3bet || 0;
+        defenseCount++;
+        tendencySum += (row.fold_diff || 0); // positive fold = too passive
+      });
+      if (defenseCount > 0) {
+        actionBreakdown = {
+          playerFold: totalPlayerFold / defenseCount,
+          gtoFold: totalGtoFold / defenseCount,
+          playerRaise: totalPlayer3bet / defenseCount,
+          gtoRaise: totalGto3bet / defenseCount,
+        };
+      }
       break;
+
     case 'facing_3bet':
-      addStats(data.facing_3bet, ['fold_diff', 'call_diff', '4bet_diff'], 'sample_size');
+      let f3PlayerFold = 0, f3GtoFold = 0, f3Player4bet = 0, f3Gto4bet = 0, f3Count = 0;
+      data.facing_3bet?.forEach(row => {
+        processRow(row, 'fold_diff', 'sample_size', false);
+        addPositionStat(row.position, row.fold_diff || 0);
+        f3PlayerFold += row.player_fold || 0;
+        f3GtoFold += row.gto_fold || 0;
+        f3Player4bet += row.player_4bet || 0;
+        f3Gto4bet += row.gto_4bet || 0;
+        f3Count++;
+        tendencySum += (row.fold_diff || 0);
+      });
+      if (f3Count > 0) {
+        actionBreakdown = {
+          playerFold: f3PlayerFold / f3Count,
+          gtoFold: f3GtoFold / f3Count,
+          playerRaise: f3Player4bet / f3Count,
+          gtoRaise: f3Gto4bet / f3Count,
+        };
+      }
       break;
+
     case 'facing_4bet':
-      addStats(data.facing_4bet_reference, ['fold_diff', 'call_diff', '5bet_diff'], 'sample_size');
+      let f4PlayerFold = 0, f4GtoFold = 0, f4Player5bet = 0, f4Gto5bet = 0, f4Count = 0;
+      data.facing_4bet_reference?.forEach(row => {
+        processRow(row, 'fold_diff', 'sample_size', false);
+        addPositionStat(row.position + (row.vs_position ? ` vs ${row.vs_position}` : ''), row.fold_diff || 0);
+        f4PlayerFold += row.player_fold || 0;
+        f4GtoFold += row.gto_fold || 0;
+        f4Player5bet += row.player_5bet || 0;
+        f4Gto5bet += row.gto_5bet || 0;
+        f4Count++;
+        tendencySum += (row.fold_diff || 0);
+      });
+      if (f4Count > 0) {
+        actionBreakdown = {
+          playerFold: f4PlayerFold / f4Count,
+          gtoFold: f4GtoFold / f4Count,
+          playerRaise: f4Player5bet / f4Count,
+          gtoRaise: f4Gto5bet / f4Count,
+        };
+      }
       break;
   }
 
   const avgDeviation = totalHands > 0 ? weightedDeviation / totalHands : 0;
-  return { avgDeviation, totalHands, leakCount };
+
+  // Determine tendency label
+  let tendency = 'Balanced';
+  if (category === 'opening') {
+    if (tendencySum > 5) tendency = 'Too Loose';
+    else if (tendencySum < -5) tendency = 'Too Tight';
+  } else {
+    if (tendencySum > 5) tendency = 'Too Passive';
+    else if (tendencySum < -5) tendency = 'Too Aggressive';
+  }
+
+  return { avgDeviation, totalHands, leakCount, worstLeak, tendency, positionStats, actionBreakdown };
 };
 
 type TabId = 'overview' | 'gto' | 'leaks' | 'charts';
@@ -832,6 +941,10 @@ const PlayerProfile = () => {
                           avgDeviation={stats.avgDeviation}
                           totalHands={stats.totalHands}
                           leakCount={stats.leakCount}
+                          worstLeak={stats.worstLeak}
+                          tendency={stats.tendency}
+                          positionStats={stats.positionStats}
+                          actionBreakdown={stats.actionBreakdown}
                           onClick={() => setGtoView({ level: 'detail', category: categoryKey })}
                         />
                       );
