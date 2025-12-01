@@ -222,19 +222,49 @@ interface GTOPositionalLeak {
   gtoValue: number;
   deviation: number;
   severity: 'moderate' | 'major';
+  sampleSize: number;
+  confidence: 'low' | 'moderate' | 'high';
 }
 
-// Extract positional leaks from GTO analysis data
+// Sample size thresholds for statistical significance (based on poker statistics research)
+// Key insight: Never show deviations with < minimum opportunities - that's just noise
+const SAMPLE_THRESHOLDS = {
+  // RFI by position: need 20+ opps to show, 50 for moderate, 100 for high confidence
+  rfi: { min: 20, moderate: 50, high: 100 },
+  // Defense vs opens (aggregate by position): 25+ min, 60 moderate, 120 high
+  defense: { min: 25, moderate: 60, high: 120 },
+  // Defense position matchups (e.g., BB vs CO): need more samples due to specificity
+  defense_matchup: { min: 50, moderate: 120, high: 240 },
+  // Facing 3-bet (aggregate): 20+ for fold stats, 30+ for 4-bet stats
+  facing_3bet: { min: 20, moderate: 50, high: 100 },
+  // Facing 3-bet matchups: need more samples
+  facing_3bet_matchup: { min: 40, moderate: 100, high: 200 },
+  // Facing 4-bet: rare scenario, need decent sample
+  facing_4bet: { min: 25, moderate: 60, high: 120 },
+};
+
+// Get confidence tier based on sample size
+const getConfidenceTier = (sampleSize: number, thresholds: { min: number; moderate: number; high: number }): 'low' | 'moderate' | 'high' | null => {
+  if (sampleSize < thresholds.min) return null; // Don't show at all
+  if (sampleSize < thresholds.moderate) return 'low';
+  if (sampleSize < thresholds.high) return 'moderate';
+  return 'high';
+};
+
+// Extract positional leaks from GTO analysis data (with statistical significance filtering)
 const extractGTOPositionalLeaks = (data: GTOAnalysisResponse): GTOPositionalLeak[] => {
   const leaks: GTOPositionalLeak[] = [];
   const MAJOR_THRESHOLD = 15;
   const MODERATE_THRESHOLD = 8;
 
-  // Opening ranges
+  // Opening ranges (RFI)
   data.opening_ranges?.forEach(row => {
     const diff = row.frequency_diff ?? 0;
     const absDiff = Math.abs(diff);
-    if (absDiff > MODERATE_THRESHOLD) {
+    const sampleSize = row.total_hands ?? 0;
+    const confidence = getConfidenceTier(sampleSize, SAMPLE_THRESHOLDS.rfi);
+
+    if (absDiff > MODERATE_THRESHOLD && confidence) {
       leaks.push({
         category: 'Opening',
         position: row.position,
@@ -243,12 +273,18 @@ const extractGTOPositionalLeaks = (data: GTOAnalysisResponse): GTOPositionalLeak
         gtoValue: row.gto_frequency ?? 0,
         deviation: diff,
         severity: absDiff > MAJOR_THRESHOLD ? 'major' : 'moderate',
+        sampleSize,
+        confidence,
       });
     }
   });
 
-  // Defense vs open
+  // Defense vs open (aggregate by position)
   data.defense_vs_open?.forEach(row => {
+    const sampleSize = row.sample_size ?? 0;
+    const confidence = getConfidenceTier(sampleSize, SAMPLE_THRESHOLDS.defense);
+    if (!confidence) return; // Skip if insufficient sample
+
     const diffs = [
       { action: 'Fold', diff: row.fold_diff, player: row.player_fold, gto: row.gto_fold },
       { action: 'Call', diff: row.call_diff, player: row.player_call, gto: row.gto_call },
@@ -264,13 +300,19 @@ const extractGTOPositionalLeaks = (data: GTOAnalysisResponse): GTOPositionalLeak
           gtoValue: gto ?? 0,
           deviation: diff,
           severity: Math.abs(diff) > MAJOR_THRESHOLD ? 'major' : 'moderate',
+          sampleSize,
+          confidence,
         });
       }
     });
   });
 
-  // Position matchups (defense)
+  // Position matchups (defense) - requires higher sample sizes
   data.position_matchups?.forEach(row => {
+    const sampleSize = row.sample_size ?? 0;
+    const confidence = getConfidenceTier(sampleSize, SAMPLE_THRESHOLDS.defense_matchup);
+    if (!confidence) return; // Skip if insufficient sample
+
     const diffs = [
       { action: 'Fold', diff: row.fold_diff, player: row.player_fold, gto: row.gto_fold },
       { action: 'Call', diff: row.call_diff, player: row.player_call, gto: row.gto_call },
@@ -287,13 +329,19 @@ const extractGTOPositionalLeaks = (data: GTOAnalysisResponse): GTOPositionalLeak
           gtoValue: gto ?? 0,
           deviation: diff,
           severity: Math.abs(diff) > MAJOR_THRESHOLD ? 'major' : 'moderate',
+          sampleSize,
+          confidence,
         });
       }
     });
   });
 
-  // Facing 3-bet
+  // Facing 3-bet (aggregate)
   data.facing_3bet?.forEach(row => {
+    const sampleSize = row.sample_size ?? 0;
+    const confidence = getConfidenceTier(sampleSize, SAMPLE_THRESHOLDS.facing_3bet);
+    if (!confidence) return;
+
     const diffs = [
       { action: 'Fold', diff: row.fold_diff, player: row.player_fold, gto: row.gto_fold },
       { action: 'Call', diff: row.call_diff, player: row.player_call, gto: row.gto_call },
@@ -309,13 +357,19 @@ const extractGTOPositionalLeaks = (data: GTOAnalysisResponse): GTOPositionalLeak
           gtoValue: gto ?? 0,
           deviation: diff,
           severity: Math.abs(diff) > MAJOR_THRESHOLD ? 'major' : 'moderate',
+          sampleSize,
+          confidence,
         });
       }
     });
   });
 
-  // Facing 3-bet matchups
+  // Facing 3-bet matchups - requires higher sample sizes
   data.facing_3bet_matchups?.forEach(row => {
+    const sampleSize = row.sample_size ?? 0;
+    const confidence = getConfidenceTier(sampleSize, SAMPLE_THRESHOLDS.facing_3bet_matchup);
+    if (!confidence) return;
+
     const diffs = [
       { action: 'Fold', diff: row.fold_diff, player: row.player_fold, gto: row.gto_fold },
       { action: 'Call', diff: row.call_diff, player: row.player_call, gto: row.gto_call },
@@ -332,6 +386,8 @@ const extractGTOPositionalLeaks = (data: GTOAnalysisResponse): GTOPositionalLeak
           gtoValue: gto ?? 0,
           deviation: diff,
           severity: Math.abs(diff) > MAJOR_THRESHOLD ? 'major' : 'moderate',
+          sampleSize,
+          confidence,
         });
       }
     });
@@ -339,6 +395,10 @@ const extractGTOPositionalLeaks = (data: GTOAnalysisResponse): GTOPositionalLeak
 
   // Facing 4-bet
   data.facing_4bet_reference?.forEach(row => {
+    const sampleSize = row.sample_size ?? 0;
+    const confidence = getConfidenceTier(sampleSize, SAMPLE_THRESHOLDS.facing_4bet);
+    if (!confidence) return;
+
     const diffs = [
       { action: 'Fold', diff: row.fold_diff, player: row.player_fold, gto: row.gto_fold },
       { action: 'Call', diff: row.call_diff, player: row.player_call, gto: row.gto_call },
@@ -355,14 +415,18 @@ const extractGTOPositionalLeaks = (data: GTOAnalysisResponse): GTOPositionalLeak
           gtoValue: gto ?? 0,
           deviation: diff,
           severity: Math.abs(diff) > MAJOR_THRESHOLD ? 'major' : 'moderate',
+          sampleSize,
+          confidence,
         });
       }
     });
   });
 
-  // Sort by severity (major first) then by absolute deviation
+  // Sort by severity (major first), then confidence (high first), then by absolute deviation
   leaks.sort((a, b) => {
     if (a.severity !== b.severity) return a.severity === 'major' ? -1 : 1;
+    const confOrder = { high: 0, moderate: 1, low: 2 };
+    if (a.confidence !== b.confidence) return confOrder[a.confidence] - confOrder[b.confidence];
     return Math.abs(b.deviation) - Math.abs(a.deviation);
   });
 
@@ -801,6 +865,15 @@ const PlayerProfile = () => {
     [statDefinitions]
   );
 
+  // Compute filtered GTO positional leaks (with statistical significance)
+  const filteredGTOLeaks = useMemo(() => {
+    if (!gtoAnalysis) return { all: [], major: [], moderate: [] };
+    const all = extractGTOPositionalLeaks(gtoAnalysis);
+    const major = all.filter(l => l.severity === 'major');
+    const moderate = all.filter(l => l.severity === 'moderate');
+    return { all, major, moderate };
+  }, [gtoAnalysis]);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -1060,13 +1133,13 @@ const PlayerProfile = () => {
                     </div>
                     <div className="bg-white/50 rounded-lg p-3">
                       <div className="text-2xl font-bold text-red-600">
-                        {gtoAnalysis.adherence.major_leaks_count}
+                        {filteredGTOLeaks.major.length}
                       </div>
                       <div className="text-xs text-gray-600">Major Leaks</div>
                     </div>
                     <div className="bg-white/50 rounded-lg p-3">
                       <div className="text-2xl font-bold text-yellow-600">
-                        {gtoAnalysis.adherence.moderate_leaks_count}
+                        {filteredGTOLeaks.moderate.length}
                       </div>
                       <div className="text-xs text-gray-600">Moderate Leaks</div>
                     </div>
@@ -1077,6 +1150,9 @@ const PlayerProfile = () => {
                       <div className="text-xs text-gray-600">Hands Analyzed</div>
                     </div>
                   </div>
+                  <p className="text-xs text-gray-500 mt-3 text-center">
+                    Only counting leaks with statistically significant sample sizes
+                  </p>
                 </div>
 
                 {/* Level 1: Category Summary Cards */}
@@ -1131,9 +1207,10 @@ const PlayerProfile = () => {
         {activeTab === 'leaks' && (
           <div className="space-y-6">
             {(() => {
-              const gtoLeaks = gtoAnalysis ? extractGTOPositionalLeaks(gtoAnalysis) : [];
-              const gtoMajorLeaks = gtoLeaks.filter(l => l.severity === 'major');
-              const gtoModerateLeaks = gtoLeaks.filter(l => l.severity === 'moderate');
+              // Use pre-computed filtered leaks (with statistical significance)
+              const gtoLeaks = filteredGTOLeaks.all;
+              const gtoMajorLeaks = filteredGTOLeaks.major;
+              const gtoModerateLeaks = filteredGTOLeaks.moderate;
 
               return (
                 <>
@@ -1219,10 +1296,16 @@ const PlayerProfile = () => {
                   {/* GTO Positional Leaks */}
                   {gtoLeaks.length > 0 && (
                     <div className="card">
-                      <h3 className="font-semibold text-gray-900 mb-4">
+                      <h3 className="font-semibold text-gray-900 mb-2">
                         Positional GTO Leaks ({gtoLeaks.length})
-                        <span className="ml-2 text-sm font-normal text-gray-500">Position-specific deviations from GTO</span>
+                        <span className="ml-2 text-sm font-normal text-gray-500">Statistically significant deviations only</span>
                       </h3>
+                      <p className="text-xs text-gray-500 mb-4">
+                        Only showing leaks with sufficient sample size. Confidence:
+                        <span className="ml-1 text-green-600">High</span> = reliable,
+                        <span className="ml-1 text-yellow-600">Moderate</span> = likely accurate,
+                        <span className="ml-1 text-orange-500">Low</span> = needs more data
+                      </p>
                       <div className="overflow-x-auto">
                         <table className="w-full text-sm">
                           <thead>
@@ -1234,11 +1317,15 @@ const PlayerProfile = () => {
                               <th className="py-2 px-3 text-right font-medium text-gray-600">Player</th>
                               <th className="py-2 px-3 text-right font-medium text-blue-600 bg-blue-50">GTO</th>
                               <th className="py-2 px-3 text-right font-medium text-gray-600">Deviation</th>
+                              <th className="py-2 px-3 text-right font-medium text-gray-600">Sample</th>
+                              <th className="py-2 px-3 text-center font-medium text-gray-600">Conf.</th>
                             </tr>
                           </thead>
                           <tbody>
                             {gtoLeaks.map((leak, idx) => (
-                              <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
+                              <tr key={idx} className={`border-b border-gray-100 hover:bg-gray-50 ${
+                                leak.confidence === 'low' ? 'opacity-70' : ''
+                              }`}>
                                 <td className="py-2 px-3">
                                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                                     leak.severity === 'major' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'
@@ -1257,6 +1344,16 @@ const PlayerProfile = () => {
                                   Math.abs(leak.deviation) > 15 ? 'text-red-600' : 'text-yellow-600'
                                 }`}>
                                   {leak.deviation > 0 ? '+' : ''}{leak.deviation.toFixed(1)}%
+                                </td>
+                                <td className="py-2 px-3 text-right text-gray-500">{leak.sampleSize}</td>
+                                <td className="py-2 px-3 text-center">
+                                  <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                                    leak.confidence === 'high' ? 'bg-green-100 text-green-700' :
+                                    leak.confidence === 'moderate' ? 'bg-yellow-100 text-yellow-700' :
+                                    'bg-orange-100 text-orange-700'
+                                  }`}>
+                                    {leak.confidence === 'high' ? '✓' : leak.confidence === 'moderate' ? '~' : '?'}
+                                  </span>
                                 </td>
                               </tr>
                             ))}
