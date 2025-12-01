@@ -2089,6 +2089,7 @@ async def get_hand_replay(
 
                     # Look up GTO frequencies
                     if gto_scenario:
+                        # First get aggregate GTO frequencies as fallback
                         gto_query = text("""
                             SELECT action, gto_aggregate_freq * 100 as freq
                             FROM gto_scenarios
@@ -2101,7 +2102,20 @@ async def get_hand_replay(
                             "position": hero_position,
                             "vs_position": gto_vs_position
                         })
-                        gto_freqs = {row[0]: round(float(row[1]), 1) for row in gto_result}
+                        aggregate_gto_freqs = {row[0]: round(float(row[1]), 1) for row in gto_result}
+
+                        # Try to get hand-specific GTO frequencies if hero has hole cards
+                        gto_freqs = aggregate_gto_freqs
+                        hero_hole_cards = hero_player.get('hole_cards')
+                        if hero_hole_cards:
+                            hand_info = categorize_hand(hero_hole_cards)
+                            hand_combo = hand_info.get('combo')
+                            if hand_combo and hand_combo not in ['Unknown', None]:
+                                # Use the same lookup table as scenario-hands for consistency
+                                gto_lookup = build_gto_lookup_table(db, gto_scenario, hero_position)
+                                hand_specific = gto_lookup.get((hand_combo, gto_vs_position))
+                                if hand_specific:
+                                    gto_freqs = {k: round(v, 1) for k, v in hand_specific.items()}
 
                         if gto_freqs:
                             # Get frequency for hero's action
