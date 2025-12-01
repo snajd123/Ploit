@@ -2003,56 +2003,70 @@ async def get_hand_replay(
                 preflop_actions = streets_data['preflop']['actions']
 
                 # Analyze the preflop action sequence to determine hero's scenario
+                first_raiser_name = None
                 first_raiser_pos = None
+                three_bettor_name = None
                 three_bettor_pos = None
-                hero_faced_raise = False
-                hero_faced_3bet = False
-                hero_action = None
+                hero_opened = False
+                hero_final_action = None
                 raise_count = 0
 
+                # First pass: identify the action sequence
                 for action in preflop_actions:
                     action_type = action['action']
                     player = action['player']
 
+                    # Skip blinds
+                    if action_type in ['post_sb', 'post_bb']:
+                        continue
+
                     # Track raises
-                    if action_type == 'raise' and action['amount'] > 0:
+                    if action_type == 'raise':
                         raise_count += 1
                         if raise_count == 1:
+                            first_raiser_name = player
                             first_raiser_pos = next((p['position'] for p in players if p['name'] == player), None)
+                            if player == hero_name:
+                                hero_opened = True
                         elif raise_count == 2:
+                            three_bettor_name = player
                             three_bettor_pos = next((p['position'] for p in players if p['name'] == player), None)
 
-                    # Track what hero faced before acting
+                    # Track hero's final preflop action (last action they take)
                     if player == hero_name and action_type not in ['post_sb', 'post_bb']:
-                        hero_action = action_type
-                        hero_faced_raise = raise_count >= 1 and first_raiser_pos != hero_position
-                        hero_faced_3bet = raise_count >= 2 and first_raiser_pos == hero_position
-                        break
-                    elif player != hero_name and action_type == 'raise':
-                        if first_raiser_pos == hero_position:
-                            hero_faced_3bet = True
+                        hero_final_action = action_type
 
-                # Determine the GTO scenario
+                # Determine the GTO scenario based on what hero did
                 gto_scenario = None
                 gto_vs_position = None
+                hero_gto_action = None
 
-                if hero_action:
-                    if not hero_faced_raise and hero_action == 'raise':
-                        gto_scenario = 'opening'
-                    elif hero_faced_raise and not hero_faced_3bet:
-                        gto_scenario = 'defense'
-                        gto_vs_position = first_raiser_pos
-                    elif hero_faced_3bet:
+                if hero_final_action:
+                    if hero_opened and raise_count >= 2:
+                        # Hero opened and faced a 3-bet
                         gto_scenario = 'facing_3bet'
                         gto_vs_position = three_bettor_pos
-
-                    # Map hero action to GTO action names
-                    gto_action_map = {
-                        'raise': 'open' if gto_scenario == 'opening' else '4bet' if gto_scenario == 'facing_3bet' else '3bet',
-                        'call': 'call',
-                        'fold': 'fold',
-                    }
-                    hero_gto_action = gto_action_map.get(hero_action, hero_action)
+                        # Hero's response to the 3-bet
+                        if hero_final_action == 'raise':
+                            hero_gto_action = '4bet'
+                        elif hero_final_action == 'call':
+                            hero_gto_action = 'call'
+                        else:
+                            hero_gto_action = 'fold'
+                    elif hero_opened and raise_count == 1:
+                        # Hero opened and wasn't 3-bet (just opened)
+                        gto_scenario = 'opening'
+                        hero_gto_action = 'open'
+                    elif not hero_opened and raise_count >= 1:
+                        # Hero faced an open (defense scenario)
+                        gto_scenario = 'defense'
+                        gto_vs_position = first_raiser_pos
+                        if hero_final_action == 'raise':
+                            hero_gto_action = '3bet'
+                        elif hero_final_action == 'call':
+                            hero_gto_action = 'call'
+                        else:
+                            hero_gto_action = 'fold'
 
                     # Look up GTO frequencies
                     if gto_scenario:
@@ -2074,22 +2088,24 @@ async def get_hand_replay(
                             # Get frequency for hero's action
                             action_freq = gto_freqs.get(hero_gto_action, 0)
 
-                            # Determine deviation assessment
-                            if action_freq >= 20:
-                                deviation_type = 'correct'
-                                deviation_desc = 'Standard GTO play'
-                            elif action_freq >= 5:
-                                deviation_type = 'suboptimal'
-                                deviation_desc = f'Low frequency ({action_freq}%) but acceptable'
-                            elif action_freq > 0:
-                                deviation_type = 'suboptimal'
-                                deviation_desc = f'Rare play ({action_freq}%)'
-                            else:
-                                deviation_type = 'mistake'
-                                deviation_desc = 'Not in GTO range'
-
                             # Find recommended action (highest frequency)
                             recommended = max(gto_freqs.keys(), key=lambda k: gto_freqs[k]) if gto_freqs else None
+                            recommended_freq = gto_freqs.get(recommended, 0) if recommended else 0
+
+                            # Determine deviation assessment (aligned with classify_deviation)
+                            # - Correct: >= 40%
+                            # - Suboptimal: 15-40%
+                            # - Mistake: < 15%
+                            if action_freq >= 40:
+                                deviation_type = 'correct'
+                                deviation_desc = 'Within GTO range'
+                            elif action_freq >= 15:
+                                deviation_type = 'suboptimal'
+                                deviation_desc = f'GTO prefers {recommended} ({recommended_freq}%)'
+                            else:
+                                deviation_type = 'mistake'
+                                severity = 'major' if action_freq < 5 else 'moderate'
+                                deviation_desc = f'GTO strongly prefers {recommended} ({recommended_freq}%)'
 
                             hero_gto_analysis = {
                                 'scenario': gto_scenario,
