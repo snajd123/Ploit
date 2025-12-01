@@ -1208,7 +1208,6 @@ const PlayerProfile = () => {
           <LeakAnalysisView
             gtoLeaks={filteredGTOLeaks.all}
             statLeaks={leakAnalysis?.leaks || []}
-            playerName={player.player_name}
             totalHands={gtoAnalysis?.adherence?.total_hands || player.total_hands || 0}
           />
         )}

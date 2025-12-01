@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { ArrowLeft, TrendingDown, TrendingUp, Phone, HandMetal, AlertTriangle, CheckCircle, ChevronRight, Target, Zap } from 'lucide-react';
+import { TrendingDown, TrendingUp, Phone, AlertTriangle, CheckCircle, ChevronRight, Target, Zap } from 'lucide-react';
 
 // Types
 interface GTOPositionalLeak {
@@ -44,7 +44,6 @@ interface TendencyBucket {
 interface LeakAnalysisViewProps {
   gtoLeaks: GTOPositionalLeak[];
   statLeaks: StatBasedLeak[];
-  playerName: string;
   totalHands: number;
 }
 
@@ -295,7 +294,6 @@ const LeakDetailRow: React.FC<{
 const LeakAnalysisView: React.FC<LeakAnalysisViewProps> = ({
   gtoLeaks,
   statLeaks,
-  playerName,
   totalHands,
 }) => {
   const [expandedTendency, setExpandedTendency] = useState<TendencyType | null>(null);
