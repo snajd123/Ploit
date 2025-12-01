@@ -738,24 +738,26 @@ async def get_player_gto_analysis(
         # ============================================
         # 3. FACING 3-BET (after opening)
         # ============================================
+        # Only include hands where player opened (pfr=true) and then faced a 3-bet
+        # Excludes cold-call of 3-bet situations (someone else opened, someone 3-bet, player calls)
         facing_3bet_query = text("""
             SELECT
                 position,
-                COUNT(*) FILTER (WHERE faced_three_bet = true) as faced_3bet,
-                COUNT(*) FILTER (WHERE folded_to_three_bet = true) as folded,
-                COUNT(*) FILTER (WHERE called_three_bet = true) as called,
-                COUNT(*) FILTER (WHERE four_bet = true) as four_bet,
-                ROUND(100.0 * COUNT(*) FILTER (WHERE folded_to_three_bet = true) /
-                    NULLIF(COUNT(*) FILTER (WHERE faced_three_bet = true), 0), 1) as fold_pct,
-                ROUND(100.0 * COUNT(*) FILTER (WHERE called_three_bet = true) /
-                    NULLIF(COUNT(*) FILTER (WHERE faced_three_bet = true), 0), 1) as call_pct,
-                ROUND(100.0 * COUNT(*) FILTER (WHERE four_bet = true) /
-                    NULLIF(COUNT(*) FILTER (WHERE faced_three_bet = true), 0), 1) as four_bet_pct
+                COUNT(*) FILTER (WHERE faced_three_bet = true AND pfr = true) as faced_3bet,
+                COUNT(*) FILTER (WHERE folded_to_three_bet = true AND pfr = true) as folded,
+                COUNT(*) FILTER (WHERE called_three_bet = true AND pfr = true) as called,
+                COUNT(*) FILTER (WHERE four_bet = true AND pfr = true) as four_bet,
+                ROUND(100.0 * COUNT(*) FILTER (WHERE folded_to_three_bet = true AND pfr = true) /
+                    NULLIF(COUNT(*) FILTER (WHERE faced_three_bet = true AND pfr = true), 0), 1) as fold_pct,
+                ROUND(100.0 * COUNT(*) FILTER (WHERE called_three_bet = true AND pfr = true) /
+                    NULLIF(COUNT(*) FILTER (WHERE faced_three_bet = true AND pfr = true), 0), 1) as call_pct,
+                ROUND(100.0 * COUNT(*) FILTER (WHERE four_bet = true AND pfr = true) /
+                    NULLIF(COUNT(*) FILTER (WHERE faced_three_bet = true AND pfr = true), 0), 1) as four_bet_pct
             FROM player_hand_summary
             WHERE player_name = :player_name
             AND position IS NOT NULL
             GROUP BY position
-            HAVING COUNT(*) FILTER (WHERE faced_three_bet = true) >= 5
+            HAVING COUNT(*) FILTER (WHERE faced_three_bet = true AND pfr = true) >= 5
             ORDER BY position
         """)
         facing_3bet_result = db.execute(facing_3bet_query, {"player_name": validated_name})
@@ -821,6 +823,7 @@ async def get_player_gto_analysis(
             gto_f3bet_matchups[key][action] = freq
 
         # Get player's facing 3-bet by who 3-bet them
+        # Only include hands where player opened (pfr=true) before facing the 3-bet
         player_f3bet_matchups_result = db.execute(text("""
             SELECT
                 position,
@@ -832,6 +835,7 @@ async def get_player_gto_analysis(
             FROM player_hand_summary
             WHERE player_name = :player_name
               AND faced_three_bet = true
+              AND pfr = true
               AND three_bettor_position IS NOT NULL
               AND position IS NOT NULL
             GROUP BY position, three_bettor_position
@@ -1597,7 +1601,8 @@ async def get_scenario_hands(
                 params = {"player_name": validated_name, "position": position, "limit": limit}
 
         elif scenario == 'facing_3bet':
-            # Facing 3-bet: hands where player opened and faced a 3-bet
+            # Facing 3-bet: hands where player opened (pfr=true) and faced a 3-bet
+            # Excludes cold-call of 3-bet (someone else opened, villain 3-bet, hero calls)
             if vs_position:
                 hands_query = text("""
                     SELECT
@@ -1628,6 +1633,7 @@ async def get_scenario_hands(
                     WHERE phs.player_name = :player_name
                     AND phs.position = :position
                     AND phs.faced_three_bet = true
+                    AND phs.pfr = true
                     AND phs.three_bettor_position = :vs_position
                     ORDER BY rh.timestamp DESC
                     LIMIT :limit
@@ -1663,6 +1669,7 @@ async def get_scenario_hands(
                     WHERE phs.player_name = :player_name
                     AND phs.position = :position
                     AND phs.faced_three_bet = true
+                    AND phs.pfr = true
                     ORDER BY rh.timestamp DESC
                     LIMIT :limit
                 """)
