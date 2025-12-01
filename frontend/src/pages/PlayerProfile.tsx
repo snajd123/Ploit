@@ -13,8 +13,9 @@ import RangeGrid from '../components/RangeGrid';
 import type { HandActions } from '../components/RangeGrid';
 // Note: ExploitDashboard, BaselineComparison, DeviationHeatmap disabled - require player_scenario_stats table
 import { LeakSummary, LeaksList } from '../components/LeakCard';
+import { GTOCategorySummaryCard, GTOCategoryDetailView } from '../components/gto';
 import { STAT_DEFINITIONS, getStatDefinitionsWithGTO, GTOOptimalRange } from '../config/statDefinitions';
-import type { ScenarioHandsResponse } from '../types';
+import type { ScenarioHandsResponse, GTOAnalysisResponse } from '../types';
 
 // Scenario drill-down selection
 interface ScenarioSelection {
@@ -22,6 +23,85 @@ interface ScenarioSelection {
   position: string;
   vsPosition?: string;
 }
+
+// GTO navigation state
+type GTOCategoryKey = 'opening' | 'defense' | 'facing_3bet' | 'facing_4bet';
+type GTOView =
+  | { level: 'summary' }
+  | { level: 'detail'; category: GTOCategoryKey };
+
+// Category configuration
+const GTO_CATEGORY_CONFIG: Record<GTOCategoryKey, {
+  title: string;
+  subtitle: string;
+  icon: React.ElementType;
+  dataKeys: string[];
+}> = {
+  opening: {
+    title: 'Opening Ranges',
+    subtitle: 'RFI and Steal Attempts',
+    icon: TrendingUp,
+    dataKeys: ['opening_ranges', 'steal_attempts'],
+  },
+  defense: {
+    title: 'Defense vs Opens',
+    subtitle: 'How you respond to opens',
+    icon: Shield,
+    dataKeys: ['defense_vs_open', 'blind_defense', 'position_matchups'],
+  },
+  facing_3bet: {
+    title: 'Facing 3-Bet',
+    subtitle: 'After opening',
+    icon: Target,
+    dataKeys: ['facing_3bet', 'facing_3bet_matchups'],
+  },
+  facing_4bet: {
+    title: 'Facing 4-Bet',
+    subtitle: 'After 3-betting',
+    icon: AlertTriangle,
+    dataKeys: ['facing_4bet_reference'],
+  },
+};
+
+// Calculate aggregate stats for a category
+const calculateCategoryStats = (category: GTOCategoryKey, data: GTOAnalysisResponse) => {
+  let totalHands = 0;
+  let weightedDeviation = 0;
+  let leakCount = 0;
+
+  const addStats = (rows: any[] | undefined, diffKeys: string[], handsKey: string) => {
+    if (!rows) return;
+    rows.forEach(row => {
+      const hands = row[handsKey] || 0;
+      totalHands += hands;
+      diffKeys.forEach(key => {
+        const diff = Math.abs(row[key] ?? 0);
+        weightedDeviation += diff * hands;
+        if (diff > 10) leakCount++;
+      });
+    });
+  };
+
+  switch (category) {
+    case 'opening':
+      addStats(data.opening_ranges, ['frequency_diff'], 'total_hands');
+      addStats(data.steal_attempts, ['frequency_diff'], 'sample_size');
+      break;
+    case 'defense':
+      addStats(data.defense_vs_open, ['fold_diff', 'call_diff', '3bet_diff'], 'sample_size');
+      addStats(data.blind_defense, ['fold_diff', 'call_diff', '3bet_diff'], 'sample_size');
+      break;
+    case 'facing_3bet':
+      addStats(data.facing_3bet, ['fold_diff', 'call_diff', '4bet_diff'], 'sample_size');
+      break;
+    case 'facing_4bet':
+      addStats(data.facing_4bet_reference, ['fold_diff', 'call_diff', '5bet_diff'], 'sample_size');
+      break;
+  }
+
+  const avgDeviation = totalHands > 0 ? weightedDeviation / totalHands : 0;
+  return { avgDeviation, totalHands, leakCount };
+};
 
 type TabId = 'overview' | 'gto' | 'leaks' | 'charts';
 
@@ -494,6 +574,7 @@ const PlayerProfile = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<TabId>('overview');
   const [selectedScenario, setSelectedScenario] = useState<ScenarioSelection | null>(null);
+  const [gtoView, setGtoView] = useState<GTOView>({ level: 'summary' });
 
   // Query for scenario hands drill-down
   const { data: scenarioHandsData, isLoading: scenarioHandsLoading } = useQuery({
@@ -783,7 +864,7 @@ const PlayerProfile = () => {
               </div>
             ) : gtoAnalysis ? (
               <>
-                {/* GTO Adherence Summary */}
+                {/* GTO Adherence Summary - always visible */}
                 <div className="card bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200">
                   <div className="flex items-center justify-between mb-4">
                     <div>
@@ -826,295 +907,40 @@ const PlayerProfile = () => {
                   </div>
                 </div>
 
-                {/* Opening Ranges */}
-                <GTOScenarioTable
-                  title="Opening Ranges (RFI)"
-                  subtitle="Your raise first in frequency by position compared to GTO"
-                  data={gtoAnalysis.opening_ranges}
-                  columns={[
-                    { key: 'position', label: 'Position' },
-                    { key: 'total_hands', label: 'Hands' },
-                    { key: 'player_frequency', label: 'Player', isPlayer: true },
-                    { key: 'gto_frequency', label: 'GTO', isGTO: true },
-                    { key: 'frequency_diff', label: 'Diff', isDiff: true },
-                  ]}
-                  onRowClick={(row) => setSelectedScenario({
-                    scenario: 'opening',
-                    position: row.position,
-                  })}
-                />
+                {/* Level 1: Category Summary Cards */}
+                {gtoView.level === 'summary' && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {(Object.keys(GTO_CATEGORY_CONFIG) as GTOCategoryKey[]).map((categoryKey) => {
+                      const config = GTO_CATEGORY_CONFIG[categoryKey];
+                      const stats = calculateCategoryStats(categoryKey, gtoAnalysis);
 
-                {/* Defense vs Opens */}
-                <GTOScenarioTable
-                  title="Defense vs Opens (Fold/Call/3-Bet)"
-                  subtitle="Aggregate defense frequencies by your position (see matchups below for details)"
-                  data={gtoAnalysis.defense_vs_open}
-                  columns={[
-                    { key: 'position', label: 'Position' },
-                    { key: 'sample_size', label: 'Hands' },
-                    { key: 'player_fold', label: 'Fold', isPlayer: true },
-                    { key: 'gto_fold', label: 'GTO Fold', isGTO: true },
-                    { key: 'fold_diff', label: 'Diff', isDiff: true },
-                    { key: 'player_call', label: 'Call', isPlayer: true },
-                    { key: 'gto_call', label: 'GTO Call', isGTO: true },
-                    { key: 'call_diff', label: 'Diff', isDiff: true },
-                    { key: 'player_3bet', label: '3-Bet', isPlayer: true },
-                    { key: 'gto_3bet', label: 'GTO 3-Bet', isGTO: true },
-                    { key: '3bet_diff', label: 'Diff', isDiff: true },
-                  ]}
-                  onRowClick={(row) => setSelectedScenario({
-                    scenario: 'defense',
-                    position: row.position,
-                  })}
-                />
+                      // Skip categories with no data
+                      if (stats.totalHands === 0) return null;
 
-                {/* Facing 3-Bet */}
-                <GTOScenarioTable
-                  title="Facing 3-Bet (After Opening)"
-                  subtitle="Aggregate response when facing a 3-bet (see matchups below for details)"
-                  data={gtoAnalysis.facing_3bet}
-                  columns={[
-                    { key: 'position', label: 'Position' },
-                    { key: 'sample_size', label: 'Hands' },
-                    { key: 'player_fold', label: 'Fold', isPlayer: true },
-                    { key: 'gto_fold', label: 'GTO Fold', isGTO: true },
-                    { key: 'fold_diff', label: 'Diff', isDiff: true },
-                    { key: 'player_call', label: 'Call', isPlayer: true },
-                    { key: 'gto_call', label: 'GTO Call', isGTO: true },
-                    { key: 'call_diff', label: 'Diff', isDiff: true },
-                    { key: 'player_4bet', label: '4-Bet', isPlayer: true },
-                    { key: 'gto_4bet', label: 'GTO 4-Bet', isGTO: true },
-                    { key: '4bet_diff', label: 'Diff', isDiff: true },
-                  ]}
-                  onRowClick={(row) => setSelectedScenario({
-                    scenario: 'facing_3bet',
-                    position: row.position,
-                  })}
-                />
-
-                {/* Facing 3-Bet by Matchup */}
-                {gtoAnalysis.facing_3bet_matchups && gtoAnalysis.facing_3bet_matchups.length > 0 && (
-                  <div className="card mb-6">
-                    <h3 className="font-semibold text-gray-900 mb-2">Facing 3-Bet by Matchup</h3>
-                    <p className="text-sm text-gray-500 mb-4">How you respond to 3-bets from specific positions after opening</p>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b border-gray-200">
-                            <th className="text-left py-2 px-3 font-medium text-gray-600">Your Pos</th>
-                            <th className="text-left py-2 px-3 font-medium text-gray-600">vs 3-Bettor</th>
-                            <th className="text-right py-2 px-3 font-medium text-gray-600">n</th>
-                            <th className="text-right py-2 px-3 font-medium text-gray-900">Fold</th>
-                            <th className="text-right py-2 px-3 font-medium text-blue-600 bg-blue-50">GTO</th>
-                            <th className="text-right py-2 px-3 font-medium text-gray-600">Diff</th>
-                            <th className="text-right py-2 px-3 font-medium text-gray-900">Call</th>
-                            <th className="text-right py-2 px-3 font-medium text-blue-600 bg-blue-50">GTO</th>
-                            <th className="text-right py-2 px-3 font-medium text-gray-600">Diff</th>
-                            <th className="text-right py-2 px-3 font-medium text-gray-900">4-Bet</th>
-                            <th className="text-right py-2 px-3 font-medium text-blue-600 bg-blue-50">GTO</th>
-                            <th className="text-right py-2 px-3 font-medium text-gray-600">Diff</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {gtoAnalysis.facing_3bet_matchups.map((row, idx) => (
-                            <tr
-                              key={idx}
-                              className="border-b border-gray-100 hover:bg-blue-50 cursor-pointer transition-colors"
-                              onClick={() => setSelectedScenario({
-                                scenario: 'facing_3bet',
-                                position: row.position,
-                                vsPosition: row.vs_position
-                              })}
-                            >
-                              <td className="py-2 px-3 font-medium">{row.position}</td>
-                              <td className="py-2 px-3 text-gray-600">{row.vs_position}</td>
-                              <td className="py-2 px-3 text-right text-gray-500">{row.sample_size || '-'}</td>
-                              <td className="py-2 px-3 text-right font-medium">{row.player_fold != null ? `${row.player_fold.toFixed(1)}%` : '-'}</td>
-                              <td className="py-2 px-3 text-right text-blue-600 bg-blue-50/50">{row.gto_fold.toFixed(1)}%</td>
-                              <td className={`py-2 px-3 text-right font-medium ${row.fold_diff != null ? (row.fold_diff > 10 ? 'text-red-600' : row.fold_diff < -10 ? 'text-green-600' : 'text-gray-600') : 'text-gray-400'}`}>
-                                {row.fold_diff != null ? `${row.fold_diff > 0 ? '+' : ''}${row.fold_diff.toFixed(1)}` : '-'}
-                              </td>
-                              <td className="py-2 px-3 text-right font-medium">{row.player_call != null ? `${row.player_call.toFixed(1)}%` : '-'}</td>
-                              <td className="py-2 px-3 text-right text-blue-600 bg-blue-50/50">{row.gto_call.toFixed(1)}%</td>
-                              <td className={`py-2 px-3 text-right font-medium ${row.call_diff != null ? (Math.abs(row.call_diff) > 10 ? 'text-red-600' : 'text-gray-600') : 'text-gray-400'}`}>
-                                {row.call_diff != null ? `${row.call_diff > 0 ? '+' : ''}${row.call_diff.toFixed(1)}` : '-'}
-                              </td>
-                              <td className="py-2 px-3 text-right font-medium">{row.player_4bet != null ? `${row.player_4bet.toFixed(1)}%` : '-'}</td>
-                              <td className="py-2 px-3 text-right text-blue-600 bg-blue-50/50">{row.gto_4bet.toFixed(1)}%</td>
-                              <td className={`py-2 px-3 text-right font-medium ${row['4bet_diff'] != null ? (Math.abs(row['4bet_diff']) > 10 ? 'text-red-600' : 'text-gray-600') : 'text-gray-400'}`}>
-                                {row['4bet_diff'] != null ? `${row['4bet_diff'] > 0 ? '+' : ''}${row['4bet_diff'].toFixed(1)}` : '-'}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <p className="text-xs text-gray-400 mt-2">Click a row to see individual hands and GTO mistakes</p>
+                      return (
+                        <GTOCategorySummaryCard
+                          key={categoryKey}
+                          title={config.title}
+                          subtitle={config.subtitle}
+                          icon={config.icon}
+                          avgDeviation={stats.avgDeviation}
+                          totalHands={stats.totalHands}
+                          leakCount={stats.leakCount}
+                          onClick={() => setGtoView({ level: 'detail', category: categoryKey })}
+                        />
+                      );
+                    })}
                   </div>
                 )}
 
-                {/* Blind Defense */}
-                <GTOScenarioTable
-                  title="Blind Defense vs Steals"
-                  subtitle="How you defend your blinds against late position opens"
-                  data={gtoAnalysis.blind_defense}
-                  columns={[
-                    { key: 'position', label: 'Position' },
-                    { key: 'sample_size', label: 'Hands' },
-                    { key: 'player_fold', label: 'Fold', isPlayer: true },
-                    { key: 'gto_fold', label: 'GTO Fold', isGTO: true },
-                    { key: 'fold_diff', label: 'Diff', isDiff: true },
-                    { key: 'player_call', label: 'Call', isPlayer: true },
-                    { key: 'gto_call', label: 'GTO Call', isGTO: true },
-                    { key: 'call_diff', label: 'Diff', isDiff: true },
-                    { key: 'player_3bet', label: '3-Bet', isPlayer: true },
-                    { key: 'gto_3bet', label: 'GTO 3-Bet', isGTO: true },
-                    { key: '3bet_diff', label: 'Diff', isDiff: true },
-                  ]}
-                  onRowClick={(row) => setSelectedScenario({
-                    scenario: 'defense',
-                    position: row.position,
-                  })}
-                />
-
-                {/* Steal Attempts */}
-                <GTOScenarioTable
-                  title="Steal Attempts (Late Position)"
-                  subtitle="Your open raise frequency from steal positions (CO, BTN, SB)"
-                  data={gtoAnalysis.steal_attempts}
-                  columns={[
-                    { key: 'position', label: 'Position' },
-                    { key: 'sample_size', label: 'Opportunities' },
-                    { key: 'player_frequency', label: 'Player', isPlayer: true },
-                    { key: 'gto_frequency', label: 'GTO', isGTO: true },
-                    { key: 'frequency_diff', label: 'Diff', isDiff: true },
-                  ]}
-                  onRowClick={(row) => setSelectedScenario({
-                    scenario: 'opening',
-                    position: row.position,
-                  })}
-                />
-
-                {/* Position-Specific Defense Matchups with Player Data */}
-                {gtoAnalysis.position_matchups && gtoAnalysis.position_matchups.length > 0 && (
-                  <div className="card mb-6">
-                    <h3 className="font-semibold text-gray-900 mb-2">Defense by Position Matchup</h3>
-                    <p className="text-sm text-gray-500 mb-4">How you defend vs opens from specific positions compared to GTO</p>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b border-gray-200">
-                            <th className="text-left py-2 px-3 font-medium text-gray-600">Your Pos</th>
-                            <th className="text-left py-2 px-3 font-medium text-gray-600">vs</th>
-                            <th className="text-right py-2 px-3 font-medium text-gray-600">n</th>
-                            <th className="text-right py-2 px-3 font-medium text-gray-900">Fold</th>
-                            <th className="text-right py-2 px-3 font-medium text-blue-600 bg-blue-50">GTO</th>
-                            <th className="text-right py-2 px-3 font-medium text-gray-600">Diff</th>
-                            <th className="text-right py-2 px-3 font-medium text-gray-900">Call</th>
-                            <th className="text-right py-2 px-3 font-medium text-blue-600 bg-blue-50">GTO</th>
-                            <th className="text-right py-2 px-3 font-medium text-gray-600">Diff</th>
-                            <th className="text-right py-2 px-3 font-medium text-gray-900">3-Bet</th>
-                            <th className="text-right py-2 px-3 font-medium text-blue-600 bg-blue-50">GTO</th>
-                            <th className="text-right py-2 px-3 font-medium text-gray-600">Diff</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {gtoAnalysis.position_matchups.map((row, idx) => (
-                            <tr
-                              key={idx}
-                              className="border-b border-gray-100 hover:bg-blue-50 cursor-pointer transition-colors"
-                              onClick={() => setSelectedScenario({
-                                scenario: 'defense',
-                                position: row.position,
-                                vsPosition: row.vs_position
-                              })}
-                            >
-                              <td className="py-2 px-3 font-medium">{row.position}</td>
-                              <td className="py-2 px-3 text-gray-600">{row.vs_position}</td>
-                              <td className="py-2 px-3 text-right text-gray-500">{row.sample_size || '-'}</td>
-                              <td className="py-2 px-3 text-right font-medium">{row.player_fold != null ? `${row.player_fold.toFixed(1)}%` : '-'}</td>
-                              <td className="py-2 px-3 text-right text-blue-600 bg-blue-50/50">{row.gto_fold.toFixed(1)}%</td>
-                              <td className={`py-2 px-3 text-right font-medium ${row.fold_diff != null ? (row.fold_diff > 10 ? 'text-red-600' : row.fold_diff < -10 ? 'text-green-600' : 'text-gray-600') : 'text-gray-400'}`}>
-                                {row.fold_diff != null ? `${row.fold_diff > 0 ? '+' : ''}${row.fold_diff.toFixed(1)}` : '-'}
-                              </td>
-                              <td className="py-2 px-3 text-right font-medium">{row.player_call != null ? `${row.player_call.toFixed(1)}%` : '-'}</td>
-                              <td className="py-2 px-3 text-right text-blue-600 bg-blue-50/50">{row.gto_call.toFixed(1)}%</td>
-                              <td className={`py-2 px-3 text-right font-medium ${row.call_diff != null ? (Math.abs(row.call_diff) > 10 ? 'text-red-600' : 'text-gray-600') : 'text-gray-400'}`}>
-                                {row.call_diff != null ? `${row.call_diff > 0 ? '+' : ''}${row.call_diff.toFixed(1)}` : '-'}
-                              </td>
-                              <td className="py-2 px-3 text-right font-medium">{row.player_3bet != null ? `${row.player_3bet.toFixed(1)}%` : '-'}</td>
-                              <td className="py-2 px-3 text-right text-blue-600 bg-blue-50/50">{row.gto_3bet.toFixed(1)}%</td>
-                              <td className={`py-2 px-3 text-right font-medium ${row['3bet_diff'] != null ? (Math.abs(row['3bet_diff']) > 10 ? 'text-red-600' : 'text-gray-600') : 'text-gray-400'}`}>
-                                {row['3bet_diff'] != null ? `${row['3bet_diff'] > 0 ? '+' : ''}${row['3bet_diff'].toFixed(1)}` : '-'}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <p className="text-xs text-gray-400 mt-2">Click a row to see individual hands and GTO mistakes</p>
-                  </div>
-                )}
-
-                {/* Facing 4-Bet Analysis */}
-                {gtoAnalysis.facing_4bet_reference && gtoAnalysis.facing_4bet_reference.length > 0 && (
-                  <div className="card mb-6">
-                    <h3 className="font-semibold text-gray-900 mb-2">Facing 4-Bet</h3>
-                    <p className="text-sm text-gray-500 mb-4">How you respond after 3-betting and facing a 4-bet, compared to GTO</p>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b border-gray-200">
-                            <th className="text-left py-2 px-3 font-medium text-gray-600">Your Pos</th>
-                            <th className="text-left py-2 px-3 font-medium text-gray-600">vs</th>
-                            <th className="text-right py-2 px-3 font-medium text-gray-600">n</th>
-                            <th className="text-right py-2 px-3 font-medium text-gray-900">Fold</th>
-                            <th className="text-right py-2 px-3 font-medium text-blue-600 bg-blue-50">GTO</th>
-                            <th className="text-right py-2 px-3 font-medium text-gray-600">Diff</th>
-                            <th className="text-right py-2 px-3 font-medium text-gray-900">Call</th>
-                            <th className="text-right py-2 px-3 font-medium text-blue-600 bg-blue-50">GTO</th>
-                            <th className="text-right py-2 px-3 font-medium text-gray-600">Diff</th>
-                            <th className="text-right py-2 px-3 font-medium text-gray-900">5-Bet</th>
-                            <th className="text-right py-2 px-3 font-medium text-blue-600 bg-blue-50">GTO</th>
-                            <th className="text-right py-2 px-3 font-medium text-gray-600">Diff</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {gtoAnalysis.facing_4bet_reference.map((row, idx) => (
-                            <tr
-                              key={idx}
-                              className="border-b border-gray-100 hover:bg-blue-50 cursor-pointer transition-colors"
-                              onClick={() => setSelectedScenario({
-                                scenario: 'facing_4bet',
-                                position: row.position,
-                                vsPosition: row.vs_position
-                              })}
-                            >
-                              <td className="py-2 px-3 font-medium">{row.position}</td>
-                              <td className="py-2 px-3 text-gray-600">{row.vs_position}</td>
-                              <td className="py-2 px-3 text-right text-gray-500">{row.sample_size || '-'}</td>
-                              <td className="py-2 px-3 text-right font-medium">{row.player_fold != null ? `${row.player_fold.toFixed(1)}%` : '-'}</td>
-                              <td className="py-2 px-3 text-right text-blue-600 bg-blue-50/50">{row.gto_fold.toFixed(1)}%</td>
-                              <td className={`py-2 px-3 text-right font-medium ${row.fold_diff != null ? (row.fold_diff > 10 ? 'text-red-600' : row.fold_diff < -10 ? 'text-green-600' : 'text-gray-600') : 'text-gray-400'}`}>
-                                {row.fold_diff != null ? `${row.fold_diff > 0 ? '+' : ''}${row.fold_diff.toFixed(1)}` : '-'}
-                              </td>
-                              <td className="py-2 px-3 text-right font-medium">{row.player_call != null ? `${row.player_call.toFixed(1)}%` : '-'}</td>
-                              <td className="py-2 px-3 text-right text-blue-600 bg-blue-50/50">{row.gto_call.toFixed(1)}%</td>
-                              <td className={`py-2 px-3 text-right font-medium ${row.call_diff != null ? (Math.abs(row.call_diff) > 10 ? 'text-red-600' : 'text-gray-600') : 'text-gray-400'}`}>
-                                {row.call_diff != null ? `${row.call_diff > 0 ? '+' : ''}${row.call_diff.toFixed(1)}` : '-'}
-                              </td>
-                              <td className="py-2 px-3 text-right font-medium">{row.player_5bet != null ? `${row.player_5bet.toFixed(1)}%` : '-'}</td>
-                              <td className="py-2 px-3 text-right text-blue-600 bg-blue-50/50">{row.gto_5bet.toFixed(1)}%</td>
-                              <td className={`py-2 px-3 text-right font-medium ${row['5bet_diff'] != null ? (Math.abs(row['5bet_diff']) > 10 ? 'text-red-600' : 'text-gray-600') : 'text-gray-400'}`}>
-                                {row['5bet_diff'] != null ? `${row['5bet_diff'] > 0 ? '+' : ''}${row['5bet_diff'].toFixed(1)}` : '-'}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <p className="text-xs text-gray-400 mt-2">Click a row to see individual hands and GTO mistakes</p>
-                  </div>
+                {/* Level 2: Category Detail View */}
+                {gtoView.level === 'detail' && (
+                  <GTOCategoryDetailView
+                    category={gtoView.category}
+                    data={gtoAnalysis}
+                    onBack={() => setGtoView({ level: 'summary' })}
+                    onRowClick={setSelectedScenario}
+                  />
                 )}
               </>
             ) : (
