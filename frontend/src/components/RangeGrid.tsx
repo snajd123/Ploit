@@ -253,9 +253,6 @@ const RangeGrid: React.FC<RangeGridProps> = ({
                 const isHighlighted = highlightedHand === handLabel;
                 const isHovered = hoveredHand === handLabel;
 
-                // Determine text color based on background brightness
-                const textColor = frequency > 0.5 ? 'text-white' : 'text-gray-800';
-
                 // Get continuing frequency (non-fold)
                 const continuingFreq = isMultiAction
                   ? (actions.call || 0) + (actions.raise || 0) + (actions['3bet'] || 0) +
@@ -267,21 +264,26 @@ const RangeGrid: React.FC<RangeGridProps> = ({
                     key={`${rank1}-${rank2}`}
                     className={`
                       relative aspect-square flex items-center justify-center
-                      text-[9px] sm:text-[10px] font-bold cursor-pointer transition-all
+                      text-[10px] sm:text-[11px] font-bold cursor-pointer transition-all
                       border border-gray-200
                       ${isHighlighted ? 'ring-4 ring-yellow-400 z-30 scale-125 shadow-xl' : ''}
                       ${isHovered && !isHighlighted ? 'ring-2 ring-blue-500 z-20 scale-110 shadow-lg' : ''}
-                      ${textColor}
                     `}
                     style={{
-                      backgroundColor: continuingFreq > 0 ? color : 'white',
-                      opacity: continuingFreq > 0 ? 1 : 0.5
+                      backgroundColor: continuingFreq > 0 ? color : '#f5f5f5',
                     }}
                     onMouseEnter={() => setHoveredHand(handLabel)}
                     onMouseLeave={() => setHoveredHand(null)}
                     onClick={() => onHandClick?.(handLabel)}
                   >
-                    <span className="select-none">{handLabel}</span>
+                    <span
+                      className="select-none"
+                      style={{
+                        color: continuingFreq > 0 && frequency > 0.5 ? 'white' : '#374151',
+                      }}
+                    >
+                      {handLabel}
+                    </span>
                   </div>
                 );
               })
