@@ -1498,11 +1498,11 @@ async def get_scenario_hands(
                     (regexp_match(rh.raw_hand_text, 'Dealt to ' || phs.player_name || ' \\[([^\\]]+)\\]'))[1] as hole_cards,
                     -- Get effective stack in BB
                     ha.stack_size,
-                    CASE
-                        WHEN rh.stake_level ~ '€([0-9.]+)/€([0-9.]+)' THEN
-                            ha.stack_size / NULLIF((regexp_match(rh.stake_level, '€[0-9.]+/€([0-9.]+)'))[1]::numeric, 0)
-                        ELSE NULL
-                    END as effective_stack_bb
+                    -- Extract BB from raw_hand_text (format: €0.02/€0.04 or $0.05/$0.10)
+                    ha.stack_size / NULLIF(
+                        (regexp_match(rh.raw_hand_text, '[€$][0-9.]+/[€$]([0-9.]+)'))[1]::numeric,
+                        0
+                    ) as effective_stack_bb
                 FROM player_hand_summary phs
                 JOIN raw_hands rh ON phs.hand_id = rh.hand_id
                 LEFT JOIN (
@@ -1535,11 +1535,11 @@ async def get_scenario_hands(
                         END as player_action,
                         (regexp_match(rh.raw_hand_text, 'Dealt to ' || phs.player_name || ' \\[([^\\]]+)\\]'))[1] as hole_cards,
                         ha.stack_size,
-                        CASE
-                            WHEN rh.stake_level ~ '€([0-9.]+)/€([0-9.]+)' THEN
-                                ha.stack_size / NULLIF((regexp_match(rh.stake_level, '€[0-9.]+/€([0-9.]+)'))[1]::numeric, 0)
-                            ELSE NULL
-                        END as effective_stack_bb
+                        -- Extract BB from raw_hand_text (format: €0.02/€0.04 or $0.05/$0.10)
+                        ha.stack_size / NULLIF(
+                            (regexp_match(rh.raw_hand_text, '[€$][0-9.]+/[€$]([0-9.]+)'))[1]::numeric,
+                            0
+                        ) as effective_stack_bb
                     FROM player_hand_summary phs
                     JOIN raw_hands rh ON phs.hand_id = rh.hand_id
                     LEFT JOIN (
@@ -1569,11 +1569,11 @@ async def get_scenario_hands(
                         END as player_action,
                         (regexp_match(rh.raw_hand_text, 'Dealt to ' || phs.player_name || ' \\[([^\\]]+)\\]'))[1] as hole_cards,
                         ha.stack_size,
-                        CASE
-                            WHEN rh.stake_level ~ '€([0-9.]+)/€([0-9.]+)' THEN
-                                ha.stack_size / NULLIF((regexp_match(rh.stake_level, '€[0-9.]+/€([0-9.]+)'))[1]::numeric, 0)
-                            ELSE NULL
-                        END as effective_stack_bb
+                        -- Extract BB from raw_hand_text (format: €0.02/€0.04 or $0.05/$0.10)
+                        ha.stack_size / NULLIF(
+                            (regexp_match(rh.raw_hand_text, '[€$][0-9.]+/[€$]([0-9.]+)'))[1]::numeric,
+                            0
+                        ) as effective_stack_bb
                     FROM player_hand_summary phs
                     JOIN raw_hands rh ON phs.hand_id = rh.hand_id
                     LEFT JOIN (
@@ -1606,11 +1606,11 @@ async def get_scenario_hands(
                         END as player_action,
                         (regexp_match(rh.raw_hand_text, 'Dealt to ' || phs.player_name || ' \\[([^\\]]+)\\]'))[1] as hole_cards,
                         ha.stack_size,
-                        CASE
-                            WHEN rh.stake_level ~ '€([0-9.]+)/€([0-9.]+)' THEN
-                                ha.stack_size / NULLIF((regexp_match(rh.stake_level, '€[0-9.]+/€([0-9.]+)'))[1]::numeric, 0)
-                            ELSE NULL
-                        END as effective_stack_bb
+                        -- Extract BB from raw_hand_text (format: €0.02/€0.04 or $0.05/$0.10)
+                        ha.stack_size / NULLIF(
+                            (regexp_match(rh.raw_hand_text, '[€$][0-9.]+/[€$]([0-9.]+)'))[1]::numeric,
+                            0
+                        ) as effective_stack_bb
                     FROM player_hand_summary phs
                     JOIN raw_hands rh ON phs.hand_id = rh.hand_id
                     LEFT JOIN (
@@ -1641,11 +1641,11 @@ async def get_scenario_hands(
                         END as player_action,
                         (regexp_match(rh.raw_hand_text, 'Dealt to ' || phs.player_name || ' \\[([^\\]]+)\\]'))[1] as hole_cards,
                         ha.stack_size,
-                        CASE
-                            WHEN rh.stake_level ~ '€([0-9.]+)/€([0-9.]+)' THEN
-                                ha.stack_size / NULLIF((regexp_match(rh.stake_level, '€[0-9.]+/€([0-9.]+)'))[1]::numeric, 0)
-                            ELSE NULL
-                        END as effective_stack_bb
+                        -- Extract BB from raw_hand_text (format: €0.02/€0.04 or $0.05/$0.10)
+                        ha.stack_size / NULLIF(
+                            (regexp_match(rh.raw_hand_text, '[€$][0-9.]+/[€$]([0-9.]+)'))[1]::numeric,
+                            0
+                        ) as effective_stack_bb
                     FROM player_hand_summary phs
                     JOIN raw_hands rh ON phs.hand_id = rh.hand_id
                     LEFT JOIN (
@@ -1678,11 +1678,11 @@ async def get_scenario_hands(
                         END as player_action,
                         (regexp_match(rh.raw_hand_text, 'Dealt to ' || phs.player_name || ' \\[([^\\]]+)\\]'))[1] as hole_cards,
                         ha.stack_size,
-                        CASE
-                            WHEN rh.stake_level ~ '€([0-9.]+)/€([0-9.]+)' THEN
-                                ha.stack_size / NULLIF((regexp_match(rh.stake_level, '€[0-9.]+/€([0-9.]+)'))[1]::numeric, 0)
-                            ELSE NULL
-                        END as effective_stack_bb
+                        -- Extract BB from raw_hand_text (format: €0.02/€0.04 or $0.05/$0.10)
+                        ha.stack_size / NULLIF(
+                            (regexp_match(rh.raw_hand_text, '[€$][0-9.]+/[€$]([0-9.]+)'))[1]::numeric,
+                            0
+                        ) as effective_stack_bb
                     FROM player_hand_summary phs
                     JOIN raw_hands rh ON phs.hand_id = rh.hand_id
                     LEFT JOIN (
@@ -1713,11 +1713,11 @@ async def get_scenario_hands(
                         END as player_action,
                         (regexp_match(rh.raw_hand_text, 'Dealt to ' || phs.player_name || ' \\[([^\\]]+)\\]'))[1] as hole_cards,
                         ha.stack_size,
-                        CASE
-                            WHEN rh.stake_level ~ '€([0-9.]+)/€([0-9.]+)' THEN
-                                ha.stack_size / NULLIF((regexp_match(rh.stake_level, '€[0-9.]+/€([0-9.]+)'))[1]::numeric, 0)
-                            ELSE NULL
-                        END as effective_stack_bb
+                        -- Extract BB from raw_hand_text (format: €0.02/€0.04 or $0.05/$0.10)
+                        ha.stack_size / NULLIF(
+                            (regexp_match(rh.raw_hand_text, '[€$][0-9.]+/[€$]([0-9.]+)'))[1]::numeric,
+                            0
+                        ) as effective_stack_bb
                     FROM player_hand_summary phs
                     JOIN raw_hands rh ON phs.hand_id = rh.hand_id
                     LEFT JOIN (
@@ -1898,13 +1898,13 @@ async def get_hand_replay(
         if not hand:
             raise HTTPException(status_code=500, detail="Failed to parse hand history")
 
-        # Extract big blind for stack calculations
-        bb_match = None
-        stake_level = raw_result.stake_level or ""
+        # Extract big blind from raw hand text (format: "€0.02/€0.04" or "$0.05/$0.10")
         import re
-        bb_pattern = r'[€$]?([\d.]+)/[€$]?([\d.]+)'
-        bb_match = re.search(bb_pattern, stake_level)
+        raw_text = raw_result.raw_hand_text or ""
+        bb_pattern = r'[€$]([\d.]+)/[€$]([\d.]+)'
+        bb_match = re.search(bb_pattern, raw_text)
         big_blind = float(bb_match.group(2)) if bb_match else 1.0
+        stake_level = raw_result.stake_level or ""
 
         # Build player list with positions
         players = []
