@@ -1992,6 +1992,116 @@ async def get_hand_replay(
             if 'river' in hand.board_cards:
                 full_board.append(hand.board_cards['river'])
 
+        # =========================================
+        # GTO Analysis for Hero's Preflop Actions
+        # =========================================
+        hero_gto_analysis = None
+        if hero_name and 'preflop' in streets_data:
+            hero_player = next((p for p in players if p['name'] == hero_name), None)
+            if hero_player and hero_player.get('position'):
+                hero_position = hero_player['position']
+                preflop_actions = streets_data['preflop']['actions']
+
+                # Analyze the preflop action sequence to determine hero's scenario
+                first_raiser_pos = None
+                three_bettor_pos = None
+                hero_faced_raise = False
+                hero_faced_3bet = False
+                hero_action = None
+                raise_count = 0
+
+                for action in preflop_actions:
+                    action_type = action['action']
+                    player = action['player']
+
+                    # Track raises
+                    if action_type == 'raise' and action['amount'] > 0:
+                        raise_count += 1
+                        if raise_count == 1:
+                            first_raiser_pos = next((p['position'] for p in players if p['name'] == player), None)
+                        elif raise_count == 2:
+                            three_bettor_pos = next((p['position'] for p in players if p['name'] == player), None)
+
+                    # Track what hero faced before acting
+                    if player == hero_name and action_type not in ['post_sb', 'post_bb']:
+                        hero_action = action_type
+                        hero_faced_raise = raise_count >= 1 and first_raiser_pos != hero_position
+                        hero_faced_3bet = raise_count >= 2 and first_raiser_pos == hero_position
+                        break
+                    elif player != hero_name and action_type == 'raise':
+                        if first_raiser_pos == hero_position:
+                            hero_faced_3bet = True
+
+                # Determine the GTO scenario
+                gto_scenario = None
+                gto_vs_position = None
+
+                if hero_action:
+                    if not hero_faced_raise and hero_action == 'raise':
+                        gto_scenario = 'opening'
+                    elif hero_faced_raise and not hero_faced_3bet:
+                        gto_scenario = 'defense'
+                        gto_vs_position = first_raiser_pos
+                    elif hero_faced_3bet:
+                        gto_scenario = 'facing_3bet'
+                        gto_vs_position = three_bettor_pos
+
+                    # Map hero action to GTO action names
+                    gto_action_map = {
+                        'raise': 'open' if gto_scenario == 'opening' else '4bet' if gto_scenario == 'facing_3bet' else '3bet',
+                        'call': 'call',
+                        'fold': 'fold',
+                    }
+                    hero_gto_action = gto_action_map.get(hero_action, hero_action)
+
+                    # Look up GTO frequencies
+                    if gto_scenario:
+                        gto_query = text("""
+                            SELECT action, gto_aggregate_freq * 100 as freq
+                            FROM gto_scenarios
+                            WHERE category = :category
+                            AND position = :position
+                            AND (opponent_position = :vs_position OR (:vs_position IS NULL AND opponent_position IS NULL))
+                        """)
+                        gto_result = db.execute(gto_query, {
+                            "category": gto_scenario,
+                            "position": hero_position,
+                            "vs_position": gto_vs_position
+                        })
+                        gto_freqs = {row[0]: round(float(row[1]), 1) for row in gto_result}
+
+                        if gto_freqs:
+                            # Get frequency for hero's action
+                            action_freq = gto_freqs.get(hero_gto_action, 0)
+
+                            # Determine deviation assessment
+                            if action_freq >= 20:
+                                deviation_type = 'correct'
+                                deviation_desc = 'Standard GTO play'
+                            elif action_freq >= 5:
+                                deviation_type = 'suboptimal'
+                                deviation_desc = f'Low frequency ({action_freq}%) but acceptable'
+                            elif action_freq > 0:
+                                deviation_type = 'suboptimal'
+                                deviation_desc = f'Rare play ({action_freq}%)'
+                            else:
+                                deviation_type = 'mistake'
+                                deviation_desc = 'Not in GTO range'
+
+                            # Find recommended action (highest frequency)
+                            recommended = max(gto_freqs.keys(), key=lambda k: gto_freqs[k]) if gto_freqs else None
+
+                            hero_gto_analysis = {
+                                'scenario': gto_scenario,
+                                'vs_position': gto_vs_position,
+                                'hero_action': hero_gto_action,
+                                'action_frequency': action_freq,
+                                'gto_frequencies': gto_freqs,
+                                'recommended_action': recommended,
+                                'deviation_type': deviation_type,
+                                'deviation_description': deviation_desc
+                            }
+
         return {
             'hand_id': hand_id,
             'timestamp': raw_result.timestamp.isoformat() if raw_result.timestamp else None,
@@ -2007,7 +2117,8 @@ async def get_hand_replay(
             'hero': hero_name,
             'streets': streets_data,
             'board': full_board,
-            'results': results
+            'results': results,
+            'hero_gto_analysis': hero_gto_analysis
         }
 
     except HTTPException:

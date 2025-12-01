@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { X, ChevronLeft, ChevronRight, Play, Pause, SkipBack, SkipForward } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Play, Pause, SkipBack, SkipForward, CheckCircle, AlertTriangle, XCircle } from 'lucide-react';
 import type { HandReplayResponse, HandReplayAction } from '../types';
 
 interface HandReplayModalProps {
@@ -346,6 +346,62 @@ const HandReplayModal: React.FC<HandReplayModalProps> = ({ data, onClose }) => {
             />
           ))}
         </div>
+
+        {/* GTO Analysis Panel (Preflop only) */}
+        {currentStreet === 'preflop' && data.hero_gto_analysis && (
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-3 border-b border-blue-200">
+            <div className="flex items-start justify-between gap-4">
+              {/* Hero's Action Assessment */}
+              <div className="flex items-center gap-3">
+                <div className={`p-2 rounded-lg ${
+                  data.hero_gto_analysis.deviation_type === 'correct' ? 'bg-green-100' :
+                  data.hero_gto_analysis.deviation_type === 'suboptimal' ? 'bg-yellow-100' : 'bg-red-100'
+                }`}>
+                  {data.hero_gto_analysis.deviation_type === 'correct' && <CheckCircle className="text-green-600" size={20} />}
+                  {data.hero_gto_analysis.deviation_type === 'suboptimal' && <AlertTriangle className="text-yellow-600" size={20} />}
+                  {data.hero_gto_analysis.deviation_type === 'mistake' && <XCircle className="text-red-600" size={20} />}
+                </div>
+                <div>
+                  <div className="text-sm font-medium text-gray-800">
+                    Hero {data.hero_gto_analysis.hero_action}
+                    {data.hero_gto_analysis.vs_position && (
+                      <span className="text-gray-500 ml-1">vs {data.hero_gto_analysis.vs_position}</span>
+                    )}
+                  </div>
+                  <div className={`text-xs ${
+                    data.hero_gto_analysis.deviation_type === 'correct' ? 'text-green-600' :
+                    data.hero_gto_analysis.deviation_type === 'suboptimal' ? 'text-yellow-600' : 'text-red-600'
+                  }`}>
+                    {data.hero_gto_analysis.deviation_description}
+                  </div>
+                </div>
+              </div>
+
+              {/* GTO Frequencies */}
+              <div className="flex items-center gap-3">
+                <div className="text-xs text-gray-500">GTO:</div>
+                {Object.entries(data.hero_gto_analysis.gto_frequencies)
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([action, freq]) => (
+                    <div
+                      key={action}
+                      className={`px-2 py-1 rounded text-xs font-medium ${
+                        action === data.hero_gto_analysis?.hero_action
+                          ? data.hero_gto_analysis.deviation_type === 'correct'
+                            ? 'bg-green-200 text-green-800 ring-2 ring-green-400'
+                            : data.hero_gto_analysis.deviation_type === 'suboptimal'
+                            ? 'bg-yellow-200 text-yellow-800 ring-2 ring-yellow-400'
+                            : 'bg-red-200 text-red-800 ring-2 ring-red-400'
+                          : 'bg-gray-200 text-gray-700'
+                      }`}
+                    >
+                      {action}: {freq}%
+                    </div>
+                  ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Actions List */}
         <div className="flex-1 overflow-y-auto p-4 bg-white">

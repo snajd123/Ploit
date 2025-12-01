@@ -430,6 +430,17 @@ export interface HandReplayResult {
   showdown: boolean;
 }
 
+export interface HeroGTOAnalysis {
+  scenario: string;
+  vs_position: string | null;
+  hero_action: string;
+  action_frequency: number;
+  gto_frequencies: Record<string, number>;
+  recommended_action: string | null;
+  deviation_type: 'correct' | 'suboptimal' | 'mistake';
+  deviation_description: string;
+}
+
 export interface HandReplayResponse {
   hand_id: number;
   timestamp: string | null;
@@ -446,6 +457,7 @@ export interface HandReplayResponse {
   streets: Record<string, HandReplayStreet>;
   board: string[];
   results: Record<string, HandReplayResult>;
+  hero_gto_analysis: HeroGTOAnalysis | null;
 }
 
 // GTO Scenario Types (Preflop-only)
