@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { TrendingDown, TrendingUp, Phone, AlertTriangle, CheckCircle, ChevronRight, Target, Zap } from 'lucide-react';
+import { TrendingDown, TrendingUp, Phone, AlertTriangle, CheckCircle, ChevronRight, Target, Zap, Info } from 'lucide-react';
 
 // Types
 interface GTOPositionalLeak {
@@ -48,11 +48,19 @@ interface ScenarioSelection {
   vsPosition?: string;
 }
 
+// Insufficient sample info
+interface InsufficientSampleInfo {
+  category: string;
+  count: number;
+  minRequired: number;
+}
+
 interface LeakAnalysisViewProps {
   gtoLeaks: GTOPositionalLeak[];
   statLeaks: StatBasedLeak[];
   totalHands: number;
   onLeakClick?: (selection: ScenarioSelection) => void;
+  insufficientSamples?: InsufficientSampleInfo[];
 }
 
 // Map leak category to scenario type
@@ -326,6 +334,7 @@ const LeakAnalysisView: React.FC<LeakAnalysisViewProps> = ({
   statLeaks,
   totalHands,
   onLeakClick,
+  insufficientSamples = [],
 }) => {
   const [expandedTendency, setExpandedTendency] = useState<TendencyType | null>(null);
 
@@ -487,6 +496,35 @@ const LeakAnalysisView: React.FC<LeakAnalysisViewProps> = ({
           ))}
         </div>
       </div>
+
+      {/* Insufficient Samples Warning */}
+      {insufficientSamples.length > 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-start gap-3">
+            <Info size={20} className="text-blue-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <h4 className="font-medium text-blue-900 mb-1">Insufficient data for some scenarios</h4>
+              <p className="text-sm text-blue-700 mb-2">
+                Some leak categories have been excluded due to insufficient sample size:
+              </p>
+              <ul className="text-sm text-blue-700 space-y-1">
+                {insufficientSamples.map((info, idx) => (
+                  <li key={idx} className="flex items-center gap-2">
+                    <span className="w-2 h-2 bg-blue-400 rounded-full"></span>
+                    <span>
+                      <strong>{info.category}</strong>: {info.count} position{info.count !== 1 ? 's' : ''} excluded
+                      (need {info.minRequired}+ hands per position)
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs text-blue-600 mt-2">
+                Play more hands to unlock these leak categories.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Expanded Tendency Detail */}
       {expandedTendency && expandedLeaks.length > 0 && (

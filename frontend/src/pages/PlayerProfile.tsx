@@ -252,11 +252,25 @@ const getConfidenceTier = (sampleSize: number, thresholds: { min: number; modera
   return 'high';
 };
 
+// Result type for leak extraction
+interface LeakExtractionResult {
+  leaks: GTOPositionalLeak[];
+  insufficientSamples: {
+    category: string;
+    count: number;
+    minRequired: number;
+  }[];
+}
+
 // Extract positional leaks from GTO analysis data (with statistical significance filtering)
-const extractGTOPositionalLeaks = (data: GTOAnalysisResponse): GTOPositionalLeak[] => {
+const extractGTOPositionalLeaks = (data: GTOAnalysisResponse): LeakExtractionResult => {
   const leaks: GTOPositionalLeak[] = [];
+  const insufficientSamples: LeakExtractionResult['insufficientSamples'] = [];
   const MAJOR_THRESHOLD = 15;
   const MODERATE_THRESHOLD = 8;
+
+  // Track insufficient samples by category
+  const insufficientByCategory: Record<string, number> = {};
 
   // Opening ranges (RFI)
   data.opening_ranges?.forEach(row => {
@@ -341,7 +355,11 @@ const extractGTOPositionalLeaks = (data: GTOAnalysisResponse): GTOPositionalLeak
   data.facing_3bet?.forEach(row => {
     const sampleSize = row.sample_size ?? 0;
     const confidence = getConfidenceTier(sampleSize, SAMPLE_THRESHOLDS.facing_3bet);
-    if (!confidence) return;
+    if (!confidence) {
+      // Track insufficient samples for this category
+      insufficientByCategory['Facing 3-Bet'] = (insufficientByCategory['Facing 3-Bet'] || 0) + 1;
+      return;
+    }
 
     const diffs = [
       { action: 'Fold', diff: row.fold_diff, player: row.player_fold, gto: row.gto_fold },
@@ -431,7 +449,25 @@ const extractGTOPositionalLeaks = (data: GTOAnalysisResponse): GTOPositionalLeak
     return Math.abs(b.deviation) - Math.abs(a.deviation);
   });
 
-  return leaks;
+  // Build insufficient samples array
+  const categoryThresholds: Record<string, number> = {
+    'Opening': SAMPLE_THRESHOLDS.rfi.min,
+    'Defense': SAMPLE_THRESHOLDS.defense.min,
+    'Facing 3-Bet': SAMPLE_THRESHOLDS.facing_3bet.min,
+    'Facing 4-Bet': SAMPLE_THRESHOLDS.facing_4bet.min,
+  };
+
+  Object.entries(insufficientByCategory).forEach(([category, count]) => {
+    if (count > 0) {
+      insufficientSamples.push({
+        category,
+        count,
+        minRequired: categoryThresholds[category] || 20,
+      });
+    }
+  });
+
+  return { leaks, insufficientSamples };
 };
 
 type TabId = 'overview' | 'gto' | 'leaks' | 'charts';
@@ -909,11 +945,11 @@ const PlayerProfile = () => {
 
   // Compute filtered GTO positional leaks (with statistical significance)
   const filteredGTOLeaks = useMemo(() => {
-    if (!gtoAnalysis) return { all: [], major: [], moderate: [] };
-    const all = extractGTOPositionalLeaks(gtoAnalysis);
+    if (!gtoAnalysis) return { all: [], major: [], moderate: [], insufficientSamples: [] };
+    const { leaks: all, insufficientSamples } = extractGTOPositionalLeaks(gtoAnalysis);
     const major = all.filter(l => l.severity === 'major');
     const moderate = all.filter(l => l.severity === 'moderate');
-    return { all, major, moderate };
+    return { all, major, moderate, insufficientSamples };
   }, [gtoAnalysis]);
 
   if (isLoading) {
@@ -1252,6 +1288,7 @@ const PlayerProfile = () => {
             statLeaks={leakAnalysis?.leaks || []}
             totalHands={gtoAnalysis?.adherence?.total_hands || player.total_hands || 0}
             onLeakClick={setSelectedScenario}
+            insufficientSamples={filteredGTOLeaks.insufficientSamples}
           />
         )}
 
