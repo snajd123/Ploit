@@ -112,19 +112,6 @@ const tabs: { id: TabId; label: string; icon: React.ElementType }[] = [
   { id: 'charts', label: 'Charts', icon: BarChart3 },
 ];
 
-// Helper to get diff color
-const getDiffColor = (diff: number, threshold: number = 5) => {
-  const absDiff = Math.abs(diff);
-  if (absDiff < threshold) return 'text-green-600';
-  if (absDiff < threshold * 2) return 'text-yellow-600';
-  return 'text-red-600';
-};
-
-// Helper to format diff with sign
-const formatDiff = (diff: number) => {
-  return diff > 0 ? `+${diff.toFixed(1)}%` : `${diff.toFixed(1)}%`;
-};
-
 // Helper function to generate tooltip content for a statistic
 const createStatTooltip = (statDefinitions: Record<string, any>) => (statKey: string, value?: number) => {
   const def = statDefinitions[statKey];
