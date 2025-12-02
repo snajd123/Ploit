@@ -527,16 +527,20 @@ const ScenarioHandsModal = ({
   selection: ScenarioSelection;
 }) => {
   const [selectedHand, setSelectedHand] = useState<string | null>(null);
+  const [selectedHandVsPos, setSelectedHandVsPos] = useState<string | null>(null);
   const [showRangeGrid, setShowRangeGrid] = useState(false);
   const [replayHandId, setReplayHandId] = useState<number | null>(null);
 
+  // For range matrix: use the specific hand's opponent if selected, otherwise use selection's vsPosition
+  const effectiveVsPosition = selectedHandVsPos || selection.vsPosition;
+
   // Fetch GTO range matrix for this scenario
   const { data: rangeMatrix, isLoading: rangeLoading } = useQuery({
-    queryKey: ['rangeMatrix', selection.scenario, selection.position, selection.vsPosition],
+    queryKey: ['rangeMatrix', selection.scenario, selection.position, effectiveVsPosition],
     queryFn: () => api.getGTORangeMatrix(
       selection.scenario,
       selection.position,
-      selection.vsPosition || undefined
+      effectiveVsPosition || undefined
     ),
     enabled: showRangeGrid,
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
@@ -582,9 +586,10 @@ const ScenarioHandsModal = ({
   };
 
   // Handle clicking a hand row to show it in the range grid
-  const handleHandClick = (handCombo: string | null) => {
+  const handleHandClick = (handCombo: string | null, vsPosition?: string | null) => {
     if (handCombo) {
       setSelectedHand(handCombo);
+      setSelectedHandVsPos(vsPosition || null);
       setShowRangeGrid(true);
     }
   };
@@ -684,10 +689,11 @@ const ScenarioHandsModal = ({
               <div className="sticky top-0 bg-gray-50 pb-2 mb-2">
                 <h3 className="text-sm font-semibold text-gray-700 mb-1">
                   GTO Range: {selection.position}
-                  {selection.vsPosition && ` vs ${selection.vsPosition}`}
+                  {effectiveVsPosition && ` vs ${effectiveVsPosition}`}
+                  {!effectiveVsPosition && selection.scenario !== 'opening' && ' (aggregated)'}
                 </h3>
                 <p className="text-xs text-gray-500">
-                  Click a hand in the table to highlight it
+                  {selectedHandVsPos ? `Showing ${selection.position} vs ${selectedHandVsPos} ranges` : 'Click a hand in the table to highlight it'}
                 </p>
               </div>
               {rangeLoading ? (
@@ -741,7 +747,7 @@ const ScenarioHandsModal = ({
                         className={`border-b border-gray-100 cursor-pointer transition-colors ${
                           isSelected ? 'bg-yellow-100 ring-2 ring-yellow-400' : `hover:bg-gray-50 ${devStyle.bg}`
                         }`}
-                        onClick={() => handleHandClick(hand.hand_combo)}
+                        onClick={() => handleHandClick(hand.hand_combo, hand.vs_position)}
                       >
                         {/* Hole Cards */}
                         <td className="py-3 px-2">
