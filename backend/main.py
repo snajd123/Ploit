@@ -3087,11 +3087,26 @@ async def get_hand_replay(
 
                         if gto_freqs:
                             # Get frequency for hero's action
-                            action_freq = gto_freqs.get(hero_gto_action, 0)
+                            # For opening scenarios, 'open' maps to 'raise' + 'limp' (SB has separate actions)
+                            if hero_gto_action == 'open' and gto_scenario == 'opening':
+                                action_freq = gto_freqs.get('open', 0) + gto_freqs.get('raise', 0) + gto_freqs.get('limp', 0)
+                            else:
+                                action_freq = gto_freqs.get(hero_gto_action, 0)
 
                             # Find recommended action (highest frequency)
-                            recommended = max(gto_freqs.keys(), key=lambda k: gto_freqs[k]) if gto_freqs else None
-                            recommended_freq = gto_freqs.get(recommended, 0) if recommended else 0
+                            # For opening, combine raise+limp as "open" for recommendation
+                            if gto_scenario == 'opening' and ('raise' in gto_freqs or 'limp' in gto_freqs):
+                                combined_open = gto_freqs.get('open', 0) + gto_freqs.get('raise', 0) + gto_freqs.get('limp', 0)
+                                combined_fold = gto_freqs.get('fold', 0)
+                                if combined_open > combined_fold:
+                                    recommended = 'open'
+                                    recommended_freq = combined_open
+                                else:
+                                    recommended = 'fold'
+                                    recommended_freq = combined_fold
+                            else:
+                                recommended = max(gto_freqs.keys(), key=lambda k: gto_freqs[k]) if gto_freqs else None
+                                recommended_freq = gto_freqs.get(recommended, 0) if recommended else 0
 
                             # Determine deviation assessment (aligned with classify_deviation)
                             # - Correct: >= 40%
