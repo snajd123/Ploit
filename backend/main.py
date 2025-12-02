@@ -2208,7 +2208,8 @@ async def get_hand_replay(
             'streets': streets_data,
             'board': full_board,
             'results': results,
-            'hero_gto_analysis': hero_gto_analysis
+            'hero_gto_analysis': hero_gto_analysis,
+            'raw_hand_text': raw_result.raw_hand_text
         }
 
     except HTTPException:

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { X, ChevronLeft, ChevronRight, Play, Pause, SkipBack, SkipForward, CheckCircle, AlertTriangle, XCircle } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Play, Pause, SkipBack, SkipForward, CheckCircle, AlertTriangle, XCircle, FileText } from 'lucide-react';
 import type { HandReplayResponse, HandReplayAction } from '../types';
 
 interface HandReplayModalProps {
@@ -183,6 +183,7 @@ const HandReplayModal: React.FC<HandReplayModalProps> = ({ data, onClose }) => {
   const [currentStreet, setCurrentStreet] = useState(availableStreets[0] || 'preflop');
   const [currentActionIndex, setCurrentActionIndex] = useState(-1); // -1 means show all
   const [isPlaying, setIsPlaying] = useState(false);
+  const [showRawText, setShowRawText] = useState(false);
 
   // Get player positions map
   const playerPositions = useMemo(() => {
@@ -312,14 +313,37 @@ const HandReplayModal: React.FC<HandReplayModalProps> = ({ data, onClose }) => {
               {data.timestamp && ` | ${new Date(data.timestamp).toLocaleString()}`}
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="text-white/80 hover:text-white transition-colors"
-          >
-            <X size={24} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowRawText(!showRawText)}
+              className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                showRawText
+                  ? 'bg-white text-emerald-700'
+                  : 'bg-emerald-500/30 text-white hover:bg-emerald-500/50'
+              }`}
+              title="Show raw hand history"
+            >
+              <FileText size={16} />
+              Raw
+            </button>
+            <button
+              onClick={onClose}
+              className="text-white/80 hover:text-white transition-colors"
+            >
+              <X size={24} />
+            </button>
+          </div>
         </div>
 
+        {/* Raw Hand Text Panel */}
+        {showRawText ? (
+          <div className="flex-1 overflow-auto bg-gray-900 p-4">
+            <pre className="text-green-400 font-mono text-xs whitespace-pre-wrap leading-relaxed">
+              {data.raw_hand_text || 'No raw hand text available'}
+            </pre>
+          </div>
+        ) : (
+          <>
         {/* Hero Cards & Board */}
         <div className="bg-gradient-to-b from-green-800 to-green-900 px-6 py-4">
           <div className="flex items-center justify-between">
@@ -550,6 +574,8 @@ const HandReplayModal: React.FC<HandReplayModalProps> = ({ data, onClose }) => {
         <div className="px-6 py-2 bg-gray-100 border-t border-gray-200 text-xs text-gray-500">
           Keyboard: <span className="font-mono">←/→</span> navigate actions | <span className="font-mono">1-4</span> jump to street | <span className="font-mono">Space</span> play/pause
         </div>
+          </>
+        )}
       </div>
     </div>
   );

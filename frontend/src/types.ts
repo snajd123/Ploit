@@ -458,6 +458,7 @@ export interface HandReplayResponse {
   board: string[];
   results: Record<string, HandReplayResult>;
   hero_gto_analysis: HeroGTOAnalysis | null;
+  raw_hand_text: string | null;
 }
 
 // GTO Scenario Types (Preflop-only)
