@@ -897,22 +897,26 @@ async def get_ai_improvement_advice(
         # Build prompt for AI enhancement with REAL data
         deviation = player_value - gto_value
 
+        # Determine actual direction from the values (don't trust frontend blindly)
+        # For defense/facing scenarios: player < GTO means too tight (folding too much)
+        actual_direction = "too_tight" if player_value < gto_value else "too_loose"
+
         # Determine action context based on leak
         if leak_category == "opening":
             action_context = "opening/raising first in"
-            if leak_direction == "too_tight":
+            if actual_direction == "too_tight":
                 adjustment = "ADD more hands to your opening range"
             else:
                 adjustment = "REMOVE marginal hands from your opening range"
         elif leak_category == "defense":
             action_context = "defending vs opens (calling or 3-betting)"
-            if leak_direction == "too_tight":
+            if actual_direction == "too_tight":
                 adjustment = "DEFEND more hands - you're folding too much"
             else:
                 adjustment = "FOLD more hands - you're defending too wide"
         elif leak_category == "facing_3bet":
             action_context = "responding to 3-bets (calling or 4-betting)"
-            if leak_direction == "too_tight":
+            if actual_direction == "too_tight":
                 adjustment = "CONTINUE more vs 3-bets - add calls and 4-bet bluffs"
             else:
                 adjustment = "FOLD more to 3-bets - you're continuing too wide"
@@ -961,7 +965,7 @@ LEAK DETAILS:
 - Scenario: {leak_category.replace('_', ' ').title()} from {position}{f' vs {vs_position}' if vs_position else ''}
 - Player's {action_context} frequency: {player_value:.1f}%
 - GTO optimal frequency: {gto_value:.1f}%
-- Deviation: {deviation:+.1f}% ({leak_direction.replace('_', ' ')})
+- Deviation: {deviation:+.1f}% ({actual_direction.replace('_', ' ')})
 - Sample size: {sample_size} hands
 
 The player needs to {adjustment}.
