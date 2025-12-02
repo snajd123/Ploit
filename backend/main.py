@@ -1044,13 +1044,9 @@ async def get_ai_improvement_advice(
                     cat_name = category.replace('_', ' ').title()
                     analysis_text += f"\n{cat_name}: {', '.join(hands)}"
 
-            # MISSING FROM RANGE - GTO defends but no sample data
-            if hba.get('no_data_should_defend'):
-                no_data = hba['no_data_should_defend']
-                analysis_text += "\n\n=== HANDS MISSING FROM YOUR RANGE ===\n"
-                analysis_text += "(GTO strongly defends these but you have no sample - likely overfolding)\n"
-                missing_list = [f"{h['hand']}({h['gto']}%)" for h in no_data]
-                analysis_text += ', '.join(missing_list)
+            # NOTE: We intentionally omit "hands missing from range" because no sample
+            # doesn't mean folding - the player may never have been dealt those cards.
+            # We can only analyze hands we actually observed.
 
             # CORRECT PLAYS - Summarized
             correct_d = hba.get('correct_defends', [])
