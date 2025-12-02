@@ -808,10 +808,12 @@ async def get_ai_improvement_advice(
                 # 2. Sum call + 3bet/4bet within each opponent position
                 # 3. Average across opponent positions if no specific vs_position
                 if leak_category == 'opening':
+                    # Include all opening actions (open, raise, limp) to handle SB raise/limp scenarios
                     gto_query = text("""
-                        SELECT gf.hand, gf.frequency * 100 FROM gto_frequencies gf
+                        SELECT gf.hand, SUM(gf.frequency * 100) as freq FROM gto_frequencies gf
                         JOIN gto_scenarios gs ON gf.scenario_id = gs.scenario_id
-                        WHERE gs.category = 'opening' AND gs.position = :position AND gs.action = 'open'
+                        WHERE gs.category = 'opening' AND gs.position = :position
+                        GROUP BY gf.hand
                     """)
                     gto_params = {"position": position}
                     gto_result = db.execute(gto_query, gto_params)
@@ -1564,9 +1566,11 @@ async def get_player_gto_analysis(
         opening_rows = [dict(row._mapping) for row in opening_result]
 
         # Get GTO opening frequencies
+        # SUM is needed because SB has separate raise/limp scenarios that should be combined
         gto_opening_result = db.execute(text("""
-            SELECT position, gto_aggregate_freq
+            SELECT position, SUM(gto_aggregate_freq) as gto_aggregate_freq
             FROM gto_scenarios WHERE category = 'opening'
+            GROUP BY position
         """))
         gto_opening = {row[0]: float(row[1]) * 100 if row[1] else 0 for row in gto_opening_result}
 

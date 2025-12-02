@@ -445,14 +445,18 @@ async def get_optimal_ranges(
             GTOScenario.category == 'opening'
         ).all()
 
-        positional_data = []
+        # Aggregate by position (SB has separate raise/limp scenarios)
+        position_freqs: Dict[str, float] = {}
         for scenario in opening_scenarios:
             pos = scenario.position
             rfi_freq = float(scenario.gto_aggregate_freq) * 100 if scenario.gto_aggregate_freq else 0
+            position_freqs[pos] = position_freqs.get(pos, 0) + rfi_freq
 
+        positional_data = []
+        for pos, freq in position_freqs.items():
             positional_data.append(PositionalOptimalRange(
                 position=pos,
-                vpip_pct=round(rfi_freq, 1),
+                vpip_pct=round(freq, 1),
             ))
 
         position_order = {'UTG': 1, 'MP': 2, 'CO': 3, 'BTN': 4, 'SB': 5, 'BB': 6}

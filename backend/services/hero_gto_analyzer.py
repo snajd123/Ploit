@@ -177,29 +177,28 @@ class HeroGTOAnalyzer:
         position = hand['position']
         vpip = hand['vpip']
 
-        # Find opening scenario for this position
+        # Find opening scenario(s) for this position
+        # SB has separate raise/limp scenarios that need to be combined
         query = text("""
-            SELECT scenario_id
+            SELECT scenario_id, action
             FROM gto_scenarios
             WHERE category = 'opening'
             AND position = :position
-            LIMIT 1
         """)
 
         result = self.db.execute(query, {"position": position})
-        row = result.first()
+        rows = result.fetchall()
 
-        if not row:
+        if not rows:
             return None
 
-        scenario_id = row[0]
-
-        # Get GTO frequency for this hand
-        gto_freq = self._get_hand_frequency(scenario_id, normalized_hand)
-
-        if gto_freq is None:
-            # Hand not in database = 0% frequency
-            gto_freq = 0.0
+        # Sum frequencies across all opening actions (raise + limp for SB)
+        gto_freq = 0.0
+        for row in rows:
+            scenario_id = row[0]
+            freq = self._get_hand_frequency(scenario_id, normalized_hand)
+            if freq is not None:
+                gto_freq += freq
 
         # Determine mistake
         # GTO says open with frequency > 50%

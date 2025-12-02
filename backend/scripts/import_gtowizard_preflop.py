@@ -75,8 +75,15 @@ def parse_scenario_name(scenario_name: str) -> Dict:
         'street': 'preflop'
     }
 
-    # Opening ranges
-    if scenario_name.endswith('_open'):
+    # Opening ranges - includes SB raise/limp variants
+    # Check more specific patterns first before generic _open
+    if scenario_name.endswith('_open_raise'):
+        result['category'] = 'opening'
+        result['action'] = 'raise'
+    elif scenario_name.endswith('_open_limp'):
+        result['category'] = 'opening'
+        result['action'] = 'limp'
+    elif scenario_name.endswith('_open'):
         result['category'] = 'opening'
         result['action'] = 'open'
 
@@ -219,6 +226,10 @@ def create_description(scenario_name: str, metadata: Dict) -> str:
     cat = metadata['category']
 
     if cat == 'opening':
+        if action == 'raise':
+            return f"{pos} opens with raise"
+        elif action == 'limp':
+            return f"{pos} opens with limp"
         return f"{pos} opens (RFI)"
     elif cat == 'defense':
         return f"{pos} vs {opp} open: {action}"
