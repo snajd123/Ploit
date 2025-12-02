@@ -251,7 +251,8 @@ const PriorityFix: React.FC<{
   leak: GTOPositionalLeak | (StatBasedLeak & { isStatBased: true });
   evImpact: number;
   onGetAdvice?: (leak: GTOPositionalLeak | (StatBasedLeak & { isStatBased: true })) => void;
-}> = ({ rank, leak, evImpact, onGetAdvice }) => {
+  onViewHands?: (leak: GTOPositionalLeak) => void;
+}> = ({ rank, leak, evImpact, onGetAdvice, onViewHands }) => {
   const isStatBased = 'isStatBased' in leak;
   const isMajor = isStatBased
     ? (leak as StatBasedLeak).severity === 'major' || (leak as StatBasedLeak).severity === 'critical'
@@ -282,18 +283,35 @@ const PriorityFix: React.FC<{
           <span className="text-sm font-bold text-red-600">~{evImpact.toFixed(1)}</span>
           <span className="text-xs text-gray-500 block">BB/100</span>
         </div>
-        {!isStatBased && onGetAdvice && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onGetAdvice(leak);
-            }}
-            className="flex items-center gap-1 px-2 py-1 bg-purple-100 hover:bg-purple-200 text-purple-700 text-xs font-medium rounded-lg transition-colors"
-            title="Get improvement advice"
-          >
-            <Lightbulb size={12} />
-            Fix
-          </button>
+        {!isStatBased && (
+          <div className="flex items-center gap-1">
+            {onViewHands && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onViewHands(leak as GTOPositionalLeak);
+                }}
+                className="flex items-center gap-1 px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 text-xs font-medium rounded-lg transition-colors"
+                title="View hands in replayer"
+              >
+                <ChevronRight size={12} />
+                Hands
+              </button>
+            )}
+            {onGetAdvice && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onGetAdvice(leak);
+                }}
+                className="flex items-center gap-1 px-2 py-1 bg-purple-100 hover:bg-purple-200 text-purple-700 text-xs font-medium rounded-lg transition-colors"
+                title="Get improvement advice"
+              >
+                <Lightbulb size={12} />
+                Fix
+              </button>
+            )}
+          </div>
         )}
       </div>
     </div>
@@ -553,15 +571,32 @@ const LeakAnalysisView: React.FC<LeakAnalysisViewProps> = ({
 
           {priorityFixes.length > 0 ? (
             <div className="space-y-2">
-              {priorityFixes.map((fix, idx) => (
-                <PriorityFix
-                  key={idx}
-                  rank={idx + 1}
-                  leak={fix.leak}
-                  evImpact={fix.evImpact}
-                  onGetAdvice={handleGetAdvice}
-                />
-              ))}
+              {priorityFixes.map((fix, idx) => {
+                // Create handler for viewing hands (only for GTO leaks, not stat-based)
+                const handleViewHands = !('isStatBased' in fix.leak) && onLeakClick
+                  ? (leak: GTOPositionalLeak) => {
+                      const scenario = mapCategoryToScenario(leak.category);
+                      if (scenario) {
+                        onLeakClick({
+                          scenario,
+                          position: leak.position,
+                          vsPosition: leak.vsPosition,
+                        });
+                      }
+                    }
+                  : undefined;
+
+                return (
+                  <PriorityFix
+                    key={idx}
+                    rank={idx + 1}
+                    leak={fix.leak}
+                    evImpact={fix.evImpact}
+                    onGetAdvice={handleGetAdvice}
+                    onViewHands={handleViewHands}
+                  />
+                );
+              })}
             </div>
           ) : (
             <div className="text-center py-6 text-gray-500">
