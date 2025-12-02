@@ -999,10 +999,19 @@ async def get_ai_improvement_advice(
                 logger.warning(f"Could not fetch hand deviations: {e}")
 
         # Build prompt for AI enhancement with REAL data
+        # IMPORTANT: Frontend may pass FOLD rates for defense/facing scenarios
+        # (e.g., gto_value=85% meaning GTO folds 85%). We need to convert to DEFEND rates.
+        # Detection: if gto_value > 50% for defense scenarios, it's likely a fold rate
+        if leak_category in ("defense", "facing_3bet", "facing_4bet") and gto_value > 50:
+            # Convert fold rates to defend rates
+            player_value = 100 - player_value
+            gto_value = 100 - gto_value
+            logger.info(f"Converted fold rates to defend rates: player={player_value:.1f}%, gto={gto_value:.1f}%")
+
         deviation = player_value - gto_value
 
-        # Determine actual direction from the values (don't trust frontend blindly)
-        # For defense/facing scenarios: player < GTO means too tight (folding too much)
+        # Determine actual direction from the values
+        # For all scenarios: player < GTO means too tight, player > GTO means too loose
         actual_direction = "too_tight" if player_value < gto_value else "too_loose"
 
         # Determine action context based on leak
