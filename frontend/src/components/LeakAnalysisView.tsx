@@ -96,10 +96,14 @@ const categorizeLeak = (leak: GTOPositionalLeak): TendencyType | null => {
   // Negative deviation = player does LESS than GTO
 
   if (action === 'Fold') {
-    return deviation > 0 ? 'fold_too_much' : null; // Over-folding
+    // Over-folding = folding too much = too tight
+    // Under-folding = not folding enough = defending too much = too loose
+    return deviation > 0 ? 'fold_too_much' : 'call_too_much';
   }
   if (action === 'Call') {
-    return deviation > 0 ? 'call_too_much' : null; // Over-calling
+    // Over-calling = calling too much
+    // Under-calling = not calling enough = might be folding or raising instead
+    return deviation > 0 ? 'call_too_much' : 'fold_too_much';
   }
   if (action === 'RFI' || action === '3-Bet' || action === '4-Bet' || action === '5-Bet') {
     if (deviation > 0) return 'too_aggressive'; // Over-raising
