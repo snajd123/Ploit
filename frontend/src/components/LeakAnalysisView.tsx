@@ -1,5 +1,18 @@
 import React, { useState, useMemo } from 'react';
-import { TrendingDown, TrendingUp, Phone, AlertTriangle, CheckCircle, ChevronRight, Target, Zap } from 'lucide-react';
+import { TrendingDown, TrendingUp, Phone, AlertTriangle, CheckCircle, ChevronRight, Target, Zap, Lightbulb } from 'lucide-react';
+import ImprovementAdviceModal from './ImprovementAdviceModal';
+
+// Advice modal state
+interface AdviceModalState {
+  isOpen: boolean;
+  leakCategory: string;
+  leakDirection: string;
+  position: string;
+  vsPosition?: string | null;
+  playerValue: number;
+  gtoValue: number;
+  sampleSize: number;
+}
 
 // Types
 interface GTOPositionalLeak {
@@ -210,12 +223,34 @@ const TendencyCard: React.FC<{
   );
 };
 
+// Helper function to map category to leak category
+const mapCategoryToLeakCategory = (category: string): string => {
+  const mapping: Record<string, string> = {
+    'Opening': 'opening',
+    'Defense': 'defense',
+    'Facing 3-Bet': 'facing_3bet',
+    'Facing 4-Bet': 'facing_4bet',
+  };
+  return mapping[category] || 'opening';
+};
+
+// Helper function to determine leak direction
+const getLeakDirection = (deviation: number, action: string): string => {
+  // For fold actions, positive deviation means folding too much
+  if (action === 'Fold') {
+    return deviation > 0 ? 'too_tight' : 'too_loose';
+  }
+  // For aggressive actions (raise, 3bet, etc.), positive deviation means too aggressive
+  return deviation > 0 ? 'too_loose' : 'too_tight';
+};
+
 // Priority fix item
 const PriorityFix: React.FC<{
   rank: number;
   leak: GTOPositionalLeak | (StatBasedLeak & { isStatBased: true });
   evImpact: number;
-}> = ({ rank, leak, evImpact }) => {
+  onGetAdvice?: (leak: GTOPositionalLeak | (StatBasedLeak & { isStatBased: true })) => void;
+}> = ({ rank, leak, evImpact, onGetAdvice }) => {
   const isStatBased = 'isStatBased' in leak;
   const isMajor = isStatBased
     ? (leak as StatBasedLeak).severity === 'major' || (leak as StatBasedLeak).severity === 'critical'
@@ -226,7 +261,7 @@ const PriorityFix: React.FC<{
     : `${leak.action} in ${leak.position}${leak.vsPosition ? ` vs ${leak.vsPosition}` : ''}: ${leak.playerValue.toFixed(0)}% vs ${leak.gtoValue.toFixed(0)}% GTO`;
 
   return (
-    <div className="flex items-start gap-3 p-3 bg-white rounded-lg border border-gray-200">
+    <div className="flex items-start gap-3 p-3 bg-white rounded-lg border border-gray-200 hover:border-purple-300 transition-colors">
       <span className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white ${
         isMajor ? 'bg-red-500' : 'bg-yellow-500'
       }`}>
@@ -241,9 +276,24 @@ const PriorityFix: React.FC<{
           }
         </p>
       </div>
-      <div className="text-right">
-        <span className="text-sm font-bold text-red-600">~{evImpact.toFixed(1)}</span>
-        <span className="text-xs text-gray-500 block">BB/100</span>
+      <div className="flex items-center gap-3">
+        <div className="text-right">
+          <span className="text-sm font-bold text-red-600">~{evImpact.toFixed(1)}</span>
+          <span className="text-xs text-gray-500 block">BB/100</span>
+        </div>
+        {!isStatBased && onGetAdvice && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onGetAdvice(leak);
+            }}
+            className="flex items-center gap-1 px-2 py-1 bg-purple-100 hover:bg-purple-200 text-purple-700 text-xs font-medium rounded-lg transition-colors"
+            title="Get improvement advice"
+          >
+            <Lightbulb size={12} />
+            Fix
+          </button>
+        )}
       </div>
     </div>
   );
@@ -253,7 +303,8 @@ const PriorityFix: React.FC<{
 const LeakDetailRow: React.FC<{
   leak: GTOPositionalLeak;
   onViewHands?: () => void;
-}> = ({ leak, onViewHands }) => {
+  onGetAdvice?: () => void;
+}> = ({ leak, onViewHands, onGetAdvice }) => {
   const isMajor = leak.severity === 'major';
   const absDeviation = Math.abs(leak.deviation);
 
@@ -314,6 +365,15 @@ const LeakDetailRow: React.FC<{
         </span>
         <div className="flex items-center gap-2">
           <span className="text-gray-500">{leak.category}</span>
+          {onGetAdvice && (
+            <button
+              onClick={onGetAdvice}
+              className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded transition-colors"
+            >
+              <Lightbulb size={12} />
+              How to Fix
+            </button>
+          )}
           {onViewHands && (
             <button
               onClick={onViewHands}
@@ -337,6 +397,40 @@ const LeakAnalysisView: React.FC<LeakAnalysisViewProps> = ({
   insufficientSamples = [],
 }) => {
   const [expandedTendency, setExpandedTendency] = useState<TendencyType | null>(null);
+  const [adviceModal, setAdviceModal] = useState<AdviceModalState>({
+    isOpen: false,
+    leakCategory: '',
+    leakDirection: '',
+    position: '',
+    vsPosition: null,
+    playerValue: 0,
+    gtoValue: 0,
+    sampleSize: 0
+  });
+
+  // Handle opening the advice modal
+  const handleGetAdvice = (leak: GTOPositionalLeak | (StatBasedLeak & { isStatBased: true })) => {
+    if ('isStatBased' in leak) {
+      // Stat-based leaks not supported yet for advice
+      return;
+    }
+
+    const gtoLeak = leak as GTOPositionalLeak;
+    setAdviceModal({
+      isOpen: true,
+      leakCategory: mapCategoryToLeakCategory(gtoLeak.category),
+      leakDirection: getLeakDirection(gtoLeak.deviation, gtoLeak.action),
+      position: gtoLeak.position,
+      vsPosition: gtoLeak.vsPosition || null,
+      playerValue: gtoLeak.playerValue,
+      gtoValue: gtoLeak.gtoValue,
+      sampleSize: gtoLeak.sampleSize
+    });
+  };
+
+  const closeAdviceModal = () => {
+    setAdviceModal(prev => ({ ...prev, isOpen: false }));
+  };
 
   // Create tendency buckets
   const tendencyBuckets = useMemo((): TendencyBucket[] => {
@@ -463,6 +557,7 @@ const LeakAnalysisView: React.FC<LeakAnalysisViewProps> = ({
                   rank={idx + 1}
                   leak={fix.leak}
                   evImpact={fix.evImpact}
+                  onGetAdvice={handleGetAdvice}
                 />
               ))}
             </div>
@@ -536,6 +631,7 @@ const LeakAnalysisView: React.FC<LeakAnalysisViewProps> = ({
                     key={idx}
                     leak={leak}
                     onViewHands={handleViewHands}
+                    onGetAdvice={() => handleGetAdvice(leak)}
                   />
                 );
               })
@@ -576,6 +672,19 @@ const LeakAnalysisView: React.FC<LeakAnalysisViewProps> = ({
         Only showing statistically significant leaks.
         BB/100 estimates are approximate and may vary based on opponent pool.
       </p>
+
+      {/* Improvement Advice Modal */}
+      <ImprovementAdviceModal
+        isOpen={adviceModal.isOpen}
+        onClose={closeAdviceModal}
+        leakCategory={adviceModal.leakCategory}
+        leakDirection={adviceModal.leakDirection}
+        position={adviceModal.position}
+        vsPosition={adviceModal.vsPosition}
+        playerValue={adviceModal.playerValue}
+        gtoValue={adviceModal.gtoValue}
+        sampleSize={adviceModal.sampleSize}
+      />
     </div>
   );
 };

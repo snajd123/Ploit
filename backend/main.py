@@ -592,6 +592,220 @@ async def get_player_leaks(
 
 
 @app.get(
+    "/api/improvement-advice",
+    response_model=Dict[str, Any],
+    tags=["Analysis"],
+    summary="Get improvement advice for a leak",
+    description="Get tiered improvement advice (quick fix, detailed, study resources) for a specific leak"
+)
+async def get_improvement_advice_endpoint(
+    leak_category: str = Query(..., description="Leak category: opening, defense, facing_3bet, facing_4bet"),
+    leak_direction: str = Query(..., description="Leak direction: too_tight or too_loose"),
+    position: str = Query(..., description="Player position: UTG, MP, CO, BTN, SB, BB"),
+    vs_position: Optional[str] = Query(None, description="Opponent position for defense/facing scenarios"),
+    player_value: float = Query(..., description="Player's frequency for this action"),
+    gto_value: float = Query(..., description="GTO frequency for this action"),
+    sample_size: int = Query(100, description="Number of hands in sample"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get tiered improvement advice for a specific leak.
+
+    Returns:
+    - Tier 1: Quick fix (2-3 hands to add/remove, simple heuristic)
+    - Tier 2: Detailed explanation (range construction, hand categories)
+    - Tier 3: Study resources (concepts, solver scenarios, exercises)
+    """
+    from backend.services.improvement_advice import get_improvement_advice, advice_to_dict
+
+    try:
+        # Validate inputs
+        valid_categories = ["opening", "defense", "facing_3bet", "facing_4bet"]
+        valid_directions = ["too_tight", "too_loose"]
+        valid_positions = ["UTG", "MP", "HJ", "CO", "BTN", "SB", "BB"]
+
+        if leak_category not in valid_categories:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid leak_category. Must be one of: {valid_categories}"
+            )
+
+        if leak_direction not in valid_directions:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid leak_direction. Must be one of: {valid_directions}"
+            )
+
+        position = position.upper()
+        if position not in valid_positions:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid position. Must be one of: {valid_positions}"
+            )
+
+        # Get the advice
+        advice = get_improvement_advice(
+            leak_category=leak_category,
+            leak_direction=leak_direction,
+            position=position,
+            vs_position=vs_position.upper() if vs_position else None,
+            player_value=player_value,
+            gto_value=gto_value,
+            sample_size=sample_size
+        )
+
+        return advice_to_dict(advice)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting improvement advice: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error generating improvement advice"
+        )
+
+
+@app.post(
+    "/api/improvement-advice/ai",
+    response_model=Dict[str, Any],
+    tags=["Analysis"],
+    summary="Get AI-enhanced improvement advice",
+    description="Get personalized AI-generated improvement advice based on player's specific patterns"
+)
+async def get_ai_improvement_advice(
+    request: Dict[str, Any],
+    db: Session = Depends(get_db)
+):
+    """
+    Get AI-enhanced improvement advice for a specific leak.
+
+    Request body:
+    - leak_category: opening, defense, facing_3bet, facing_4bet
+    - leak_direction: too_tight or too_loose
+    - position: Player position
+    - vs_position: Opponent position (optional)
+    - player_value: Player's frequency
+    - gto_value: GTO frequency
+    - sample_size: Number of hands
+    - player_name: Optional player name for personalized analysis
+    - additional_context: Optional additional context about the player
+
+    Returns AI-generated personalized advice including:
+    - Specific hand recommendations based on patterns
+    - Personalized study plan
+    - Common mistakes analysis
+    """
+    from backend.services.improvement_advice import get_improvement_advice, advice_to_dict
+    from backend.services.claude_service import ClaudeService
+
+    try:
+        # Extract parameters
+        leak_category = request.get("leak_category")
+        leak_direction = request.get("leak_direction")
+        position = request.get("position", "").upper()
+        vs_position = request.get("vs_position")
+        player_value = request.get("player_value", 0)
+        gto_value = request.get("gto_value", 0)
+        sample_size = request.get("sample_size", 100)
+        player_name = request.get("player_name")
+        additional_context = request.get("additional_context", "")
+
+        # First get the static advice
+        static_advice = get_improvement_advice(
+            leak_category=leak_category,
+            leak_direction=leak_direction,
+            position=position,
+            vs_position=vs_position.upper() if vs_position else None,
+            player_value=player_value,
+            gto_value=gto_value,
+            sample_size=sample_size
+        )
+        static_dict = advice_to_dict(static_advice)
+
+        # Build prompt for AI enhancement
+        deviation = player_value - gto_value
+        prompt = f"""Analyze this poker leak and provide personalized improvement advice.
+
+LEAK DETAILS:
+- Category: {leak_category}
+- Position: {position}
+- Vs Position: {vs_position or 'N/A'}
+- Player Frequency: {player_value:.1f}%
+- GTO Frequency: {gto_value:.1f}%
+- Deviation: {deviation:+.1f}%
+- Direction: {leak_direction.replace('_', ' ')}
+- Sample Size: {sample_size} hands
+
+{f"Player: {player_name}" if player_name else ""}
+{f"Additional Context: {additional_context}" if additional_context else ""}
+
+Based on this leak, provide:
+
+1. **SPECIFIC HAND RECOMMENDATIONS** (most important):
+   - List 5-8 specific hands to add or remove from this range
+   - Explain WHY each hand should be adjusted
+   - Prioritize the hands by impact
+
+2. **PATTERN ANALYSIS**:
+   - What does this deviation suggest about the player's tendencies?
+   - What other leaks might correlate with this one?
+
+3. **PERSONALIZED STUDY PLAN**:
+   - 3 specific exercises to fix this leak
+   - What to focus on in their next session
+
+4. **QUICK ADJUSTMENT**:
+   - One simple rule they can apply immediately
+
+Format your response as JSON with keys: hand_recommendations, pattern_analysis, study_plan, quick_adjustment"""
+
+        # Call Claude for AI-enhanced advice
+        claude_service = ClaudeService(db)
+        ai_response = claude_service.query(prompt)
+
+        # Parse AI response
+        ai_advice = {}
+        if ai_response.get("success"):
+            response_text = ai_response.get("response", "")
+            # Try to extract JSON from response
+            import json
+            import re
+
+            # Try to find JSON block in response
+            json_match = re.search(r'\{[\s\S]*\}', response_text)
+            if json_match:
+                try:
+                    ai_advice = json.loads(json_match.group())
+                except json.JSONDecodeError:
+                    # If JSON parsing fails, use the raw response
+                    ai_advice = {"raw_advice": response_text}
+            else:
+                ai_advice = {"raw_advice": response_text}
+
+        # Combine static and AI advice
+        result = {
+            **static_dict,
+            "ai_enhanced": {
+                "hand_recommendations": ai_advice.get("hand_recommendations", []),
+                "pattern_analysis": ai_advice.get("pattern_analysis", ""),
+                "study_plan": ai_advice.get("study_plan", []),
+                "quick_adjustment": ai_advice.get("quick_adjustment", ""),
+                "raw_response": ai_advice.get("raw_advice") if "raw_advice" in ai_advice else None
+            }
+        }
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error getting AI improvement advice: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error generating AI improvement advice"
+        )
+
+
+@app.get(
     "/api/players/{player_name}/gto-analysis",
     response_model=Dict[str, Any],
     tags=["Players"],
