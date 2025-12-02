@@ -1772,8 +1772,24 @@ async def get_scenario_hands(
                 # O(1) lookup from pre-built table
                 hand_specific_gto = gto_lookup.get((hand_combo, actual_vs_pos))
 
-            # Use hand-specific GTO if available, otherwise fall back to aggregate
-            effective_gto_freqs = hand_specific_gto if hand_specific_gto else gto_freqs
+            # Determine effective GTO frequencies
+            if hand_specific_gto:
+                # Hand found in GTO data - use those frequencies
+                # For opening scenarios, add implied fold frequency (100 - open - limp)
+                if scenario == 'opening':
+                    open_freq = hand_specific_gto.get('open', 0)
+                    limp_freq = hand_specific_gto.get('limp', 0)
+                    fold_freq = max(0, 100.0 - open_freq - limp_freq)
+                    effective_gto_freqs = {'open': open_freq, 'fold': fold_freq, 'limp': limp_freq}
+                else:
+                    effective_gto_freqs = hand_specific_gto
+            elif scenario == 'opening' and hand_combo and hand_combo not in ['Unknown', None]:
+                # Opening scenario: hand NOT in GTO data means GTO never opens it
+                # This is correct - GTO only stores hands it opens, absence = fold
+                effective_gto_freqs = {'fold': 100.0, 'open': 0.0, 'limp': 0.0}
+            else:
+                # Other scenarios or unknown hand: fall back to aggregate
+                effective_gto_freqs = gto_freqs
 
             # Get GTO frequency for the action taken
             action_freq = effective_gto_freqs.get(player_action, 0)
