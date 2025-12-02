@@ -927,6 +927,12 @@ async def get_ai_improvement_advice(
                         if gto_freq >= 50:  # GTO strongly defends
                             no_data_should_defend.append({"hand": combo, "gto": round(gto_freq)})
 
+                # Also check player hands NOT in GTO - these are overcalls (GTO folds 100%)
+                for combo, pd in player_data.items():
+                    if combo not in gto_freqs and pd["freq"] >= 50:
+                        # Player defends a hand GTO doesn't play at all
+                        overcalls.append({"hand": combo, "gto": 0, "action": pd["action"]})
+
                 # Sort leaks by GTO frequency (biggest misses first)
                 overfolds.sort(key=lambda x: x["gto"], reverse=True)
                 overcalls.sort(key=lambda x: x["gto"])  # Lowest GTO first (worst overcalls)
@@ -1064,6 +1070,15 @@ async def get_ai_improvement_advice(
             analysis_text += f"\n\n=== SUMMARY ===\n"
             analysis_text += f"Total leaks: {total_overfolds} overfolds, {total_overcalls} overcalls\n"
             analysis_text += f"Hands analyzed: {hba.get('total_player_hands', 0)} player / {hba.get('total_gto_hands', 0)} GTO combos"
+
+            # Flag contradictions between aggregate and hand analysis
+            if actual_direction == "too_tight" and total_overfolds == 0:
+                analysis_text += "\n\nNOTE: Aggregate stats suggest underdefending, but no specific overfolds found in sample. "
+                analysis_text += "Player may be defending GTO hands correctly but at lower frequency than optimal, "
+                analysis_text += "or sample size is too small to detect specific leaks."
+            elif actual_direction == "too_loose" and total_overcalls == 0:
+                analysis_text += "\n\nNOTE: Aggregate stats suggest overdefending, but no specific overcalls found in sample. "
+                analysis_text += "Focus on tightening up borderline hands."
 
         # Fallback if no comprehensive data
         elif real_deviations:
