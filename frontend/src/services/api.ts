@@ -121,7 +121,7 @@ class ApiClient {
     scenario: string,
     position: string,
     vsPosition?: string,
-    limit: number = 50
+    limit: number = 1000
   ): Promise<ScenarioHandsResponse> {
     const params = new URLSearchParams({
       scenario,
