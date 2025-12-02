@@ -232,8 +232,11 @@ async def get_scenario_range_matrix(
 
         if opponent_position:
             query = query.filter(GTOScenario.opponent_position == opponent_position.upper())
-        else:
+        elif category == 'opening':
+            # Opening scenarios have no opponent - filter for NULL
             query = query.filter(GTOScenario.opponent_position.is_(None))
+        # For defense/facing_3bet/facing_4bet without specific opponent:
+        # Don't filter by opponent - aggregate all opponent positions
 
         scenarios = query.all()
 
@@ -241,8 +244,9 @@ async def get_scenario_range_matrix(
             # Return empty matrix if no scenarios found
             return {}
 
-        # Build action matrix
-        action_matrix: Dict[str, Dict[str, float]] = {}
+        # Build action matrix - track all frequencies for proper averaging
+        # Structure: {hand_combo: {action: [list of frequencies]}}
+        action_freq_lists: Dict[str, Dict[str, List[float]]] = {}
 
         # Helper to normalize card combo to standard format (e.g., "Ah Kd" -> "AKo")
         def normalize_hand(hand: str) -> str:
@@ -283,24 +287,23 @@ async def get_scenario_range_matrix(
                 GTOFrequency.scenario_id == scenario.scenario_id
             ).all()
 
-            # Aggregate by normalized hand combo
-            hand_freqs: Dict[str, List[float]] = {}
-
+            # Collect frequencies by normalized hand combo
             for freq in frequencies:
                 try:
                     normalized = normalize_hand(freq.hand)
-                    if normalized not in hand_freqs:
-                        hand_freqs[normalized] = []
-                    hand_freqs[normalized].append(float(freq.frequency))
+                    if normalized not in action_freq_lists:
+                        action_freq_lists[normalized] = {}
+                    if action not in action_freq_lists[normalized]:
+                        action_freq_lists[normalized][action] = []
+                    action_freq_lists[normalized][action].append(float(freq.frequency))
                 except (ValueError, IndexError):
                     continue
 
-            # Average the frequencies for each hand combo
-            for hand_combo, freqs in hand_freqs.items():
-                if hand_combo not in action_matrix:
-                    action_matrix[hand_combo] = {}
-
-                # Average all combos of this hand type
+        # Average the frequencies for each hand combo and action
+        action_matrix: Dict[str, Dict[str, float]] = {}
+        for hand_combo, actions in action_freq_lists.items():
+            action_matrix[hand_combo] = {}
+            for action, freqs in actions.items():
                 action_matrix[hand_combo][action] = sum(freqs) / len(freqs) if freqs else 0
 
         # Normalize frequencies to ensure they sum to ~1.0 for each hand
