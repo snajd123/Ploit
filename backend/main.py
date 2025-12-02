@@ -591,6 +591,338 @@ async def get_player_leaks(
         )
 
 
+@app.post(
+    "/api/players/{player_name}/ai-leak-analysis",
+    response_model=Dict[str, Any],
+    tags=["Players"],
+    summary="Get AI-powered preflop leak analysis",
+    description="Get holistic AI analysis of all preflop leaks with actionable heuristics"
+)
+async def get_ai_leak_analysis(
+    player_name: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Get AI-powered holistic preflop leak analysis.
+
+    Analyzes all preflop data to provide:
+    - Player profile diagnosis (Nit, TAG, LAG, Fish, Calling Station)
+    - Root cause analysis of fundamental preflop issues
+    - Priority improvements with actionable heuristics
+    - Simple rules to apply at the table
+
+    Returns structured analysis from Claude AI.
+    """
+    from anthropic import Anthropic
+    from sqlalchemy import text
+    import json
+    import re
+
+    try:
+        validated_name = InputValidator.validate_player_name(player_name)
+        service = DatabaseService(db)
+        stats = service.get_player_stats(validated_name)
+
+        if not stats:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Player '{player_name}' not found"
+            )
+
+        # Get leak analysis
+        calculator = StatsCalculator(stats)
+        leak_analysis = calculator.get_leak_analysis()
+        core_metrics = calculator.get_core_metrics()
+        player_type_info = calculator.get_player_type_details()
+
+        # Fetch GTO analysis data inline (similar to gto-analysis endpoint)
+        # Opening ranges
+        opening_query = text("""
+            SELECT
+                position,
+                COUNT(*) FILTER (WHERE faced_raise = false) as rfi_opportunities,
+                ROUND(100.0 * COUNT(*) FILTER (WHERE pfr = true AND faced_raise = false) /
+                    NULLIF(COUNT(*) FILTER (WHERE faced_raise = false), 0), 1) as player_open_pct
+            FROM player_hand_summary
+            WHERE player_name = :player_name
+            AND position IS NOT NULL AND position NOT IN ('BB')
+            GROUP BY position
+            HAVING COUNT(*) FILTER (WHERE faced_raise = false) >= 10
+        """)
+        opening_result = db.execute(opening_query, {"player_name": validated_name})
+        opening_data = {row[0]: {"sample": row[1], "freq": float(row[2]) if row[2] else 0} for row in opening_result}
+
+        # Get GTO opening frequencies
+        gto_opening_result = db.execute(text("""
+            SELECT position, SUM(gto_aggregate_freq) * 100 as gto_freq
+            FROM gto_scenarios WHERE category = 'opening'
+            GROUP BY position
+        """))
+        gto_opening = {row[0]: float(row[1]) if row[1] else 0 for row in gto_opening_result}
+
+        # Defense vs opens
+        defense_query = text("""
+            SELECT
+                position,
+                COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false) as faced_open,
+                ROUND(100.0 * COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND vpip = false) /
+                    NULLIF(COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false), 0), 1) as fold_pct,
+                ROUND(100.0 * COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND made_three_bet = true) /
+                    NULLIF(COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false), 0), 1) as three_bet_pct
+            FROM player_hand_summary
+            WHERE player_name = :player_name
+            AND position IN ('BB', 'SB', 'BTN', 'CO', 'MP')
+            GROUP BY position
+            HAVING COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false) >= 5
+        """)
+        defense_result = db.execute(defense_query, {"player_name": validated_name})
+        defense_data = {row[0]: {"sample": row[1], "fold": float(row[2]) if row[2] else 0, "3bet": float(row[3]) if row[3] else 0} for row in defense_result}
+
+        # Facing 3-bet (after opening)
+        facing_3bet_query = text("""
+            SELECT
+                position,
+                COUNT(*) FILTER (WHERE faced_three_bet = true AND pfr = true) as faced_3bet,
+                ROUND(100.0 * COUNT(*) FILTER (WHERE folded_to_three_bet = true AND pfr = true) /
+                    NULLIF(COUNT(*) FILTER (WHERE faced_three_bet = true AND pfr = true), 0), 1) as fold_pct,
+                ROUND(100.0 * COUNT(*) FILTER (WHERE four_bet = true AND pfr = true) /
+                    NULLIF(COUNT(*) FILTER (WHERE faced_three_bet = true AND pfr = true), 0), 1) as four_bet_pct
+            FROM player_hand_summary
+            WHERE player_name = :player_name AND position IS NOT NULL
+            GROUP BY position
+            HAVING COUNT(*) FILTER (WHERE faced_three_bet = true AND pfr = true) >= 5
+        """)
+        facing_3bet_result = db.execute(facing_3bet_query, {"player_name": validated_name})
+        facing_3bet_data = {row[0]: {"sample": row[1], "fold": float(row[2]) if row[2] else 0, "4bet": float(row[3]) if row[3] else 0} for row in facing_3bet_result}
+
+        # Build comprehensive preflop summary for AI
+        total_hands = stats.get("total_hands", 0)
+        vpip = stats.get("vpip_pct", 0) or 0
+        pfr = stats.get("pfr_pct", 0) or 0
+        three_bet = stats.get("three_bet_pct", 0) or 0
+        fold_to_3bet = stats.get("fold_to_three_bet_pct", 0) or 0
+        vpip_pfr_gap = vpip - pfr
+
+        # Determine confidence level
+        if total_hands < 500:
+            confidence = "low"
+            confidence_note = "Sample size <500 hands - results are preliminary"
+        elif total_hands < 1500:
+            confidence = "moderate"
+            confidence_note = "Sample size 500-1500 hands - trends are reliable but positions may vary"
+        else:
+            confidence = "high"
+            confidence_note = "Sample size >1500 hands - results are statistically reliable"
+
+        # Build opening range comparison
+        opening_comparison = []
+        for pos in ["UTG", "MP", "CO", "BTN", "SB"]:
+            player_freq = opening_data.get(pos, {}).get("freq", 0)
+            gto_freq = gto_opening.get(pos, 0)
+            sample = opening_data.get(pos, {}).get("sample", 0)
+            if sample > 0:
+                diff = player_freq - gto_freq
+                opening_comparison.append(f"{pos}: {player_freq:.1f}% vs {gto_freq:.1f}% GTO ({diff:+.1f}%, n={sample})")
+
+        # Build defense comparison
+        defense_comparison = []
+        for pos, data in defense_data.items():
+            sample = data.get("sample", 0)
+            if sample > 0:
+                fold = data.get("fold", 0)
+                three_bet = data.get("3bet", 0)
+                defense_comparison.append(f"{pos}: Fold {fold:.1f}%, 3-bet {three_bet:.1f}% (n={sample})")
+
+        # Build facing 3-bet comparison
+        facing_3bet_comparison = []
+        for pos, data in facing_3bet_data.items():
+            sample = data.get("sample", 0)
+            if sample > 0:
+                fold = data.get("fold", 0)
+                four_bet = data.get("4bet", 0)
+                facing_3bet_comparison.append(f"{pos}: Fold {fold:.1f}%, 4-bet {four_bet:.1f}% (n={sample})")
+
+        # Get positional VPIP if available
+        positional_vpip = []
+        pos_vpip_query = text("""
+            SELECT position, ROUND(100.0 * COUNT(*) FILTER (WHERE vpip = true) / COUNT(*), 1) as vpip
+            FROM player_hand_summary
+            WHERE player_name = :player_name AND position IS NOT NULL
+            GROUP BY position
+            HAVING COUNT(*) >= 20
+            ORDER BY position
+        """)
+        pos_vpip_result = db.execute(pos_vpip_query, {"player_name": validated_name})
+        for row in pos_vpip_result:
+            positional_vpip.append(f"{row[0]}: {row[1]:.1f}%")
+
+        # Build the AI prompt
+        prompt = f"""You are an expert poker coach specializing in preflop strategy. Analyze this player's preflop tendencies and provide holistic, actionable advice.
+
+=== PLAYER OVERVIEW ===
+Player: {validated_name}
+Total Hands: {total_hands}
+Confidence: {confidence} ({confidence_note})
+Current Player Type: {player_type_info.get('type', 'Unknown')} - {player_type_info.get('description', '')}
+
+=== CORE PREFLOP STATS ===
+VPIP: {vpip:.1f}%
+PFR: {pfr:.1f}%
+VPIP-PFR Gap: {vpip_pfr_gap:.1f}% (passivity indicator - lower is better, <6% optimal)
+3-Bet%: {three_bet:.1f}%
+Fold to 3-Bet%: {fold_to_3bet:.1f}%
+
+=== POSITIONAL VPIP ===
+{chr(10).join(positional_vpip) if positional_vpip else "Insufficient data"}
+
+=== OPENING RANGES (RFI) ===
+{chr(10).join(opening_comparison) if opening_comparison else "Insufficient data"}
+
+=== DEFENSE VS OPENS ===
+{chr(10).join(defense_comparison) if defense_comparison else "Insufficient data"}
+
+=== FACING 3-BET (after opening) ===
+{chr(10).join(facing_3bet_comparison) if facing_3bet_comparison else "Insufficient data"}
+
+=== PLAYER TYPE THRESHOLDS FOR REFERENCE ===
+- Nit: VPIP <15%, PFR <12%
+- TAG: VPIP 18-24%, PFR 15-20%, gap <5%
+- LAG: VPIP 25-32%, PFR 22-28%
+- Passive Fish: VPIP >30%, VPIP-PFR gap >12%
+- Calling Station: VPIP >28%, PFR <15%, gap >13%
+
+=== ROOT CAUSE HIERARCHY ===
+Prioritize issues by impact:
+1. Foundational: VPIP/PFR baseline, VPIP-PFR gap (passivity indicator)
+2. Positional: RFI by position, positional awareness
+3. Strategic: 3-bet/fold-to-3bet balance, blind defense frequencies
+
+Based on ALL this preflop data, provide your response as valid JSON with this exact structure:
+{{
+  "player_profile": {{
+    "type": "Nit|TAG|LAG|Passive Fish|Calling Station|Maniac|Unknown",
+    "confidence": "low|moderate|high",
+    "key_indicators": {{"vpip": {vpip:.1f}, "pfr": {pfr:.1f}, "gap": {vpip_pfr_gap:.1f}}},
+    "summary": "1-2 sentence summary of their preflop tendencies"
+  }},
+  "root_causes": [
+    {{
+      "cause": "Name of the fundamental issue",
+      "severity": "critical|major|minor",
+      "evidence": "Specific stats that show this issue",
+      "impact": "How this hurts their game"
+    }}
+  ],
+  "priority_improvements": [
+    {{
+      "priority": 1,
+      "area": "Category of improvement",
+      "issue": "What's wrong",
+      "heuristic": "Simple rule to apply at the table",
+      "target_metric": "What to aim for",
+      "specific_actions": ["Action 1", "Action 2"]
+    }}
+  ],
+  "quick_heuristics": [
+    "Simple rule 1 to apply immediately",
+    "Simple rule 2",
+    "Simple rule 3"
+  ],
+  "analysis_text": "2-3 paragraph holistic analysis of their preflop game"
+}}
+
+IMPORTANT:
+- Focus ONLY on preflop. Do not mention postflop metrics.
+- Identify 1-3 root causes maximum (prioritize by impact)
+- Provide 2-3 priority improvements maximum
+- Heuristics should be simple enough to remember at the table
+- Be direct about what's wrong - avoid generic advice
+- Reference their specific numbers when explaining issues
+
+Only respond with the JSON object, no additional text."""
+
+        # Call Claude
+        settings = get_settings()
+        client = Anthropic(api_key=settings.anthropic_api_key)
+
+        try:
+            response = client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=2000,
+                messages=[{"role": "user", "content": prompt}]
+            )
+
+            raw_response = response.content[0].text if response.content else ""
+            logger.info(f"AI leak analysis response: {raw_response[:300]}...")
+
+            # Parse JSON response
+            try:
+                ai_result = json.loads(raw_response)
+            except json.JSONDecodeError:
+                # Try to find JSON block
+                json_match = re.search(r'\{[\s\S]*\}', raw_response)
+                if json_match:
+                    try:
+                        ai_result = json.loads(json_match.group())
+                    except json.JSONDecodeError:
+                        ai_result = {"analysis_text": raw_response}
+                else:
+                    ai_result = {"analysis_text": raw_response}
+
+            return {
+                "success": True,
+                "player_name": validated_name,
+                "total_hands": total_hands,
+                "confidence": confidence,
+                "player_profile": ai_result.get("player_profile", {
+                    "type": player_type_info.get("type", "Unknown"),
+                    "confidence": confidence,
+                    "key_indicators": {"vpip": vpip, "pfr": pfr, "gap": vpip_pfr_gap},
+                    "summary": player_type_info.get("description", "")
+                }),
+                "root_causes": ai_result.get("root_causes", []),
+                "priority_improvements": ai_result.get("priority_improvements", []),
+                "quick_heuristics": ai_result.get("quick_heuristics", []),
+                "analysis_text": ai_result.get("analysis_text", ""),
+                "error": None
+            }
+
+        except Exception as api_error:
+            logger.error(f"Claude API error in AI leak analysis: {str(api_error)}")
+            return {
+                "success": False,
+                "player_name": validated_name,
+                "total_hands": total_hands,
+                "confidence": confidence,
+                "player_profile": {
+                    "type": player_type_info.get("type", "Unknown"),
+                    "confidence": confidence,
+                    "key_indicators": {"vpip": vpip, "pfr": pfr, "gap": vpip_pfr_gap},
+                    "summary": player_type_info.get("description", "")
+                },
+                "root_causes": [],
+                "priority_improvements": [],
+                "quick_heuristics": [],
+                "analysis_text": "",
+                "error": f"AI analysis unavailable: {str(api_error)}"
+            }
+
+    except HTTPException:
+        raise
+    except DatabaseConnectionError as e:
+        logger.error(f"Database connection error for AI leak analysis: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database temporarily unavailable. Please try again."
+        )
+    except Exception as e:
+        logger.error(f"Error in AI leak analysis: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error generating AI leak analysis"
+        )
+
+
 @app.get(
     "/api/improvement-advice",
     response_model=Dict[str, Any],

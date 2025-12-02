@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { TrendingDown, TrendingUp, Phone, AlertTriangle, CheckCircle, ChevronRight, Target, Zap, Lightbulb } from 'lucide-react';
+import { TrendingDown, TrendingUp, Phone, AlertTriangle, CheckCircle, ChevronRight, Target, Zap, Lightbulb, Sparkles } from 'lucide-react';
 import ImprovementAdviceModal from './ImprovementAdviceModal';
+import AILeakAnalysisModal from './AILeakAnalysisModal';
 
 // Advice modal state
 interface AdviceModalState {
@@ -421,6 +422,7 @@ const LeakAnalysisView: React.FC<LeakAnalysisViewProps> = ({
   insufficientSamples = [],
 }) => {
   const [expandedTendency, setExpandedTendency] = useState<TendencyType | null>(null);
+  const [showAIAnalysis, setShowAIAnalysis] = useState(false);
   const [adviceModal, setAdviceModal] = useState<AdviceModalState>({
     isOpen: false,
     leakCategory: '',
@@ -563,6 +565,16 @@ const LeakAnalysisView: React.FC<LeakAnalysisViewProps> = ({
               <p className="text-xs text-gray-500">Estimated Cost</p>
               <p className="text-lg font-bold text-red-600">~{totalEvLoss.toFixed(1)} BB/100</p>
             </div>
+            {/* AI Analysis Button */}
+            {playerName && (
+              <button
+                onClick={() => setShowAIAnalysis(true)}
+                className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-lg hover:from-purple-700 hover:to-purple-800 transition-all shadow-md hover:shadow-lg"
+              >
+                <Sparkles size={16} />
+                <span className="font-medium">AI Analysis</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -727,6 +739,15 @@ const LeakAnalysisView: React.FC<LeakAnalysisViewProps> = ({
         sampleSize={adviceModal.sampleSize}
         playerName={playerName}
       />
+
+      {/* AI Leak Analysis Modal */}
+      {playerName && (
+        <AILeakAnalysisModal
+          isOpen={showAIAnalysis}
+          onClose={() => setShowAIAnalysis(false)}
+          playerName={playerName}
+        />
+      )}
     </div>
   );
 };

@@ -607,3 +607,44 @@ export interface GTOOptimalRangesResponse {
   frequencies_count: number;
   last_updated?: string;
 }
+
+// AI Leak Analysis Types
+export interface AIPlayerProfile {
+  type: string;
+  confidence: 'low' | 'moderate' | 'high';
+  key_indicators: {
+    vpip: number;
+    pfr: number;
+    gap: number;
+  };
+  summary: string;
+}
+
+export interface AIRootCause {
+  cause: string;
+  severity: 'critical' | 'major' | 'minor';
+  evidence: string;
+  impact: string;
+}
+
+export interface AIPriorityImprovement {
+  priority: number;
+  area: string;
+  issue: string;
+  heuristic: string;
+  target_metric: string;
+  specific_actions: string[];
+}
+
+export interface AILeakAnalysisResponse {
+  success: boolean;
+  player_name: string;
+  total_hands: number;
+  confidence: 'low' | 'moderate' | 'high';
+  player_profile: AIPlayerProfile;
+  root_causes: AIRootCause[];
+  priority_improvements: AIPriorityImprovement[];
+  quick_heuristics: string[];
+  analysis_text: string;
+  error?: string;
+}
