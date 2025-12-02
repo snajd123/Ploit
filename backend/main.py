@@ -2355,7 +2355,7 @@ async def get_scenario_hands(
     scenario: str = Query(..., description="Scenario type: opening, defense, facing_3bet, facing_4bet"),
     position: str = Query(..., description="Player's position: UTG, MP, CO, BTN, SB, BB"),
     vs_position: Optional[str] = Query(None, description="Opponent position for matchup scenarios"),
-    limit: int = Query(50, ge=1, le=200, description="Max hands to return"),
+    limit: int = Query(1000, ge=1, le=5000, description="Max hands to return"),
     db: Session = Depends(get_db)
 ):
     """
