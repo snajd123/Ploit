@@ -725,6 +725,7 @@ async def get_ai_improvement_advice(
         # Fetch REAL hand deviations data if player_name is provided
         real_deviations = []
         missing_hands = []
+        hands_by_action_data = {}  # For sparse sample fallback
         if player_name:
             try:
                 # Call the hand deviations logic inline (avoiding circular request)
@@ -869,6 +870,27 @@ async def get_ai_improvement_advice(
                 missing_hands.sort(key=lambda x: x['gto_freq'], reverse=True)
                 missing_hands = missing_hands[:5]
 
+                # FALLBACK: If no combo-level deviations (sparse data), show ALL hands by action
+                # This gives AI useful data even when samples are too small for frequency analysis
+                if not real_deviations:
+                    hands_by_action = {}
+                    for combo, actions in hand_actions.items():
+                        for action, count in actions.items():
+                            if action not in hands_by_action:
+                                hands_by_action[action] = []
+                            hands_by_action[action].append(combo)
+
+                    # Store for prompt and response
+                    if hands_by_action:
+                        hands_by_action_data = {
+                            "hands_by_action": hands_by_action,
+                            "gto_reference": {k: round(v, 0) for k, v in sorted(gto_freqs.items(), key=lambda x: x[1], reverse=True)[:20]},
+                            "total_hands": sum(len(h) for h in hands_by_action.values()),
+                            "is_sparse": True
+                        }
+                        # Marker for prompt building
+                        real_deviations = [{"_sparse_data": True, "_hands_by_action": hands_by_action, "_gto_reference": gto_freqs}]
+
             except Exception as e:
                 logger.warning(f"Could not fetch hand deviations: {e}")
 
@@ -901,10 +923,31 @@ async def get_ai_improvement_advice(
         # Build real deviations section for prompt
         deviations_text = ""
         if real_deviations:
-            deviations_text = "\n\nACTUAL HAND-BY-HAND DEVIATIONS FROM YOUR DATABASE:\n"
-            for d in real_deviations:
-                action_word = "OVER-playing" if d['deviation'] > 0 else "UNDER-playing"
-                deviations_text += f"- {d['hand']}: You {action_word} this hand. You: {d['player_freq']:.0f}%, GTO: {d['gto_freq']:.0f}% (deviation: {d['deviation']:+.0f}%, sample: {d['sample']})\n"
+            # Check if this is sparse data (hands grouped by action) vs combo-level deviations
+            if len(real_deviations) == 1 and real_deviations[0].get('_sparse_data'):
+                sparse_data = real_deviations[0]
+                hands_by_action = sparse_data.get('_hands_by_action', {})
+                gto_ref = sparse_data.get('_gto_reference', {})
+
+                deviations_text = "\n\nYOUR ACTUAL HANDS FROM THIS SCENARIO (sparse sample - grouped by action):\n"
+                for action, hands in hands_by_action.items():
+                    deviations_text += f"\n{action.upper()} ({len(hands)} hands): {', '.join(sorted(hands)[:30])}"
+                    if len(hands) > 30:
+                        deviations_text += f" ... and {len(hands) - 30} more"
+
+                if gto_ref:
+                    deviations_text += "\n\nGTO REFERENCE FREQUENCIES (call+3bet % for top hands):\n"
+                    sorted_gto = sorted(gto_ref.items(), key=lambda x: x[1], reverse=True)[:15]
+                    for hand, freq in sorted_gto:
+                        deviations_text += f"- {hand}: {freq}% defend\n"
+
+                # Clear real_deviations for response (don't show raw sparse data in UI)
+                real_deviations = []
+            else:
+                deviations_text = "\n\nACTUAL HAND-BY-HAND DEVIATIONS FROM YOUR DATABASE:\n"
+                for d in real_deviations:
+                    action_word = "OVER-playing" if d['deviation'] > 0 else "UNDER-playing"
+                    deviations_text += f"- {d['hand']}: You {action_word} this hand. You: {d['player_freq']:.0f}%, GTO: {d['gto_freq']:.0f}% (deviation: {d['deviation']:+.0f}%, sample: {d['sample']})\n"
 
         missing_text = ""
         if missing_hands:
@@ -992,9 +1035,10 @@ Only respond with the JSON object, no additional text."""
             },
             # Include the REAL deviations data from player's hands
             "real_data": {
-                "deviations": real_deviations,
+                "deviations": [d for d in real_deviations if not d.get('_sparse_data')],  # Filter out sparse marker
                 "missing_hands": missing_hands,
-                "data_available": len(real_deviations) > 0 or len(missing_hands) > 0
+                "hands_by_action": hands_by_action_data if hands_by_action_data else None,
+                "data_available": len(real_deviations) > 0 or len(missing_hands) > 0 or bool(hands_by_action_data)
             },
             # Debug info - prompt and raw response for transparency
             "debug": {

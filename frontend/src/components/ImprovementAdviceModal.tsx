@@ -56,9 +56,17 @@ interface MissingHand {
   gto_freq: number;
 }
 
+interface HandsByActionData {
+  hands_by_action: Record<string, string[]>;
+  gto_reference: Record<string, number>;
+  total_hands: number;
+  is_sparse: boolean;
+}
+
 interface RealData {
   deviations: RealDeviation[];
   missing_hands: MissingHand[];
+  hands_by_action?: HandsByActionData | null;
   data_available: boolean;
 }
 
@@ -496,10 +504,10 @@ const ImprovementAdviceModal: React.FC<ImprovementAdviceModalProps> = ({
                         <div className="p-3 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-200">
                           <h4 className="text-sm font-bold text-blue-800 mb-3 flex items-center gap-2">
                             <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
-                            Your Actual Hand Deviations (from database)
+                            Your Actual Hands (from database)
                           </h4>
 
-                          {/* Deviations list */}
+                          {/* Combo-level deviations (when sample is large enough) */}
                           {advice.real_data.deviations && advice.real_data.deviations.length > 0 && (
                             <div className="space-y-2 mb-3">
                               {advice.real_data.deviations.map((dev, idx) => (
@@ -523,6 +531,40 @@ const ImprovementAdviceModal: React.FC<ImprovementAdviceModalProps> = ({
                                       {dev.deviation > 0 ? '+' : ''}{dev.deviation}%
                                     </span>
                                     <span className="text-gray-400">({dev.sample})</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Sparse sample: Show hands grouped by action */}
+                          {advice.real_data.hands_by_action?.is_sparse && (
+                            <div className="space-y-3 mb-3">
+                              <p className="text-xs text-gray-500 italic">
+                                Sample too small for combo-level stats. Showing all {advice.real_data.hands_by_action.total_hands} hands by action:
+                              </p>
+                              {Object.entries(advice.real_data.hands_by_action.hands_by_action).map(([action, hands]) => (
+                                <div key={action} className="p-2 bg-white rounded border border-gray-200">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${
+                                      action === 'fold' ? 'bg-red-100 text-red-700' :
+                                      action === 'call' ? 'bg-green-100 text-green-700' :
+                                      action === '3bet' ? 'bg-purple-100 text-purple-700' :
+                                      'bg-gray-100 text-gray-700'
+                                    }`}>
+                                      {action}
+                                    </span>
+                                    <span className="text-xs text-gray-500">({hands.length} hands)</span>
+                                  </div>
+                                  <div className="flex flex-wrap gap-1">
+                                    {hands.slice(0, 25).map((hand, idx) => (
+                                      <span key={idx} className="px-1.5 py-0.5 bg-gray-100 text-gray-700 text-xs font-mono rounded">
+                                        {hand}
+                                      </span>
+                                    ))}
+                                    {hands.length > 25 && (
+                                      <span className="px-1.5 py-0.5 text-gray-400 text-xs">+{hands.length - 25} more</span>
+                                    )}
                                   </div>
                                 </div>
                               ))}
