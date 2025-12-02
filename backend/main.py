@@ -1356,13 +1356,14 @@ async def get_hand_deviations(
 
         # Get GTO frequencies for this scenario
         if scenario == 'opening':
+            # Include all opening actions: 'open' for most positions, 'raise'/'limp' for SB
             gto_query = text("""
-                SELECT gf.hand, gf.frequency * 100 as freq
+                SELECT gf.hand, SUM(gf.frequency * 100) as freq
                 FROM gto_frequencies gf
                 JOIN gto_scenarios gs ON gf.scenario_id = gs.scenario_id
                 WHERE gs.category = 'opening'
                 AND gs.position = :position
-                AND gs.action = 'open'
+                GROUP BY gf.hand
             """)
             gto_params = {"position": position}
         elif scenario == 'defense':
