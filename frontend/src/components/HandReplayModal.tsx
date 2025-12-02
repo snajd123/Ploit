@@ -91,7 +91,12 @@ const ActionRow: React.FC<{
   heroName: string | null;
   position?: string | null;
   isHighlighted: boolean;
-}> = ({ action, isHero, position, isHighlighted }) => {
+  gtoEvaluation?: {
+    isEvaluated: boolean;
+    deviationType: 'correct' | 'suboptimal' | 'mistake';
+    actionFreq: number;
+  } | null;
+}> = ({ action, isHero, position, isHighlighted, gtoEvaluation }) => {
   const actionColors: Record<string, string> = {
     fold: 'text-gray-600 bg-gray-100',
     check: 'text-gray-700 bg-gray-100',
@@ -115,10 +120,20 @@ const ActionRow: React.FC<{
     return a.action;
   };
 
+  // Determine background based on GTO evaluation
+  const getRowBackground = () => {
+    if (isHighlighted) return 'bg-yellow-100 ring-2 ring-yellow-400';
+    if (gtoEvaluation?.isEvaluated) {
+      if (gtoEvaluation.deviationType === 'correct') return 'bg-green-50 ring-2 ring-green-400';
+      if (gtoEvaluation.deviationType === 'suboptimal') return 'bg-yellow-50 ring-2 ring-yellow-400';
+      return 'bg-red-50 ring-2 ring-red-400';
+    }
+    if (isHero) return 'bg-blue-50';
+    return '';
+  };
+
   return (
-    <div className={`flex items-center gap-3 py-1.5 px-2 rounded ${
-      isHighlighted ? 'bg-yellow-100 ring-2 ring-yellow-400' : ''
-    } ${isHero ? 'bg-blue-50' : ''}`}>
+    <div className={`flex items-center gap-3 py-1.5 px-2 rounded ${getRowBackground()}`}>
       <div className="w-20 flex items-center gap-1">
         {position && (
           <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
@@ -128,7 +143,7 @@ const ActionRow: React.FC<{
           </span>
         )}
       </div>
-      <div className="flex-1">
+      <div className="flex-1 flex items-center">
         <span className={`font-medium ${isHero ? 'text-blue-700' : 'text-gray-700'}`}>
           {action.player}
         </span>
@@ -138,6 +153,19 @@ const ActionRow: React.FC<{
         {action.is_all_in && (
           <span className="ml-1 px-1.5 py-0.5 rounded text-xs font-bold bg-red-600 text-white">
             ALL-IN
+          </span>
+        )}
+        {/* GTO Evaluation Badge */}
+        {gtoEvaluation?.isEvaluated && (
+          <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-bold flex items-center gap-1 ${
+            gtoEvaluation.deviationType === 'correct' ? 'bg-green-200 text-green-800' :
+            gtoEvaluation.deviationType === 'suboptimal' ? 'bg-yellow-200 text-yellow-800' :
+            'bg-red-200 text-red-800'
+          }`}>
+            {gtoEvaluation.deviationType === 'correct' && <CheckCircle size={12} />}
+            {gtoEvaluation.deviationType === 'suboptimal' && <AlertTriangle size={12} />}
+            {gtoEvaluation.deviationType === 'mistake' && <XCircle size={12} />}
+            GTO: {gtoEvaluation.actionFreq}%
           </span>
         )}
       </div>
@@ -406,16 +434,45 @@ const HandReplayModal: React.FC<HandReplayModalProps> = ({ data, onClose }) => {
         {/* Actions List */}
         <div className="flex-1 overflow-y-auto p-4 bg-white">
           <div className="space-y-1">
-            {streetActions.map((action, idx) => (
-              <ActionRow
-                key={idx}
-                action={action}
-                isHero={action.player === data.hero}
-                heroName={data.hero}
-                position={playerPositions[action.player]}
-                isHighlighted={currentActionIndex !== -1 && idx === currentActionIndex}
-              />
-            ))}
+            {streetActions.map((action, idx) => {
+              // Determine if this action is the one being evaluated by GTO
+              let gtoEvaluation = null;
+              if (currentStreet === 'preflop' && data.hero_gto_analysis && action.player === data.hero) {
+                // Match action types (handle variations like "raise" vs "raises", "3bet" vs "raise")
+                const heroAction = data.hero_gto_analysis.hero_action?.toLowerCase();
+                const actionType = action.action?.toLowerCase();
+
+                // Check if this is the evaluated action
+                // GTO uses: open, fold, call, 3bet, 4bet, 5bet
+                // Hand history uses: fold, call, raise, bet, check
+                const isMatch =
+                  (heroAction === actionType) ||
+                  (heroAction === 'open' && actionType === 'raise') ||
+                  (heroAction === '3bet' && actionType === 'raise') ||
+                  (heroAction === '4bet' && actionType === 'raise') ||
+                  (heroAction === '5bet' && actionType === 'raise');
+
+                if (isMatch) {
+                  gtoEvaluation = {
+                    isEvaluated: true,
+                    deviationType: data.hero_gto_analysis.deviation_type,
+                    actionFreq: data.hero_gto_analysis.action_frequency
+                  };
+                }
+              }
+
+              return (
+                <ActionRow
+                  key={idx}
+                  action={action}
+                  isHero={action.player === data.hero}
+                  heroName={data.hero}
+                  position={playerPositions[action.player]}
+                  isHighlighted={currentActionIndex !== -1 && idx === currentActionIndex}
+                  gtoEvaluation={gtoEvaluation}
+                />
+              );
+            })}
             {streetActions.length === 0 && (
               <div className="text-center text-gray-500 py-8">
                 No actions on this street
