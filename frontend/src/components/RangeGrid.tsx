@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 
-// Multi-action frequencies for defense scenarios
+// Multi-action frequencies for scenarios
 export interface HandActions {
+  open?: number;   // Opening raise
   fold?: number;
   call?: number;
   raise?: number;
@@ -200,7 +201,7 @@ const RangeGrid: React.FC<RangeGridProps> = ({
         if (isMultiAction) {
           const handLabel = getHandLabel(rank1, rank2);
           const actions = actionMatrix?.[handLabel] || {};
-          const continuingFreq = (actions.call || 0) + (actions.raise || 0) +
+          const continuingFreq = (actions.open || 0) + (actions.call || 0) + (actions.raise || 0) +
                                   (actions['3bet'] || 0) + (actions['4bet'] || 0) +
                                   (actions['5bet'] || 0) + (actions.allin || 0);
           return innerSum + combos * continuingFreq;
@@ -268,7 +269,7 @@ const RangeGrid: React.FC<RangeGridProps> = ({
 
                 // Get continuing frequency (non-fold)
                 const continuingFreq = isMultiAction
-                  ? (actions.call || 0) + (actions.raise || 0) + (actions['3bet'] || 0) +
+                  ? (actions.open || 0) + (actions.call || 0) + (actions.raise || 0) + (actions['3bet'] || 0) +
                     (actions['4bet'] || 0) + (actions['5bet'] || 0) + (actions.allin || 0)
                   : frequency;
 
