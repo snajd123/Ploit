@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import {
   X, ChevronDown, ChevronRight, Lightbulb, BookOpen, Target,
-  AlertTriangle, CheckCircle, Sparkles, Loader2, TrendingUp, TrendingDown
+  AlertTriangle, CheckCircle, Sparkles, Loader2, TrendingUp, TrendingDown,
+  Code, Eye, EyeOff
 } from 'lucide-react';
 
 // Types
@@ -61,6 +62,11 @@ interface RealData {
   data_available: boolean;
 }
 
+interface DebugInfo {
+  prompt: string;
+  raw_response: string;
+}
+
 interface ImprovementAdviceData {
   leak_type: string;
   leak_category: string;
@@ -76,6 +82,7 @@ interface ImprovementAdviceData {
   caveats: string[];
   ai_enhanced?: AIEnhanced;
   real_data?: RealData;
+  debug?: DebugInfo;
 }
 
 interface ImprovementAdviceModalProps {
@@ -111,6 +118,7 @@ const ImprovementAdviceModal: React.FC<ImprovementAdviceModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [expandedTier, setExpandedTier] = useState<number>(1);
   const [showAiAdvice, setShowAiAdvice] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
 
   // Fetch advice when modal opens
   useEffect(() => {
@@ -599,6 +607,46 @@ const ImprovementAdviceModal: React.FC<ImprovementAdviceModalProps> = ({
                           <div className="text-sm text-gray-600 whitespace-pre-wrap">
                             {advice.ai_enhanced.raw_response}
                           </div>
+                        </div>
+                      )}
+
+                      {/* Debug Toggle - Show Prompt & Response */}
+                      {advice.debug && (
+                        <div className="mt-4 pt-4 border-t border-gray-200">
+                          <button
+                            onClick={() => setShowDebug(!showDebug)}
+                            className="flex items-center gap-2 text-xs text-gray-500 hover:text-gray-700 transition-colors"
+                          >
+                            <Code size={14} />
+                            {showDebug ? <EyeOff size={14} /> : <Eye size={14} />}
+                            {showDebug ? 'Hide' : 'Show'} AI Prompt & Response
+                          </button>
+
+                          {showDebug && (
+                            <div className="mt-3 space-y-3">
+                              {/* Prompt */}
+                              <div>
+                                <h5 className="text-xs font-semibold text-gray-600 mb-1 flex items-center gap-1">
+                                  <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                                  Prompt sent to AI
+                                </h5>
+                                <pre className="p-3 bg-gray-900 text-green-400 text-xs font-mono rounded-lg overflow-auto max-h-64 whitespace-pre-wrap">
+                                  {advice.debug.prompt}
+                                </pre>
+                              </div>
+
+                              {/* Response */}
+                              <div>
+                                <h5 className="text-xs font-semibold text-gray-600 mb-1 flex items-center gap-1">
+                                  <span className="w-2 h-2 bg-purple-500 rounded-full"></span>
+                                  Raw AI Response
+                                </h5>
+                                <pre className="p-3 bg-gray-900 text-purple-400 text-xs font-mono rounded-lg overflow-auto max-h-64 whitespace-pre-wrap">
+                                  {advice.debug.raw_response}
+                                </pre>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>

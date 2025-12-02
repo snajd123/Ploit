@@ -949,6 +949,7 @@ Only respond with the JSON object, no additional text."""
         client = Anthropic(api_key=settings.anthropic_api_key)
 
         ai_advice = {}
+        raw_response_text = ""
         try:
             response = client.messages.create(
                 model="claude-haiku-4-5-20251001",
@@ -956,27 +957,28 @@ Only respond with the JSON object, no additional text."""
                 messages=[{"role": "user", "content": prompt}]
             )
 
-            response_text = response.content[0].text if response.content else ""
-            logger.info(f"AI advice response: {response_text[:200]}...")
+            raw_response_text = response.content[0].text if response.content else ""
+            logger.info(f"AI advice response: {raw_response_text[:200]}...")
 
             # Try to parse JSON from response
             # First try direct parse
             try:
-                ai_advice = json.loads(response_text)
+                ai_advice = json.loads(raw_response_text)
             except json.JSONDecodeError:
                 # Try to find JSON block in response
-                json_match = re.search(r'\{[\s\S]*\}', response_text)
+                json_match = re.search(r'\{[\s\S]*\}', raw_response_text)
                 if json_match:
                     try:
                         ai_advice = json.loads(json_match.group())
                     except json.JSONDecodeError:
-                        ai_advice = {"raw_advice": response_text}
+                        ai_advice = {"raw_advice": raw_response_text}
                 else:
-                    ai_advice = {"raw_advice": response_text}
+                    ai_advice = {"raw_advice": raw_response_text}
 
         except Exception as e:
             logger.error(f"Claude API error: {str(e)}")
             ai_advice = {"raw_advice": f"AI analysis unavailable: {str(e)}"}
+            raw_response_text = str(e)
 
         # Combine static and AI advice with REAL data
         result = {
@@ -993,6 +995,11 @@ Only respond with the JSON object, no additional text."""
                 "deviations": real_deviations,
                 "missing_hands": missing_hands,
                 "data_available": len(real_deviations) > 0 or len(missing_hands) > 0
+            },
+            # Debug info - prompt and raw response for transparency
+            "debug": {
+                "prompt": prompt,
+                "raw_response": raw_response_text
             }
         }
 
