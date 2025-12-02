@@ -803,6 +803,10 @@ async def get_ai_improvement_advice(
                     hand_actions[combo][action] = hand_actions[combo].get(action, 0) + 1
 
                 # Get GTO frequencies
+                # For defense/facing scenarios, we need to:
+                # 1. Filter by opponent position if available
+                # 2. Sum call + 3bet/4bet within each opponent position
+                # 3. Average across opponent positions if no specific vs_position
                 if leak_category == 'opening':
                     gto_query = text("""
                         SELECT gf.hand, gf.frequency * 100 FROM gto_frequencies gf
@@ -810,33 +814,69 @@ async def get_ai_improvement_advice(
                         WHERE gs.category = 'opening' AND gs.position = :position AND gs.action = 'open'
                     """)
                     gto_params = {"position": position}
-                else:
-                    gto_query = text("""
-                        SELECT gf.hand, gs.action, gf.frequency * 100 FROM gto_frequencies gf
-                        JOIN gto_scenarios gs ON gf.scenario_id = gs.scenario_id
-                        WHERE gs.category = :category AND gs.position = :position
-                        AND gs.action IN ('call', '3bet', '4bet')
-                    """)
-                    gto_params = {"category": leak_category, "position": position}
-
-                gto_result = db.execute(gto_query, gto_params)
-                gto_freqs = {}
-                for row in gto_result:
-                    hand = row[0].replace(' ', '')
-                    if len(hand) >= 4:
-                        r1, s1, r2, s2 = hand[0].upper(), hand[1].lower(), hand[2].upper(), hand[3].lower()
-                        rank_order = "23456789TJQKA"
-                        if rank_order.index(r1) < rank_order.index(r2):
-                            r1, r2, s1, s2 = r2, r1, s2, s1
-                        combo = f"{r1}{r2}" if r1 == r2 else (f"{r1}{r2}s" if s1 == s2 else f"{r1}{r2}o")
-                    else:
-                        combo = hand.upper()
-                    if leak_category == 'opening':
+                    gto_result = db.execute(gto_query, gto_params)
+                    gto_freqs = {}
+                    for row in gto_result:
+                        hand = row[0].replace(' ', '')
+                        if len(hand) >= 4:
+                            r1, s1, r2, s2 = hand[0].upper(), hand[1].lower(), hand[2].upper(), hand[3].lower()
+                            rank_order = "23456789TJQKA"
+                            if rank_order.index(r1) < rank_order.index(r2):
+                                r1, r2, s1, s2 = r2, r1, s2, s1
+                            combo = f"{r1}{r2}" if r1 == r2 else (f"{r1}{r2}s" if s1 == s2 else f"{r1}{r2}o")
+                        else:
+                            combo = hand.upper()
                         gto_freqs[combo] = float(row[1]) if row[1] else 0
+                else:
+                    # For defense/facing scenarios: get defend frequency (call + 3bet/4bet)
+                    # grouped by opponent position, then average across positions
+                    if leak_category == 'defense':
+                        action1, action2 = 'call', '3bet'
+                    else:  # facing_3bet
+                        action1, action2 = 'call', '4bet'
+
+                    if vs_pos_upper:
+                        # Specific opponent position - sum call + 3bet/4bet
+                        gto_query = text("""
+                            SELECT gf.hand, SUM(gf.frequency * 100) as total_freq
+                            FROM gto_frequencies gf
+                            JOIN gto_scenarios gs ON gf.scenario_id = gs.scenario_id
+                            WHERE gs.category = :category AND gs.position = :position
+                            AND gs.opponent_position = :vs_position
+                            AND gs.action IN (:action1, :action2)
+                            GROUP BY gf.hand
+                        """)
+                        gto_params = {"category": leak_category, "position": position,
+                                     "vs_position": vs_pos_upper, "action1": action1, "action2": action2}
                     else:
-                        if combo not in gto_freqs:
-                            gto_freqs[combo] = 0
-                        gto_freqs[combo] += float(row[2]) if row[2] else 0
+                        # No specific opponent - average across all opponent positions
+                        gto_query = text("""
+                            SELECT hand, AVG(defend_freq) as avg_freq FROM (
+                                SELECT gf.hand, gs.opponent_position, SUM(gf.frequency * 100) as defend_freq
+                                FROM gto_frequencies gf
+                                JOIN gto_scenarios gs ON gf.scenario_id = gs.scenario_id
+                                WHERE gs.category = :category AND gs.position = :position
+                                AND gs.action IN (:action1, :action2)
+                                GROUP BY gf.hand, gs.opponent_position
+                            ) sub
+                            GROUP BY hand
+                        """)
+                        gto_params = {"category": leak_category, "position": position,
+                                     "action1": action1, "action2": action2}
+
+                    gto_result = db.execute(gto_query, gto_params)
+                    gto_freqs = {}
+                    for row in gto_result:
+                        hand = row[0].replace(' ', '')
+                        if len(hand) >= 4:
+                            r1, s1, r2, s2 = hand[0].upper(), hand[1].lower(), hand[2].upper(), hand[3].lower()
+                            rank_order = "23456789TJQKA"
+                            if rank_order.index(r1) < rank_order.index(r2):
+                                r1, r2, s1, s2 = r2, r1, s2, s1
+                            combo = f"{r1}{r2}" if r1 == r2 else (f"{r1}{r2}s" if s1 == s2 else f"{r1}{r2}o")
+                        else:
+                            combo = hand.upper()
+                        gto_freqs[combo] = float(row[1]) if row[1] else 0
 
                 # Calculate deviations
                 for combo, actions in hand_actions.items():
