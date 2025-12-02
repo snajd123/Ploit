@@ -878,58 +878,74 @@ async def get_ai_improvement_advice(
                             combo = hand.upper()
                         gto_freqs[combo] = float(row[1]) if row[1] else 0
 
-                # Calculate deviations
+                # Calculate player frequencies for hands they played
+                player_freqs = {}
                 for combo, actions in hand_actions.items():
                     total = sum(actions.values())
-                    if total < 2:
-                        continue
                     if leak_category == 'opening':
-                        player_freq = (actions.get('open', 0) / total) * 100
+                        player_freqs[combo] = (actions.get('open', 0) / total) * 100 if total > 0 else 0
                     else:
                         fold_count = actions.get('fold', 0)
-                        player_freq = ((total - fold_count) / total) * 100
-                    gto_freq = gto_freqs.get(combo, 0)
-                    dev = player_freq - gto_freq
-                    if abs(dev) >= 15:  # Lower threshold for more data
-                        real_deviations.append({
-                            "hand": combo,
-                            "player_freq": round(player_freq, 0),
-                            "gto_freq": round(gto_freq, 0),
-                            "deviation": round(dev, 0),
-                            "sample": total,
-                            "recommendation": "remove" if dev > 0 else "add"
-                        })
+                        player_freqs[combo] = ((total - fold_count) / total) * 100 if total > 0 else 0
 
-                real_deviations.sort(key=lambda x: abs(x['deviation']), reverse=True)
-                real_deviations = real_deviations[:10]  # Top 10
-
-                # Find missing hands
+                # Analyze FULL RANGE GRID: Compare all GTO hands to player data
+                # This covers all 169 combos, not just hands in sample
+                range_analysis = []
                 for combo, gto_freq in gto_freqs.items():
-                    if combo not in hand_actions and gto_freq >= 40:
-                        missing_hands.append({"hand": combo, "gto_freq": round(gto_freq, 0)})
-                missing_hands.sort(key=lambda x: x['gto_freq'], reverse=True)
-                missing_hands = missing_hands[:5]
+                    player_freq = player_freqs.get(combo, None)  # None = no data
+                    sample = sum(hand_actions.get(combo, {}).values())
 
-                # FALLBACK: If no combo-level deviations (sparse data), show ALL hands by action
-                # This gives AI useful data even when samples are too small for frequency analysis
-                if not real_deviations:
-                    hands_by_action = {}
-                    for combo, actions in hand_actions.items():
-                        for action, count in actions.items():
-                            if action not in hands_by_action:
-                                hands_by_action[action] = []
-                            hands_by_action[action].append(combo)
+                    if player_freq is not None:
+                        # Player has data for this hand
+                        dev = player_freq - gto_freq
+                        if abs(dev) >= 15:
+                            range_analysis.append({
+                                "hand": combo,
+                                "player_freq": round(player_freq, 0),
+                                "gto_freq": round(gto_freq, 0),
+                                "deviation": round(dev, 0),
+                                "sample": sample,
+                                "has_data": True,
+                                "recommendation": "remove" if dev > 0 else "add"
+                            })
+                    else:
+                        # No player data - if GTO plays this hand significantly, it's a potential leak
+                        if gto_freq >= 30:  # GTO defends/opens this hand at least 30%
+                            range_analysis.append({
+                                "hand": combo,
+                                "player_freq": 0,
+                                "gto_freq": round(gto_freq, 0),
+                                "deviation": round(-gto_freq, 0),  # Player at 0% vs GTO
+                                "sample": 0,
+                                "has_data": False,
+                                "recommendation": "add"
+                            })
 
-                    # Store for prompt and response
-                    if hands_by_action:
-                        hands_by_action_data = {
-                            "hands_by_action": hands_by_action,
-                            "gto_reference": {k: round(v, 0) for k, v in sorted(gto_freqs.items(), key=lambda x: x[1], reverse=True)[:20]},
-                            "total_hands": sum(len(h) for h in hands_by_action.values()),
-                            "is_sparse": True
-                        }
-                        # Marker for prompt building
-                        real_deviations = [{"_sparse_data": True, "_hands_by_action": hands_by_action, "_gto_reference": gto_freqs}]
+                # Sort by absolute deviation and take top results
+                range_analysis.sort(key=lambda x: abs(x['deviation']), reverse=True)
+
+                # Separate into hands with data vs hands without data
+                hands_with_deviations = [h for h in range_analysis if h['has_data']][:8]
+                hands_missing_from_range = [h for h in range_analysis if not h['has_data']][:5]
+
+                real_deviations = hands_with_deviations
+                missing_hands = [{"hand": h["hand"], "gto_freq": h["gto_freq"]} for h in hands_missing_from_range]
+
+                # Also store hands by action for context
+                hands_by_action = {}
+                for combo, actions in hand_actions.items():
+                    for action, count in actions.items():
+                        if action not in hands_by_action:
+                            hands_by_action[action] = []
+                        hands_by_action[action].append(combo)
+
+                if hands_by_action:
+                    hands_by_action_data = {
+                        "hands_by_action": hands_by_action,
+                        "gto_reference": {k: round(v, 0) for k, v in sorted(gto_freqs.items(), key=lambda x: x[1], reverse=True)[:15]},
+                        "total_hands": sum(len(h) for h in hands_by_action.values()),
+                        "is_sparse": len(hand_actions) > 50  # Mark as sparse if many unique combos
+                    }
 
             except Exception as e:
                 logger.warning(f"Could not fetch hand deviations: {e}")
@@ -967,37 +983,28 @@ async def get_ai_improvement_advice(
         # Build real deviations section for prompt
         deviations_text = ""
         if real_deviations:
-            # Check if this is sparse data (hands grouped by action) vs combo-level deviations
-            if len(real_deviations) == 1 and real_deviations[0].get('_sparse_data'):
-                sparse_data = real_deviations[0]
-                hands_by_action = sparse_data.get('_hands_by_action', {})
-                gto_ref = sparse_data.get('_gto_reference', {})
-
-                deviations_text = "\n\nYOUR ACTUAL HANDS FROM THIS SCENARIO (sparse sample - grouped by action):\n"
-                for action, hands in hands_by_action.items():
-                    deviations_text += f"\n{action.upper()} ({len(hands)} hands): {', '.join(sorted(hands)[:30])}"
-                    if len(hands) > 30:
-                        deviations_text += f" ... and {len(hands) - 30} more"
-
-                if gto_ref:
-                    deviations_text += "\n\nGTO REFERENCE FREQUENCIES (call+3bet % for top hands):\n"
-                    sorted_gto = sorted(gto_ref.items(), key=lambda x: x[1], reverse=True)[:15]
-                    for hand, freq in sorted_gto:
-                        deviations_text += f"- {hand}: {freq}% defend\n"
-
-                # Clear real_deviations for response (don't show raw sparse data in UI)
-                real_deviations = []
-            else:
-                deviations_text = "\n\nACTUAL HAND-BY-HAND DEVIATIONS FROM YOUR DATABASE:\n"
-                for d in real_deviations:
-                    action_word = "OVER-playing" if d['deviation'] > 0 else "UNDER-playing"
-                    deviations_text += f"- {d['hand']}: You {action_word} this hand. You: {d['player_freq']:.0f}%, GTO: {d['gto_freq']:.0f}% (deviation: {d['deviation']:+.0f}%, sample: {d['sample']})\n"
+            deviations_text = "\n\nRANGE GRID ANALYSIS - Hands where you deviate from GTO:\n"
+            for d in real_deviations:
+                action_word = "OVER-playing" if d['deviation'] > 0 else "UNDER-playing"
+                sample_note = f"(n={d['sample']})" if d.get('sample', 0) > 0 else "(no sample)"
+                deviations_text += f"- {d['hand']}: {action_word} - You: {d['player_freq']:.0f}%, GTO: {d['gto_freq']:.0f}% (dev: {d['deviation']:+.0f}%) {sample_note}\n"
 
         missing_text = ""
         if missing_hands:
-            missing_text = "\n\nHANDS GTO PLAYS THAT YOU NEVER PLAYED IN SAMPLE:\n"
+            missing_text = "\n\nHANDS MISSING FROM YOUR RANGE (GTO plays these but no data in your sample):\n"
             for m in missing_hands:
-                missing_text += f"- {m['hand']}: GTO frequency {m['gto_freq']:.0f}% but you never played this hand\n"
+                missing_text += f"- {m['hand']}: GTO plays this at {m['gto_freq']:.0f}% - consider adding to your range\n"
+
+        # Add hands by action context if available
+        action_breakdown = ""
+        if hands_by_action_data and hands_by_action_data.get('hands_by_action'):
+            action_breakdown = "\n\nYOUR ACTUAL HANDS BY ACTION:\n"
+            for action, hands in hands_by_action_data['hands_by_action'].items():
+                sorted_hands = sorted(hands)[:20]
+                action_breakdown += f"- {action.upper()} ({len(hands)} hands): {', '.join(sorted_hands)}"
+                if len(hands) > 20:
+                    action_breakdown += f" +{len(hands) - 20} more"
+                action_breakdown += "\n"
 
         prompt = f"""You are an expert poker coach. Analyze this preflop leak and provide specific improvement advice.
 
@@ -1009,9 +1016,8 @@ LEAK DETAILS:
 - Sample size: {sample_size} hands
 
 The player needs to {adjustment}.
-{deviations_text}{missing_text}
-
-Based on the ACTUAL DATA above, provide your response as valid JSON with this exact structure:
+{deviations_text}{missing_text}{action_breakdown}
+Based on the RANGE GRID ANALYSIS above, provide your response as valid JSON with this exact structure:
 {{
   "hand_recommendations": [
     {{"hand": "AJs", "action": "add/remove", "reason": "brief reason"}},
