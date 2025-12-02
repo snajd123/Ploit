@@ -2704,7 +2704,9 @@ async def get_scenario_hands(
                 # Hand found in GTO data - use those frequencies
                 # For opening scenarios, add implied fold frequency (100 - open - limp)
                 if scenario == 'opening':
-                    open_freq = hand_specific_gto.get('open', 0)
+                    # SB has 'raise' and 'limp' keys, other positions have 'open'
+                    # Combine 'open' and 'raise' as they mean the same thing (opening with a raise)
+                    open_freq = hand_specific_gto.get('open', 0) + hand_specific_gto.get('raise', 0)
                     limp_freq = hand_specific_gto.get('limp', 0)
                     fold_freq = max(0, 100.0 - open_freq - limp_freq)
                     effective_gto_freqs = {'open': open_freq, 'fold': fold_freq, 'limp': limp_freq}
