@@ -1287,6 +1287,7 @@ const PlayerProfile = () => {
             gtoLeaks={filteredGTOLeaks.all}
             statLeaks={leakAnalysis?.leaks || []}
             totalHands={gtoAnalysis?.adherence?.total_hands || player.total_hands || 0}
+            playerName={playerName}
             onLeakClick={setSelectedScenario}
             insufficientSamples={filteredGTOLeaks.insufficientSamples}
           />

@@ -72,6 +72,7 @@ interface LeakAnalysisViewProps {
   gtoLeaks: GTOPositionalLeak[];
   statLeaks: StatBasedLeak[];
   totalHands: number;
+  playerName?: string;  // For fetching player-specific hand data
   onLeakClick?: (selection: ScenarioSelection) => void;
   insufficientSamples?: InsufficientSampleInfo[];
 }
@@ -393,6 +394,7 @@ const LeakAnalysisView: React.FC<LeakAnalysisViewProps> = ({
   gtoLeaks,
   statLeaks,
   totalHands,
+  playerName,
   onLeakClick,
   insufficientSamples = [],
 }) => {
@@ -684,6 +686,7 @@ const LeakAnalysisView: React.FC<LeakAnalysisViewProps> = ({
         playerValue={adviceModal.playerValue}
         gtoValue={adviceModal.gtoValue}
         sampleSize={adviceModal.sampleSize}
+        playerName={playerName}
       />
     </div>
   );
