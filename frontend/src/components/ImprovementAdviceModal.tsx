@@ -186,7 +186,12 @@ const ImprovementAdviceModal: React.FC<ImprovementAdviceModalProps> = ({
       }
 
       const data = await response.json();
-      setAdvice(prev => prev ? { ...prev, ai_enhanced: data.ai_enhanced } : null);
+      setAdvice(prev => prev ? {
+        ...prev,
+        ai_enhanced: data.ai_enhanced,
+        real_data: data.real_data,
+        debug: data.debug
+      } : null);
       setShowAiAdvice(true);
       setExpandedTier(4); // Auto-expand AI section
     } catch (err) {
