@@ -28,6 +28,7 @@ const RANKS = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2'];
 
 // Standard solver colors (PioSOLVER convention)
 const ACTION_COLORS: Record<string, { r: number; g: number; b: number }> = {
+  open: { r: 67, g: 160, b: 71 },     // Green (opening raise)
   raise: { r: 229, g: 57, b: 53 },    // Red
   '3bet': { r: 229, g: 57, b: 53 },   // Red
   '4bet': { r: 180, g: 40, b: 40 },   // Darker Red
