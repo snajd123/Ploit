@@ -159,6 +159,7 @@ const ImprovementAdviceModal: React.FC<ImprovementAdviceModalProps> = ({
       const data = await response.json();
       setAdvice(prev => prev ? { ...prev, ai_enhanced: data.ai_enhanced } : null);
       setShowAiAdvice(true);
+      setExpandedTier(4); // Auto-expand AI section
     } catch (err) {
       console.error('AI advice error:', err);
     } finally {
@@ -471,12 +472,18 @@ const ImprovementAdviceModal: React.FC<ImprovementAdviceModalProps> = ({
                           <div className="space-y-2">
                             {Array.isArray(advice.ai_enhanced.hand_recommendations) &&
                               advice.ai_enhanced.hand_recommendations.map((rec, idx) => (
-                                <div key={idx} className="p-2 bg-white rounded border border-gray-200 text-sm">
-                                  {typeof rec === 'string' ? rec : (
+                                <div key={idx} className="flex items-start gap-2 p-2 bg-white rounded border border-gray-200 text-sm">
+                                  {typeof rec === 'string' ? (
+                                    <span className="text-gray-700">{rec}</span>
+                                  ) : (
                                     <>
+                                      <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
+                                        rec.action === 'add' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                                      }`}>
+                                        {rec.action === 'add' ? '+' : '-'}
+                                      </span>
                                       <span className="font-mono font-medium text-purple-700">{rec.hand}</span>
-                                      <span className="text-gray-500 mx-2">-</span>
-                                      <span className="text-gray-700">{rec.reason}</span>
+                                      <span className="text-gray-600 flex-1">{rec.reason}</span>
                                     </>
                                   )}
                                 </div>

@@ -725,63 +725,93 @@ async def get_ai_improvement_advice(
 
         # Build prompt for AI enhancement
         deviation = player_value - gto_value
-        prompt = f"""Analyze this poker leak and provide personalized improvement advice.
+
+        # Determine action context based on leak
+        if leak_category == "opening":
+            action_context = "opening/raising first in"
+            if leak_direction == "too_tight":
+                adjustment = "ADD more hands to your opening range"
+            else:
+                adjustment = "REMOVE marginal hands from your opening range"
+        elif leak_category == "defense":
+            action_context = "defending vs opens (calling or 3-betting)"
+            if leak_direction == "too_tight":
+                adjustment = "DEFEND more hands - you're folding too much"
+            else:
+                adjustment = "FOLD more hands - you're defending too wide"
+        elif leak_category == "facing_3bet":
+            action_context = "responding to 3-bets (calling or 4-betting)"
+            if leak_direction == "too_tight":
+                adjustment = "CONTINUE more vs 3-bets - add calls and 4-bet bluffs"
+            else:
+                adjustment = "FOLD more to 3-bets - you're continuing too wide"
+        else:
+            action_context = leak_category
+            adjustment = "Adjust your frequency closer to GTO"
+
+        prompt = f"""You are an expert poker coach. Analyze this preflop leak and provide specific improvement advice.
 
 LEAK DETAILS:
-- Category: {leak_category}
-- Position: {position}
-- Vs Position: {vs_position or 'N/A'}
-- Player Frequency: {player_value:.1f}%
-- GTO Frequency: {gto_value:.1f}%
-- Deviation: {deviation:+.1f}%
-- Direction: {leak_direction.replace('_', ' ')}
-- Sample Size: {sample_size} hands
+- Scenario: {leak_category.replace('_', ' ').title()} from {position}{f' vs {vs_position}' if vs_position else ''}
+- Player's {action_context} frequency: {player_value:.1f}%
+- GTO optimal frequency: {gto_value:.1f}%
+- Deviation: {deviation:+.1f}% ({leak_direction.replace('_', ' ')})
+- Sample size: {sample_size} hands
 
-{f"Player: {player_name}" if player_name else ""}
-{f"Additional Context: {additional_context}" if additional_context else ""}
+The player needs to {adjustment}.
 
-Based on this leak, provide:
+Provide your response as valid JSON with this exact structure:
+{{
+  "hand_recommendations": [
+    {{"hand": "AJs", "action": "add/remove", "reason": "brief reason"}},
+    {{"hand": "KQo", "action": "add/remove", "reason": "brief reason"}}
+  ],
+  "pattern_analysis": "What this leak suggests about their overall game",
+  "study_plan": ["Exercise 1", "Exercise 2", "Exercise 3"],
+  "quick_adjustment": "One simple rule to apply immediately"
+}}
 
-1. **SPECIFIC HAND RECOMMENDATIONS** (most important):
-   - List 5-8 specific hands to add or remove from this range
-   - Explain WHY each hand should be adjusted
-   - Prioritize the hands by impact
+Give 5-8 specific hand recommendations. Use standard poker notation (AKs, AKo, JJ, T9s, etc.).
+Only respond with the JSON object, no additional text."""
 
-2. **PATTERN ANALYSIS**:
-   - What does this deviation suggest about the player's tendencies?
-   - What other leaks might correlate with this one?
+        # Call Claude directly without database tools
+        from anthropic import Anthropic
+        from backend.config import get_settings
+        import json
+        import re
 
-3. **PERSONALIZED STUDY PLAN**:
-   - 3 specific exercises to fix this leak
-   - What to focus on in their next session
+        settings = get_settings()
+        client = Anthropic(api_key=settings.anthropic_api_key)
 
-4. **QUICK ADJUSTMENT**:
-   - One simple rule they can apply immediately
-
-Format your response as JSON with keys: hand_recommendations, pattern_analysis, study_plan, quick_adjustment"""
-
-        # Call Claude for AI-enhanced advice
-        claude_service = ClaudeService(db)
-        ai_response = claude_service.query(prompt)
-
-        # Parse AI response
         ai_advice = {}
-        if ai_response.get("success"):
-            response_text = ai_response.get("response", "")
-            # Try to extract JSON from response
-            import json
-            import re
+        try:
+            response = client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=1500,
+                messages=[{"role": "user", "content": prompt}]
+            )
 
-            # Try to find JSON block in response
-            json_match = re.search(r'\{[\s\S]*\}', response_text)
-            if json_match:
-                try:
-                    ai_advice = json.loads(json_match.group())
-                except json.JSONDecodeError:
-                    # If JSON parsing fails, use the raw response
+            response_text = response.content[0].text if response.content else ""
+            logger.info(f"AI advice response: {response_text[:200]}...")
+
+            # Try to parse JSON from response
+            # First try direct parse
+            try:
+                ai_advice = json.loads(response_text)
+            except json.JSONDecodeError:
+                # Try to find JSON block in response
+                json_match = re.search(r'\{[\s\S]*\}', response_text)
+                if json_match:
+                    try:
+                        ai_advice = json.loads(json_match.group())
+                    except json.JSONDecodeError:
+                        ai_advice = {"raw_advice": response_text}
+                else:
                     ai_advice = {"raw_advice": response_text}
-            else:
-                ai_advice = {"raw_advice": response_text}
+
+        except Exception as e:
+            logger.error(f"Claude API error: {str(e)}")
+            ai_advice = {"raw_advice": f"AI analysis unavailable: {str(e)}"}
 
         # Combine static and AI advice
         result = {
