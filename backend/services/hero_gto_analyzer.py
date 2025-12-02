@@ -193,10 +193,12 @@ class HeroGTOAnalyzer:
             return None
 
         # Sum frequencies across all opening actions (raise + limp for SB)
+        # Use raw hole cards format (e.g., "KhQd") for database lookup, not normalized type ("KQo")
+        raw_hand = hand['hole_cards'].replace(' ', '') if hand.get('hole_cards') else None
         gto_freq = 0.0
         for row in rows:
             scenario_id = row[0]
-            freq = self._get_hand_frequency(scenario_id, normalized_hand)
+            freq = self._get_hand_frequency(scenario_id, raw_hand) if raw_hand else None
             if freq is not None:
                 gto_freq += freq
 
@@ -271,9 +273,11 @@ class HeroGTOAnalyzer:
             return None
 
         # Get frequencies for each action
+        # Use raw hole cards format (e.g., "KhQd") for database lookup
+        raw_hand = hand['hole_cards'].replace(' ', '') if hand.get('hole_cards') else None
         action_frequencies = {}
         for scenario in scenarios:
-            freq = self._get_hand_frequency(scenario['scenario_id'], normalized_hand)
+            freq = self._get_hand_frequency(scenario['scenario_id'], raw_hand) if raw_hand else None
             if freq is None:
                 freq = 0.0
 
@@ -347,9 +351,11 @@ class HeroGTOAnalyzer:
             return None
 
         # Get frequencies for each action
+        # Use raw hole cards format (e.g., "KhQd") for database lookup
+        raw_hand = hand['hole_cards'].replace(' ', '') if hand.get('hole_cards') else None
         action_frequencies = {}
         for scenario in scenarios:
-            freq = self._get_hand_frequency(scenario['scenario_id'], normalized_hand)
+            freq = self._get_hand_frequency(scenario['scenario_id'], raw_hand) if raw_hand else None
             if freq is None:
                 freq = 0.0
 
