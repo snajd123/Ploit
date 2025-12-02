@@ -878,74 +878,116 @@ async def get_ai_improvement_advice(
                             combo = hand.upper()
                         gto_freqs[combo] = float(row[1]) if row[1] else 0
 
-                # Calculate player frequencies for hands they played
-                player_freqs = {}
+                # Calculate player frequencies and actions for ALL hands
+                player_data = {}  # combo -> {freq, actions, sample}
                 for combo, actions in hand_actions.items():
                     total = sum(actions.values())
                     if leak_category == 'opening':
-                        player_freqs[combo] = (actions.get('open', 0) / total) * 100 if total > 0 else 0
+                        freq = (actions.get('open', 0) / total) * 100 if total > 0 else 0
+                        player_action = 'open' if freq > 50 else 'fold'
                     else:
                         fold_count = actions.get('fold', 0)
-                        player_freqs[combo] = ((total - fold_count) / total) * 100 if total > 0 else 0
+                        freq = ((total - fold_count) / total) * 100 if total > 0 else 0
+                        if actions.get('3bet', 0) > actions.get('call', 0):
+                            player_action = '3bet'
+                        elif actions.get('call', 0) > 0:
+                            player_action = 'call'
+                        else:
+                            player_action = 'fold'
+                    player_data[combo] = {"freq": freq, "action": player_action, "sample": total}
 
-                # Analyze FULL RANGE GRID: Compare all GTO hands to player data
-                # This covers all 169 combos, not just hands in sample
-                range_analysis = []
+                # COMPREHENSIVE RANGE ANALYSIS: Categorize ALL hands
+                # Categories: overfolds, overcalls, correct_defends, correct_folds
+                overfolds = []      # GTO defends, player folds
+                overcalls = []      # GTO folds, player defends
+                correct_defends = []
+                correct_folds = []
+                no_data_should_defend = []  # GTO defends but no sample
+
                 for combo, gto_freq in gto_freqs.items():
-                    player_freq = player_freqs.get(combo, None)  # None = no data
-                    sample = sum(hand_actions.get(combo, {}).values())
+                    gto_defends = gto_freq >= 30  # GTO plays this hand
+                    gto_folds = gto_freq < 15     # GTO folds this hand
 
-                    if player_freq is not None:
-                        # Player has data for this hand
-                        dev = player_freq - gto_freq
-                        if abs(dev) >= 15:
-                            range_analysis.append({
-                                "hand": combo,
-                                "player_freq": round(player_freq, 0),
-                                "gto_freq": round(gto_freq, 0),
-                                "deviation": round(dev, 0),
-                                "sample": sample,
-                                "has_data": True,
-                                "recommendation": "remove" if dev > 0 else "add"
-                            })
+                    if combo in player_data:
+                        pd = player_data[combo]
+                        player_defends = pd["freq"] >= 50
+
+                        if gto_defends and not player_defends:
+                            # LEAK: Overfolding - GTO defends but player folds
+                            overfolds.append({"hand": combo, "gto": round(gto_freq), "action": pd["action"]})
+                        elif gto_folds and player_defends:
+                            # LEAK: Overcalling - GTO folds but player defends
+                            overcalls.append({"hand": combo, "gto": round(gto_freq), "action": pd["action"]})
+                        elif player_defends:
+                            correct_defends.append(combo)
+                        else:
+                            correct_folds.append(combo)
                     else:
-                        # No player data - if GTO plays this hand significantly, it's a potential leak
-                        if gto_freq >= 30:  # GTO defends/opens this hand at least 30%
-                            range_analysis.append({
-                                "hand": combo,
-                                "player_freq": 0,
-                                "gto_freq": round(gto_freq, 0),
-                                "deviation": round(-gto_freq, 0),  # Player at 0% vs GTO
-                                "sample": 0,
-                                "has_data": False,
-                                "recommendation": "add"
-                            })
+                        # No sample for this hand
+                        if gto_freq >= 50:  # GTO strongly defends
+                            no_data_should_defend.append({"hand": combo, "gto": round(gto_freq)})
 
-                # Sort by absolute deviation and take top results
-                range_analysis.sort(key=lambda x: abs(x['deviation']), reverse=True)
+                # Sort leaks by GTO frequency (biggest misses first)
+                overfolds.sort(key=lambda x: x["gto"], reverse=True)
+                overcalls.sort(key=lambda x: x["gto"])  # Lowest GTO first (worst overcalls)
+                no_data_should_defend.sort(key=lambda x: x["gto"], reverse=True)
 
-                # Separate into hands with data vs hands without data
-                hands_with_deviations = [h for h in range_analysis if h['has_data']][:8]
-                hands_missing_from_range = [h for h in range_analysis if not h['has_data']][:5]
+                # Helper to categorize hands for pattern analysis
+                def categorize_hand(h):
+                    if len(h) == 2:  # Pair like "AA", "77"
+                        rank = h[0]
+                        if rank in "AKQJ":
+                            return "premium_pairs"
+                        elif rank in "T98":
+                            return "medium_pairs"
+                        else:
+                            return "small_pairs"
+                    elif h.endswith('s'):  # Suited
+                        if h[0] == 'A':
+                            return "suited_aces"
+                        elif h[0] in "KQJ" and h[1] in "AKQJT":
+                            return "suited_broadways"
+                        elif abs(ord(h[0]) - ord(h[1])) == 1:
+                            return "suited_connectors"
+                        else:
+                            return "suited_other"
+                    else:  # Offsuit
+                        if h[0] in "AKQ" and h[1] in "AKQJT":
+                            return "offsuit_broadways"
+                        else:
+                            return "offsuit_other"
 
-                real_deviations = hands_with_deviations
-                missing_hands = [{"hand": h["hand"], "gto_freq": h["gto_freq"]} for h in hands_missing_from_range]
+                # Group leaks by category for pattern recognition
+                overfold_groups = {}
+                for h in overfolds:
+                    cat = categorize_hand(h["hand"])
+                    if cat not in overfold_groups:
+                        overfold_groups[cat] = []
+                    overfold_groups[cat].append(f"{h['hand']}({h['gto']}%)")
 
-                # Also store hands by action for context
-                hands_by_action = {}
-                for combo, actions in hand_actions.items():
-                    for action, count in actions.items():
-                        if action not in hands_by_action:
-                            hands_by_action[action] = []
-                        hands_by_action[action].append(combo)
+                overcall_groups = {}
+                for h in overcalls:
+                    cat = categorize_hand(h["hand"])
+                    if cat not in overcall_groups:
+                        overcall_groups[cat] = []
+                    overcall_groups[cat].append(f"{h['hand']}({h['gto']}%)")
 
-                if hands_by_action:
-                    hands_by_action_data = {
-                        "hands_by_action": hands_by_action,
-                        "gto_reference": {k: round(v, 0) for k, v in sorted(gto_freqs.items(), key=lambda x: x[1], reverse=True)[:15]},
-                        "total_hands": sum(len(h) for h in hands_by_action.values()),
-                        "is_sparse": len(hand_actions) > 50  # Mark as sparse if many unique combos
-                    }
+                # Store for prompt and response
+                real_deviations = overfolds[:10]  # Top overfolds for UI
+                missing_hands = [{"hand": h["hand"], "gto_freq": h["gto"]} for h in no_data_should_defend[:5]]
+
+                # Build comprehensive analysis data
+                hands_by_action_data = {
+                    "overfolds": overfolds,
+                    "overcalls": overcalls,
+                    "overfold_groups": overfold_groups,
+                    "overcall_groups": overcall_groups,
+                    "correct_defends": correct_defends,
+                    "correct_folds": correct_folds,
+                    "no_data_should_defend": no_data_should_defend,
+                    "total_gto_hands": len(gto_freqs),
+                    "total_player_hands": len(player_data)
+                }
 
             except Exception as e:
                 logger.warning(f"Could not fetch hand deviations: {e}")
@@ -980,31 +1022,58 @@ async def get_ai_improvement_advice(
             action_context = leak_category
             adjustment = "Adjust your frequency closer to GTO"
 
-        # Build real deviations section for prompt
-        deviations_text = ""
-        if real_deviations:
-            deviations_text = "\n\nRANGE GRID ANALYSIS - Hands where you deviate from GTO:\n"
+        # Build comprehensive range analysis for prompt using categorized format
+        analysis_text = ""
+
+        if hands_by_action_data:
+            hba = hands_by_action_data
+
+            # LEAKS SECTION - Overfolds (GTO defends but player folds)
+            if hba.get('overfold_groups'):
+                analysis_text += "\n\n=== SIGNIFICANT LEAKS: OVERFOLDING ===\n"
+                analysis_text += "(GTO defends these hands but you folded - add to your range)\n"
+                for category, hands in hba['overfold_groups'].items():
+                    cat_name = category.replace('_', ' ').title()
+                    analysis_text += f"\n{cat_name}: {', '.join(hands)}"
+
+            # LEAKS SECTION - Overcalls (GTO folds but player defends)
+            if hba.get('overcall_groups'):
+                analysis_text += "\n\n=== SIGNIFICANT LEAKS: OVERCALLING ===\n"
+                analysis_text += "(GTO folds these hands but you defended - remove from your range)\n"
+                for category, hands in hba['overcall_groups'].items():
+                    cat_name = category.replace('_', ' ').title()
+                    analysis_text += f"\n{cat_name}: {', '.join(hands)}"
+
+            # MISSING FROM RANGE - GTO defends but no sample data
+            if hba.get('no_data_should_defend'):
+                no_data = hba['no_data_should_defend']
+                analysis_text += "\n\n=== HANDS MISSING FROM YOUR RANGE ===\n"
+                analysis_text += "(GTO strongly defends these but you have no sample - likely overfolding)\n"
+                missing_list = [f"{h['hand']}({h['gto']}%)" for h in no_data]
+                analysis_text += ', '.join(missing_list)
+
+            # CORRECT PLAYS - Summarized
+            correct_d = hba.get('correct_defends', [])
+            correct_f = hba.get('correct_folds', [])
+            if correct_d or correct_f:
+                analysis_text += "\n\n=== CORRECT PLAYS (no action needed) ===\n"
+                if correct_d:
+                    analysis_text += f"Correct defends ({len(correct_d)}): {', '.join(sorted(correct_d))}\n"
+                if correct_f:
+                    analysis_text += f"Correct folds ({len(correct_f)}): {', '.join(sorted(correct_f))}\n"
+
+            # Summary stats
+            total_overfolds = len(hba.get('overfolds', []))
+            total_overcalls = len(hba.get('overcalls', []))
+            analysis_text += f"\n\n=== SUMMARY ===\n"
+            analysis_text += f"Total leaks: {total_overfolds} overfolds, {total_overcalls} overcalls\n"
+            analysis_text += f"Hands analyzed: {hba.get('total_player_hands', 0)} player / {hba.get('total_gto_hands', 0)} GTO combos"
+
+        # Fallback if no comprehensive data
+        elif real_deviations:
+            analysis_text = "\n\nRANGE DEVIATIONS:\n"
             for d in real_deviations:
-                action_word = "OVER-playing" if d['deviation'] > 0 else "UNDER-playing"
-                sample_note = f"(n={d['sample']})" if d.get('sample', 0) > 0 else "(no sample)"
-                deviations_text += f"- {d['hand']}: {action_word} - You: {d['player_freq']:.0f}%, GTO: {d['gto_freq']:.0f}% (dev: {d['deviation']:+.0f}%) {sample_note}\n"
-
-        missing_text = ""
-        if missing_hands:
-            missing_text = "\n\nHANDS MISSING FROM YOUR RANGE (GTO plays these but no data in your sample):\n"
-            for m in missing_hands:
-                missing_text += f"- {m['hand']}: GTO plays this at {m['gto_freq']:.0f}% - consider adding to your range\n"
-
-        # Add hands by action context if available
-        action_breakdown = ""
-        if hands_by_action_data and hands_by_action_data.get('hands_by_action'):
-            action_breakdown = "\n\nYOUR ACTUAL HANDS BY ACTION:\n"
-            for action, hands in hands_by_action_data['hands_by_action'].items():
-                sorted_hands = sorted(hands)[:20]
-                action_breakdown += f"- {action.upper()} ({len(hands)} hands): {', '.join(sorted_hands)}"
-                if len(hands) > 20:
-                    action_breakdown += f" +{len(hands) - 20} more"
-                action_breakdown += "\n"
+                analysis_text += f"- {d['hand']}: GTO {d.get('gto', d.get('gto_freq', 0))}%\n"
 
         prompt = f"""You are an expert poker coach. Analyze this preflop leak and provide specific improvement advice.
 
@@ -1016,8 +1085,9 @@ LEAK DETAILS:
 - Sample size: {sample_size} hands
 
 The player needs to {adjustment}.
-{deviations_text}{missing_text}{action_breakdown}
-Based on the RANGE GRID ANALYSIS above, provide your response as valid JSON with this exact structure:
+{analysis_text}
+
+Based on the COMPREHENSIVE RANGE ANALYSIS above, provide your response as valid JSON with this exact structure:
 {{
   "hand_recommendations": [
     {{"hand": "AJs", "action": "add/remove", "reason": "brief reason"}},
@@ -1028,8 +1098,11 @@ Based on the RANGE GRID ANALYSIS above, provide your response as valid JSON with
   "quick_adjustment": "One simple rule to apply immediately"
 }}
 
-IMPORTANT: Base your recommendations on the ACTUAL DEVIATIONS shown above from the player's database.
-Prioritize hands with the biggest deviations. Use standard poker notation (AKs, AKo, JJ, T9s, etc.).
+IMPORTANT:
+- Focus on OVERFOLDING section (hands to ADD) and OVERCALLING section (hands to REMOVE)
+- Look for PATTERNS in hand categories (e.g., "folding too many suited connectors")
+- Hands in MISSING section are likely leaks too - player probably folds these
+- Use standard poker notation (AKs, AKo, JJ, T9s, etc.)
 Only respond with the JSON object, no additional text."""
 
         # Call Claude directly without database tools
