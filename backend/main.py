@@ -697,7 +697,7 @@ async def get_ai_improvement_advice(
     - Common mistakes analysis
     """
     from backend.services.improvement_advice import get_improvement_advice, advice_to_dict
-    from backend.services.claude_service import ClaudeService
+    from sqlalchemy import text
 
     try:
         # Extract parameters
@@ -709,7 +709,6 @@ async def get_ai_improvement_advice(
         gto_value = request.get("gto_value", 0)
         sample_size = request.get("sample_size", 100)
         player_name = request.get("player_name")
-        additional_context = request.get("additional_context", "")
 
         # First get the static advice
         static_advice = get_improvement_advice(
@@ -723,7 +722,157 @@ async def get_ai_improvement_advice(
         )
         static_dict = advice_to_dict(static_advice)
 
-        # Build prompt for AI enhancement
+        # Fetch REAL hand deviations data if player_name is provided
+        real_deviations = []
+        missing_hands = []
+        if player_name:
+            try:
+                # Call the hand deviations logic inline (avoiding circular request)
+                validated_name = InputValidator.validate_player_name(player_name)
+                vs_pos_upper = vs_position.upper() if vs_position else None
+
+                # Helper function to normalize hole cards
+                def normalize_to_combo(hole_cards: str):
+                    if not hole_cards:
+                        return None
+                    cards = hole_cards.strip().split()
+                    if len(cards) != 2:
+                        return None
+                    rank_order = "23456789TJQKA"
+                    card1, card2 = cards[0], cards[1]
+                    r1, s1 = card1[0].upper(), card1[1].lower()
+                    r2, s2 = card2[0].upper(), card2[1].lower()
+                    if rank_order.index(r1) < rank_order.index(r2):
+                        r1, r2 = r2, r1
+                        s1, s2 = s2, s1
+                    if r1 == r2:
+                        return f"{r1}{r2}"
+                    elif s1 == s2:
+                        return f"{r1}{r2}s"
+                    else:
+                        return f"{r1}{r2}o"
+
+                # Build scenario query
+                if leak_category == 'opening':
+                    hands_query = text("""
+                        SELECT
+                            (regexp_match(rh.raw_hand_text, 'Dealt to ' || phs.player_name || ' \\[([^\\]]+)\\]'))[1] as hole_cards,
+                            CASE WHEN phs.pfr = true THEN 'open' WHEN phs.vpip = false THEN 'fold' ELSE 'limp' END as player_action
+                        FROM player_hand_summary phs
+                        JOIN raw_hands rh ON phs.hand_id = rh.hand_id
+                        WHERE phs.player_name = :player_name AND phs.position = :position AND phs.faced_raise = false
+                    """)
+                    params = {"player_name": validated_name, "position": position}
+                elif leak_category == 'defense':
+                    hands_query = text("""
+                        SELECT
+                            (regexp_match(rh.raw_hand_text, 'Dealt to ' || phs.player_name || ' \\[([^\\]]+)\\]'))[1] as hole_cards,
+                            CASE WHEN phs.vpip = false THEN 'fold' WHEN phs.made_three_bet = true THEN '3bet' ELSE 'call' END as player_action
+                        FROM player_hand_summary phs
+                        JOIN raw_hands rh ON phs.hand_id = rh.hand_id
+                        WHERE phs.player_name = :player_name AND phs.position = :position
+                        AND phs.faced_raise = true AND phs.faced_three_bet = false
+                        AND (:vs_position IS NULL OR phs.raiser_position = :vs_position)
+                    """)
+                    params = {"player_name": validated_name, "position": position, "vs_position": vs_pos_upper}
+                else:  # facing_3bet
+                    hands_query = text("""
+                        SELECT
+                            (regexp_match(rh.raw_hand_text, 'Dealt to ' || phs.player_name || ' \\[([^\\]]+)\\]'))[1] as hole_cards,
+                            CASE WHEN phs.folded_to_three_bet = true THEN 'fold' WHEN phs.four_bet = true THEN '4bet' ELSE 'call' END as player_action
+                        FROM player_hand_summary phs
+                        JOIN raw_hands rh ON phs.hand_id = rh.hand_id
+                        WHERE phs.player_name = :player_name AND phs.position = :position
+                        AND phs.faced_three_bet = true AND phs.pfr = true
+                    """)
+                    params = {"player_name": validated_name, "position": position}
+
+                result = db.execute(hands_query, params)
+                rows = list(result)
+
+                # Count player actions by combo
+                hand_actions = {}
+                for row in rows:
+                    combo = normalize_to_combo(row[0])
+                    if not combo:
+                        continue
+                    if combo not in hand_actions:
+                        hand_actions[combo] = {}
+                    action = row[1]
+                    hand_actions[combo][action] = hand_actions[combo].get(action, 0) + 1
+
+                # Get GTO frequencies
+                if leak_category == 'opening':
+                    gto_query = text("""
+                        SELECT gf.hand, gf.frequency * 100 FROM gto_frequencies gf
+                        JOIN gto_scenarios gs ON gf.scenario_id = gs.scenario_id
+                        WHERE gs.category = 'opening' AND gs.position = :position AND gs.action = 'open'
+                    """)
+                    gto_params = {"position": position}
+                else:
+                    gto_query = text("""
+                        SELECT gf.hand, gs.action, gf.frequency * 100 FROM gto_frequencies gf
+                        JOIN gto_scenarios gs ON gf.scenario_id = gs.scenario_id
+                        WHERE gs.category = :category AND gs.position = :position
+                        AND gs.action IN ('call', '3bet', '4bet')
+                    """)
+                    gto_params = {"category": leak_category, "position": position}
+
+                gto_result = db.execute(gto_query, gto_params)
+                gto_freqs = {}
+                for row in gto_result:
+                    hand = row[0].replace(' ', '')
+                    if len(hand) >= 4:
+                        r1, s1, r2, s2 = hand[0].upper(), hand[1].lower(), hand[2].upper(), hand[3].lower()
+                        rank_order = "23456789TJQKA"
+                        if rank_order.index(r1) < rank_order.index(r2):
+                            r1, r2, s1, s2 = r2, r1, s2, s1
+                        combo = f"{r1}{r2}" if r1 == r2 else (f"{r1}{r2}s" if s1 == s2 else f"{r1}{r2}o")
+                    else:
+                        combo = hand.upper()
+                    if leak_category == 'opening':
+                        gto_freqs[combo] = float(row[1]) if row[1] else 0
+                    else:
+                        if combo not in gto_freqs:
+                            gto_freqs[combo] = 0
+                        gto_freqs[combo] += float(row[2]) if row[2] else 0
+
+                # Calculate deviations
+                for combo, actions in hand_actions.items():
+                    total = sum(actions.values())
+                    if total < 2:
+                        continue
+                    if leak_category == 'opening':
+                        player_freq = (actions.get('open', 0) / total) * 100
+                    else:
+                        fold_count = actions.get('fold', 0)
+                        player_freq = ((total - fold_count) / total) * 100
+                    gto_freq = gto_freqs.get(combo, 0)
+                    dev = player_freq - gto_freq
+                    if abs(dev) >= 15:  # Lower threshold for more data
+                        real_deviations.append({
+                            "hand": combo,
+                            "player_freq": round(player_freq, 0),
+                            "gto_freq": round(gto_freq, 0),
+                            "deviation": round(dev, 0),
+                            "sample": total,
+                            "recommendation": "remove" if dev > 0 else "add"
+                        })
+
+                real_deviations.sort(key=lambda x: abs(x['deviation']), reverse=True)
+                real_deviations = real_deviations[:10]  # Top 10
+
+                # Find missing hands
+                for combo, gto_freq in gto_freqs.items():
+                    if combo not in hand_actions and gto_freq >= 40:
+                        missing_hands.append({"hand": combo, "gto_freq": round(gto_freq, 0)})
+                missing_hands.sort(key=lambda x: x['gto_freq'], reverse=True)
+                missing_hands = missing_hands[:5]
+
+            except Exception as e:
+                logger.warning(f"Could not fetch hand deviations: {e}")
+
+        # Build prompt for AI enhancement with REAL data
         deviation = player_value - gto_value
 
         # Determine action context based on leak
@@ -749,6 +898,20 @@ async def get_ai_improvement_advice(
             action_context = leak_category
             adjustment = "Adjust your frequency closer to GTO"
 
+        # Build real deviations section for prompt
+        deviations_text = ""
+        if real_deviations:
+            deviations_text = "\n\nACTUAL HAND-BY-HAND DEVIATIONS FROM YOUR DATABASE:\n"
+            for d in real_deviations:
+                action_word = "OVER-playing" if d['deviation'] > 0 else "UNDER-playing"
+                deviations_text += f"- {d['hand']}: You {action_word} this hand. You: {d['player_freq']:.0f}%, GTO: {d['gto_freq']:.0f}% (deviation: {d['deviation']:+.0f}%, sample: {d['sample']})\n"
+
+        missing_text = ""
+        if missing_hands:
+            missing_text = "\n\nHANDS GTO PLAYS THAT YOU NEVER PLAYED IN SAMPLE:\n"
+            for m in missing_hands:
+                missing_text += f"- {m['hand']}: GTO frequency {m['gto_freq']:.0f}% but you never played this hand\n"
+
         prompt = f"""You are an expert poker coach. Analyze this preflop leak and provide specific improvement advice.
 
 LEAK DETAILS:
@@ -759,19 +922,21 @@ LEAK DETAILS:
 - Sample size: {sample_size} hands
 
 The player needs to {adjustment}.
+{deviations_text}{missing_text}
 
-Provide your response as valid JSON with this exact structure:
+Based on the ACTUAL DATA above, provide your response as valid JSON with this exact structure:
 {{
   "hand_recommendations": [
     {{"hand": "AJs", "action": "add/remove", "reason": "brief reason"}},
     {{"hand": "KQo", "action": "add/remove", "reason": "brief reason"}}
   ],
-  "pattern_analysis": "What this leak suggests about their overall game",
+  "pattern_analysis": "What this leak suggests about their overall game based on the specific hands shown",
   "study_plan": ["Exercise 1", "Exercise 2", "Exercise 3"],
   "quick_adjustment": "One simple rule to apply immediately"
 }}
 
-Give 5-8 specific hand recommendations. Use standard poker notation (AKs, AKo, JJ, T9s, etc.).
+IMPORTANT: Base your recommendations on the ACTUAL DEVIATIONS shown above from the player's database.
+Prioritize hands with the biggest deviations. Use standard poker notation (AKs, AKo, JJ, T9s, etc.).
 Only respond with the JSON object, no additional text."""
 
         # Call Claude directly without database tools
@@ -813,7 +978,7 @@ Only respond with the JSON object, no additional text."""
             logger.error(f"Claude API error: {str(e)}")
             ai_advice = {"raw_advice": f"AI analysis unavailable: {str(e)}"}
 
-        # Combine static and AI advice
+        # Combine static and AI advice with REAL data
         result = {
             **static_dict,
             "ai_enhanced": {
@@ -822,6 +987,12 @@ Only respond with the JSON object, no additional text."""
                 "study_plan": ai_advice.get("study_plan", []),
                 "quick_adjustment": ai_advice.get("quick_adjustment", ""),
                 "raw_response": ai_advice.get("raw_advice") if "raw_advice" in ai_advice else None
+            },
+            # Include the REAL deviations data from player's hands
+            "real_data": {
+                "deviations": real_deviations,
+                "missing_hands": missing_hands,
+                "data_available": len(real_deviations) > 0 or len(missing_hands) > 0
             }
         }
 
@@ -832,6 +1003,319 @@ Only respond with the JSON object, no additional text."""
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error generating AI improvement advice"
+        )
+
+
+@app.get(
+    "/api/players/{player_name}/hand-deviations",
+    response_model=Dict[str, Any],
+    tags=["Analysis"],
+    summary="Get specific hand deviations from GTO",
+    description="Compare player's actual hand frequencies to GTO frequencies for a specific scenario"
+)
+async def get_hand_deviations(
+    player_name: str,
+    scenario: str = Query(..., description="Scenario: opening, defense, facing_3bet"),
+    position: str = Query(..., description="Player position: UTG, MP, CO, BTN, SB, BB"),
+    vs_position: Optional[str] = Query(None, description="Opponent position for defense/facing scenarios"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get detailed hand-by-hand comparison of player actions vs GTO.
+
+    Returns:
+    - List of hands where player deviates from GTO
+    - Each hand shows: player frequency, GTO frequency, deviation, recommendation
+    - Sorted by impact (biggest deviations first)
+    """
+    from sqlalchemy import text
+
+    try:
+        validated_name = InputValidator.validate_player_name(player_name)
+        position = position.upper()
+        if vs_position:
+            vs_position = vs_position.upper()
+
+        # Helper function to normalize hole cards to combo notation
+        def normalize_to_combo(hole_cards: str) -> Optional[str]:
+            if not hole_cards:
+                return None
+            cards = hole_cards.strip().split()
+            if len(cards) != 2:
+                return None
+
+            rank_order = "23456789TJQKA"
+            card1, card2 = cards[0], cards[1]
+            r1, s1 = card1[0].upper(), card1[1].lower()
+            r2, s2 = card2[0].upper(), card2[1].lower()
+
+            # Ensure higher rank first
+            if rank_order.index(r1) < rank_order.index(r2):
+                r1, r2 = r2, r1
+                s1, s2 = s2, s1
+
+            if r1 == r2:
+                return f"{r1}{r2}"
+            elif s1 == s2:
+                return f"{r1}{r2}s"
+            else:
+                return f"{r1}{r2}o"
+
+        # Build scenario-specific query to get player hands with hole cards
+        if scenario == 'opening':
+            hands_query = text("""
+                SELECT
+                    (regexp_match(rh.raw_hand_text, 'Dealt to ' || phs.player_name || ' \\[([^\\]]+)\\]'))[1] as hole_cards,
+                    CASE
+                        WHEN phs.pfr = true THEN 'open'
+                        WHEN phs.vpip = false THEN 'fold'
+                        ELSE 'limp'
+                    END as player_action
+                FROM player_hand_summary phs
+                JOIN raw_hands rh ON phs.hand_id = rh.hand_id
+                WHERE phs.player_name = :player_name
+                AND phs.position = :position
+                AND phs.faced_raise = false
+            """)
+            params = {"player_name": validated_name, "position": position}
+            gto_action_key = 'open'
+
+        elif scenario == 'defense':
+            if vs_position:
+                hands_query = text("""
+                    SELECT
+                        (regexp_match(rh.raw_hand_text, 'Dealt to ' || phs.player_name || ' \\[([^\\]]+)\\]'))[1] as hole_cards,
+                        CASE
+                            WHEN phs.vpip = false THEN 'fold'
+                            WHEN phs.made_three_bet = true THEN '3bet'
+                            ELSE 'call'
+                        END as player_action
+                    FROM player_hand_summary phs
+                    JOIN raw_hands rh ON phs.hand_id = rh.hand_id
+                    WHERE phs.player_name = :player_name
+                    AND phs.position = :position
+                    AND phs.faced_raise = true
+                    AND phs.faced_three_bet = false
+                    AND phs.raiser_position = :vs_position
+                """)
+                params = {"player_name": validated_name, "position": position, "vs_position": vs_position}
+            else:
+                hands_query = text("""
+                    SELECT
+                        (regexp_match(rh.raw_hand_text, 'Dealt to ' || phs.player_name || ' \\[([^\\]]+)\\]'))[1] as hole_cards,
+                        CASE
+                            WHEN phs.vpip = false THEN 'fold'
+                            WHEN phs.made_three_bet = true THEN '3bet'
+                            ELSE 'call'
+                        END as player_action
+                    FROM player_hand_summary phs
+                    JOIN raw_hands rh ON phs.hand_id = rh.hand_id
+                    WHERE phs.player_name = :player_name
+                    AND phs.position = :position
+                    AND phs.faced_raise = true
+                    AND phs.faced_three_bet = false
+                """)
+                params = {"player_name": validated_name, "position": position}
+            gto_action_key = 'call'  # For defense, we compare to continue frequency (call + 3bet)
+
+        elif scenario == 'facing_3bet':
+            hands_query = text("""
+                SELECT
+                    (regexp_match(rh.raw_hand_text, 'Dealt to ' || phs.player_name || ' \\[([^\\]]+)\\]'))[1] as hole_cards,
+                    CASE
+                        WHEN phs.folded_to_three_bet = true THEN 'fold'
+                        WHEN phs.four_bet = true THEN '4bet'
+                        ELSE 'call'
+                    END as player_action
+                FROM player_hand_summary phs
+                JOIN raw_hands rh ON phs.hand_id = rh.hand_id
+                WHERE phs.player_name = :player_name
+                AND phs.position = :position
+                AND phs.faced_three_bet = true
+                AND phs.pfr = true
+            """)
+            params = {"player_name": validated_name, "position": position}
+            gto_action_key = 'call'
+        else:
+            raise HTTPException(status_code=400, detail="Invalid scenario")
+
+        # Execute query
+        result = db.execute(hands_query, params)
+        rows = list(result)
+
+        # Count player actions by hand combo
+        hand_actions: Dict[str, Dict[str, int]] = {}  # combo -> {action -> count}
+        for row in rows:
+            hole_cards = row[0]
+            action = row[1]
+            combo = normalize_to_combo(hole_cards)
+            if not combo:
+                continue
+
+            if combo not in hand_actions:
+                hand_actions[combo] = {}
+            if action not in hand_actions[combo]:
+                hand_actions[combo][action] = 0
+            hand_actions[combo][action] += 1
+
+        # Get GTO frequencies for this scenario
+        if scenario == 'opening':
+            gto_query = text("""
+                SELECT gf.hand, gf.frequency * 100 as freq
+                FROM gto_frequencies gf
+                JOIN gto_scenarios gs ON gf.scenario_id = gs.scenario_id
+                WHERE gs.category = 'opening'
+                AND gs.position = :position
+                AND gs.action = 'open'
+            """)
+            gto_params = {"position": position}
+        elif scenario == 'defense':
+            # For defense, get call and 3bet frequencies
+            gto_query = text("""
+                SELECT gf.hand, gs.action, gf.frequency * 100 as freq
+                FROM gto_frequencies gf
+                JOIN gto_scenarios gs ON gf.scenario_id = gs.scenario_id
+                WHERE gs.category = 'defense'
+                AND gs.position = :position
+                AND gs.action IN ('call', '3bet')
+                AND (gs.opponent_position = :vs_position OR :vs_position IS NULL)
+            """)
+            gto_params = {"position": position, "vs_position": vs_position}
+        else:  # facing_3bet
+            gto_query = text("""
+                SELECT gf.hand, gs.action, gf.frequency * 100 as freq
+                FROM gto_frequencies gf
+                JOIN gto_scenarios gs ON gf.scenario_id = gs.scenario_id
+                WHERE gs.category = 'facing_3bet'
+                AND gs.position = :position
+                AND gs.action IN ('call', '4bet')
+            """)
+            gto_params = {"position": position}
+
+        gto_result = db.execute(gto_query, gto_params)
+
+        # Build GTO lookup - normalize hand notation
+        gto_freqs: Dict[str, Dict[str, float]] = {}  # combo -> {action -> freq}
+        for row in gto_result:
+            if scenario == 'opening':
+                hand, freq = row[0], float(row[1]) if row[1] else 0
+                action = 'open'
+            else:
+                hand, action, freq = row[0], row[1], float(row[2]) if row[2] else 0
+
+            # Normalize hand from DB format to combo
+            hand = hand.replace(' ', '')
+            if len(hand) >= 4:
+                r1, s1 = hand[0].upper(), hand[1].lower()
+                r2, s2 = hand[2].upper(), hand[3].lower()
+                rank_order = "23456789TJQKA"
+                if rank_order.index(r1) < rank_order.index(r2):
+                    r1, r2 = r2, r1
+                    s1, s2 = s2, s1
+                if r1 == r2:
+                    combo = f"{r1}{r2}"
+                elif s1 == s2:
+                    combo = f"{r1}{r2}s"
+                else:
+                    combo = f"{r1}{r2}o"
+            elif len(hand) == 2 or len(hand) == 3:
+                combo = hand.upper()
+            else:
+                continue
+
+            if combo not in gto_freqs:
+                gto_freqs[combo] = {}
+            gto_freqs[combo][action] = freq
+
+        # Calculate GTO continue frequency (sum of non-fold actions)
+        gto_continue: Dict[str, float] = {}
+        for combo, actions in gto_freqs.items():
+            gto_continue[combo] = sum(actions.values())
+
+        # Compare player vs GTO and find deviations
+        deviations = []
+        for combo, actions in hand_actions.items():
+            total = sum(actions.values())
+            if total < 2:  # Need at least 2 hands for meaningful comparison
+                continue
+
+            # Calculate player frequencies
+            if scenario == 'opening':
+                player_open_freq = (actions.get('open', 0) / total) * 100
+                gto_open_freq = gto_continue.get(combo, 0)
+
+                # Calculate deviation
+                deviation = player_open_freq - gto_open_freq
+
+                if abs(deviation) >= 20:  # Only show significant deviations
+                    deviations.append({
+                        "hand": combo,
+                        "sample_size": total,
+                        "player_freq": round(player_open_freq, 1),
+                        "gto_freq": round(gto_open_freq, 1),
+                        "deviation": round(deviation, 1),
+                        "action": "open" if deviation > 0 else "fold",
+                        "recommendation": "remove" if deviation > 0 else "add",
+                        "player_actions": actions
+                    })
+            else:
+                # For defense/facing_3bet, calculate continue frequency
+                fold_count = actions.get('fold', 0)
+                continue_count = total - fold_count
+                player_continue_freq = (continue_count / total) * 100
+                gto_cont_freq = gto_continue.get(combo, 0)
+
+                deviation = player_continue_freq - gto_cont_freq
+
+                if abs(deviation) >= 20:
+                    deviations.append({
+                        "hand": combo,
+                        "sample_size": total,
+                        "player_freq": round(player_continue_freq, 1),
+                        "gto_freq": round(gto_cont_freq, 1),
+                        "deviation": round(deviation, 1),
+                        "action": "continue" if deviation > 0 else "fold",
+                        "recommendation": "fold more" if deviation > 0 else "defend more",
+                        "player_actions": actions,
+                        "gto_breakdown": gto_freqs.get(combo, {})
+                    })
+
+        # Sort by absolute deviation (biggest leaks first)
+        deviations.sort(key=lambda x: abs(x['deviation']), reverse=True)
+
+        # Also find hands player NEVER plays that GTO opens/defends
+        missing_hands = []
+        for combo, gto_freq in gto_continue.items():
+            if combo not in hand_actions and gto_freq >= 50:  # GTO plays this hand often but player never does
+                missing_hands.append({
+                    "hand": combo,
+                    "gto_freq": round(gto_freq, 1),
+                    "note": "GTO plays this hand but you never have in sample"
+                })
+        missing_hands.sort(key=lambda x: x['gto_freq'], reverse=True)
+
+        return {
+            "scenario": scenario,
+            "position": position,
+            "vs_position": vs_position,
+            "total_hands_analyzed": len(rows),
+            "unique_combos": len(hand_actions),
+            "deviations": deviations[:20],  # Top 20 deviations
+            "missing_hands": missing_hands[:10],  # Top 10 missing hands
+            "summary": {
+                "over_playing": len([d for d in deviations if d['deviation'] > 0]),
+                "under_playing": len([d for d in deviations if d['deviation'] < 0]),
+                "biggest_leak": deviations[0] if deviations else None
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting hand deviations: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error analyzing hand deviations: {str(e)}"
         )
 
 

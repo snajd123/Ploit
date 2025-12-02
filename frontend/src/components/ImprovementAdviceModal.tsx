@@ -41,6 +41,26 @@ interface AIEnhanced {
   raw_response?: string | null;
 }
 
+interface RealDeviation {
+  hand: string;
+  player_freq: number;
+  gto_freq: number;
+  deviation: number;
+  sample: number;
+  recommendation: string;
+}
+
+interface MissingHand {
+  hand: string;
+  gto_freq: number;
+}
+
+interface RealData {
+  deviations: RealDeviation[];
+  missing_hands: MissingHand[];
+  data_available: boolean;
+}
+
 interface ImprovementAdviceData {
   leak_type: string;
   leak_category: string;
@@ -55,6 +75,7 @@ interface ImprovementAdviceData {
   tier3_study: StudyResources;
   caveats: string[];
   ai_enhanced?: AIEnhanced;
+  real_data?: RealData;
 }
 
 interface ImprovementAdviceModalProps {
@@ -449,7 +470,7 @@ const ImprovementAdviceModal: React.FC<ImprovementAdviceModalProps> = ({
                   <TierSection
                     tier={4}
                     title="AI-Powered Analysis"
-                    subtitle="Personalized recommendations"
+                    subtitle="Based on YOUR actual hands"
                     icon={<Sparkles className="text-purple-600" size={18} />}
                     bgColor="bg-purple-50"
                     borderColor="border-purple-200"
@@ -457,10 +478,64 @@ const ImprovementAdviceModal: React.FC<ImprovementAdviceModalProps> = ({
                     onToggle={() => setExpandedTier(expandedTier === 4 ? 0 : 4)}
                   >
                     <div className="space-y-4">
+                      {/* REAL DATA: Your Actual Hand Deviations */}
+                      {advice.real_data?.data_available && (
+                        <div className="p-3 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-200">
+                          <h4 className="text-sm font-bold text-blue-800 mb-3 flex items-center gap-2">
+                            <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
+                            Your Actual Hand Deviations (from database)
+                          </h4>
+
+                          {/* Deviations list */}
+                          {advice.real_data.deviations && advice.real_data.deviations.length > 0 && (
+                            <div className="space-y-2 mb-3">
+                              {advice.real_data.deviations.map((dev, idx) => (
+                                <div key={idx} className="flex items-center justify-between p-2 bg-white rounded border border-gray-200">
+                                  <div className="flex items-center gap-2">
+                                    <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${
+                                      dev.deviation > 0 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+                                    }`}>
+                                      {dev.deviation > 0 ? 'OVER' : 'UNDER'}
+                                    </span>
+                                    <span className="font-mono font-bold text-gray-900">{dev.hand}</span>
+                                  </div>
+                                  <div className="flex items-center gap-3 text-xs">
+                                    <span className="text-gray-500">
+                                      You: <span className="font-medium text-gray-700">{dev.player_freq}%</span>
+                                    </span>
+                                    <span className="text-gray-500">
+                                      GTO: <span className="font-medium text-blue-600">{dev.gto_freq}%</span>
+                                    </span>
+                                    <span className={`font-bold ${dev.deviation > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                      {dev.deviation > 0 ? '+' : ''}{dev.deviation}%
+                                    </span>
+                                    <span className="text-gray-400">({dev.sample})</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Missing hands */}
+                          {advice.real_data.missing_hands && advice.real_data.missing_hands.length > 0 && (
+                            <div>
+                              <h5 className="text-xs font-semibold text-orange-700 mb-2">Hands GTO plays that you never played:</h5>
+                              <div className="flex flex-wrap gap-2">
+                                {advice.real_data.missing_hands.map((m, idx) => (
+                                  <span key={idx} className="px-2 py-1 bg-orange-100 text-orange-800 text-xs font-mono rounded">
+                                    {m.hand} ({m.gto_freq}%)
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       {/* Quick Adjustment */}
                       {advice.ai_enhanced.quick_adjustment && (
                         <div className="p-3 bg-white rounded-lg border border-purple-200">
-                          <h4 className="text-sm font-semibold text-purple-800 mb-1">Quick Adjustment</h4>
+                          <h4 className="text-sm font-semibold text-purple-800 mb-1">AI Quick Adjustment</h4>
                           <p className="text-gray-700">{advice.ai_enhanced.quick_adjustment}</p>
                         </div>
                       )}
@@ -468,7 +543,7 @@ const ImprovementAdviceModal: React.FC<ImprovementAdviceModalProps> = ({
                       {/* Hand Recommendations */}
                       {advice.ai_enhanced.hand_recommendations && advice.ai_enhanced.hand_recommendations.length > 0 && (
                         <div>
-                          <h4 className="text-sm font-semibold text-gray-700 mb-2">Specific Hand Recommendations</h4>
+                          <h4 className="text-sm font-semibold text-gray-700 mb-2">AI Hand Recommendations</h4>
                           <div className="space-y-2">
                             {Array.isArray(advice.ai_enhanced.hand_recommendations) &&
                               advice.ai_enhanced.hand_recommendations.map((rec, idx) => (
