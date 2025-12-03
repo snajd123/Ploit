@@ -69,6 +69,26 @@ interface InsufficientSampleInfo {
   minRequired: number;
 }
 
+// Priority leak from API (ScenarioComparison format)
+interface PriorityLeak {
+  scenario_id: string;
+  category: 'opening' | 'defense' | 'facing_3bet';
+  position: string;
+  vs_position?: string | null;
+  action: string;
+  display_name: string;
+  overall_value: number;
+  overall_sample: number;
+  overall_deviation: number;
+  gto_value: number;
+  is_leak: boolean;
+  leak_severity: 'none' | 'minor' | 'moderate' | 'major';
+  leak_direction: string | null;
+  confidence_level: string;
+  ev_weight?: number;
+  priority_score?: number;
+}
+
 interface LeakAnalysisViewProps {
   gtoLeaks: GTOPositionalLeak[];
   statLeaks: StatBasedLeak[];
@@ -76,6 +96,7 @@ interface LeakAnalysisViewProps {
   playerName?: string;  // For fetching player-specific hand data
   onLeakClick?: (selection: ScenarioSelection) => void;
   insufficientSamples?: InsufficientSampleInfo[];
+  priorityLeaks?: PriorityLeak[];  // Pre-computed priority leaks from API
 }
 
 // Map leak category to scenario type
@@ -420,6 +441,7 @@ const LeakAnalysisView: React.FC<LeakAnalysisViewProps> = ({
   playerName,
   onLeakClick,
   insufficientSamples = [],
+  priorityLeaks = [],
 }) => {
   const [expandedTendency, setExpandedTendency] = useState<TendencyType | null>(null);
   const [showAIAnalysis, setShowAIAnalysis] = useState(false);
@@ -529,8 +551,41 @@ const LeakAnalysisView: React.FC<LeakAnalysisViewProps> = ({
   const { grade, color: gradeColor } = getLeakGrade(totalEvLoss);
   const primaryTendency = getPrimaryTendency(tendencyBuckets);
 
-  // Get top 3 priority fixes
+  // Get top 3 priority fixes - use API-provided priority_leaks if available
   const priorityFixes = useMemo(() => {
+    // If we have priority leaks from the API, use those (they use the unified scoring algorithm)
+    if (priorityLeaks && priorityLeaks.length > 0) {
+      return priorityLeaks.slice(0, 3).map(pl => {
+        // Convert PriorityLeak to the format expected by PriorityFix component
+        const leak: GTOPositionalLeak = {
+          category: pl.category === 'opening' ? 'Opening'
+            : pl.category === 'defense' ? 'Defense'
+            : 'Facing 3-Bet',
+          position: pl.position,
+          vsPosition: pl.vs_position || undefined,
+          action: pl.action === 'open' ? 'Open'
+            : pl.action === 'fold' ? 'Fold'
+            : pl.action === 'call' ? 'Call'
+            : pl.action === '3bet' ? '3-Bet'
+            : pl.action === '4bet' ? '4-Bet'
+            : pl.action,
+          playerValue: pl.overall_value,
+          gtoValue: pl.gto_value,
+          deviation: pl.overall_deviation,
+          severity: pl.leak_severity === 'major' ? 'major' : 'moderate',
+          sampleSize: pl.overall_sample,
+          confidence: pl.confidence_level === 'high' ? 'high'
+            : pl.confidence_level === 'moderate' ? 'moderate'
+            : 'low',
+        };
+        // Estimate EV impact based on deviation and position weight
+        const evWeight = pl.ev_weight || 1.0;
+        const evImpact = Math.abs(pl.overall_deviation) * evWeight * 0.15;
+        return { leak, evImpact };
+      });
+    }
+
+    // Fallback to old calculation if no priority leaks provided
     const allLeaks: { leak: any; evImpact: number }[] = [];
 
     gtoLeaks.forEach(leak => {
@@ -544,7 +599,7 @@ const LeakAnalysisView: React.FC<LeakAnalysisViewProps> = ({
     return allLeaks
       .sort((a, b) => b.evImpact - a.evImpact)
       .slice(0, 3);
-  }, [gtoLeaks, statLeaks]);
+  }, [gtoLeaks, statLeaks, priorityLeaks]);
 
   // Get leaks for expanded tendency
   const expandedLeaks = expandedTendency

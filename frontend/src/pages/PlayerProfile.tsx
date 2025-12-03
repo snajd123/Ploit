@@ -1316,6 +1316,7 @@ const PlayerProfile = () => {
             playerName={playerName}
             onLeakClick={setSelectedScenario}
             insufficientSamples={filteredGTOLeaks.insufficientSamples}
+            priorityLeaks={gtoAnalysis?.priority_leaks}
           />
         )}
 

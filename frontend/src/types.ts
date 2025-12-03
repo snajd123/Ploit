@@ -338,6 +338,25 @@ export interface GTOAnalysisResponse {
     call_diff: number | null;
     '5bet_diff': number | null;
   }>;
+  // Priority leaks sorted by unified scoring algorithm
+  priority_leaks?: Array<{
+    scenario_id: string;
+    category: 'opening' | 'defense' | 'facing_3bet';
+    position: string;
+    vs_position?: string | null;
+    action: string;
+    display_name: string;
+    overall_value: number;
+    overall_sample: number;
+    overall_deviation: number;
+    gto_value: number;
+    is_leak: boolean;
+    leak_severity: 'none' | 'minor' | 'moderate' | 'major';
+    leak_direction: string | null;
+    confidence_level: string;
+    ev_weight?: number;
+    priority_score?: number;
+  }>;
 }
 
 // Scenario Hands Drill-down Types
