@@ -256,3 +256,48 @@ class UploadSession(Base):
 
     def __repr__(self) -> str:
         return f"<UploadSession(session_id={self.session_id}, filename={self.filename}, status={self.status})>"
+
+
+class UserSettings(Base):
+    """
+    User settings including hero nicknames for identifying 'My Game' hands.
+
+    Table: user_settings
+
+    Stores key-value pairs where:
+    - 'hero_nicknames': JSON array of hero nicknames across different poker sites
+    - Additional settings can be added as needed
+    """
+    __tablename__ = 'user_settings'
+
+    setting_id = Column(Integer, primary_key=True, autoincrement=True)
+    setting_key = Column(String(100), nullable=False, unique=True)
+    setting_value = Column(Text)  # JSON for complex values like arrays
+    created_at = Column(TIMESTAMP, default=func.current_timestamp())
+    updated_at = Column(TIMESTAMP, default=func.current_timestamp())
+
+    def __repr__(self) -> str:
+        return f"<UserSettings(key={self.setting_key})>"
+
+
+class HeroNickname(Base):
+    """
+    Individual hero nickname entries for easy querying.
+
+    Table: hero_nicknames
+
+    Each row represents one nickname the user plays under on a specific site.
+    """
+    __tablename__ = 'hero_nicknames'
+
+    nickname_id = Column(Integer, primary_key=True, autoincrement=True)
+    nickname = Column(String(100), nullable=False)
+    site = Column(String(50))  # e.g., 'PokerStars', 'GGPoker', 'PartyPoker'
+    created_at = Column(TIMESTAMP, default=func.current_timestamp())
+
+    __table_args__ = (
+        UniqueConstraint('nickname', 'site', name='unique_nickname_site'),
+    )
+
+    def __repr__(self) -> str:
+        return f"<HeroNickname(nickname={self.nickname}, site={self.site})>"

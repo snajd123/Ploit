@@ -866,3 +866,98 @@ export interface GTOScoreResponse {
   improvement_suggestion: string;
   confidence: 'low' | 'moderate' | 'high';
 }
+
+// Hero Nickname Types (for My Game vs Pools distinction)
+export interface HeroNickname {
+  nickname_id: number;
+  nickname: string;
+  site: string | null;
+  created_at: string;
+}
+
+export interface HeroNicknameCreate {
+  nickname: string;
+  site?: string | null;
+}
+
+export interface HeroNicknameCheck {
+  is_hero: boolean;
+  nickname_id: number | null;
+  site: string | null;
+}
+
+export interface HeroNicknameList {
+  nicknames: string[];
+}
+
+// My Game Types (hero analysis with hole cards)
+export interface HeroSessionResponse {
+  session_id: number;
+  player_name: string;
+  start_time: string;
+  end_time: string;
+  duration_minutes: number;
+  total_hands: number;
+  profit_loss_bb: number;
+  bb_100: number;
+  table_stakes: string;
+  table_name: string | null;
+}
+
+export interface HeroStatsResponse {
+  player_name: string;
+  total_hands: number;
+  sessions_count: number;
+  total_profit_bb: number;
+  avg_bb_100: number;
+  vpip_pct: number;
+  pfr_pct: number;
+  three_bet_pct: number;
+  fold_to_3bet_pct: number | null;
+  player_type: string | null;
+  first_session: string | null;
+  last_session: string | null;
+}
+
+export interface MyGameOverview {
+  hero_nicknames: string[];
+  total_sessions: number;
+  total_hands: number;
+  total_profit_bb: number;
+  avg_bb_100: number;
+  stats_by_nickname: HeroStatsResponse[];
+}
+
+// Pools Types (opponent analysis by site + stake)
+export interface PoolSummary {
+  pool_id: string;
+  display_name: string;
+  site: string;
+  stake_level: string;
+  player_count: number;
+  total_hands: number;
+  avg_vpip: number;
+  avg_pfr: number;
+  avg_3bet: number;
+}
+
+export interface PoolPlayer {
+  player_name: string;
+  total_hands: number;
+  vpip_pct: number;
+  pfr_pct: number;
+  three_bet_pct: number;
+  fold_to_3bet_pct: number | null;
+  player_type: string | null;
+}
+
+export interface PoolDetail {
+  pool_id: string;
+  display_name: string;
+  site: string;
+  stake_level: string;
+  player_count: number;
+  total_hands: number;
+  avg_stats: Record<string, number>;
+  players: PoolPlayer[];
+}

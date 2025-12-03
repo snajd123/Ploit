@@ -30,6 +30,14 @@ import type {
   PositionalPLResponse,
   PreflopMistakesResponse,
   GTOScoreResponse,
+  HeroNickname,
+  HeroNicknameCreate,
+  HeroNicknameCheck,
+  HeroNicknameList,
+  MyGameOverview,
+  HeroSessionResponse,
+  PoolSummary,
+  PoolDetail,
 } from '../types';
 
 class ApiClient {
@@ -348,6 +356,103 @@ class ApiClient {
     const response = await this.client.post<GTOScoreResponse>(
       '/api/sessions/aggregate/gto-score',
       { session_ids: sessionIds }
+    );
+    return response.data;
+  }
+
+  // ========================================
+  // Hero Nicknames / Settings API
+  // ========================================
+
+  // Get all hero nicknames
+  async getHeroNicknames(): Promise<HeroNickname[]> {
+    const response = await this.client.get<HeroNickname[]>('/api/settings/hero-nicknames');
+    return response.data;
+  }
+
+  // Add a hero nickname
+  async addHeroNickname(data: HeroNicknameCreate): Promise<HeroNickname> {
+    const response = await this.client.post<HeroNickname>('/api/settings/hero-nicknames', data);
+    return response.data;
+  }
+
+  // Delete a hero nickname
+  async deleteHeroNickname(nicknameId: number): Promise<void> {
+    await this.client.delete(`/api/settings/hero-nicknames/${nicknameId}`);
+  }
+
+  // Update a hero nickname
+  async updateHeroNickname(nicknameId: number, data: Partial<HeroNicknameCreate>): Promise<HeroNickname> {
+    const response = await this.client.put<HeroNickname>(
+      `/api/settings/hero-nicknames/${nicknameId}`,
+      data
+    );
+    return response.data;
+  }
+
+  // Check if a player name is a hero
+  async checkIfHero(playerName: string): Promise<HeroNicknameCheck> {
+    const response = await this.client.get<HeroNicknameCheck>(
+      `/api/settings/hero-nicknames/check/${encodeURIComponent(playerName)}`
+    );
+    return response.data;
+  }
+
+  // Get simple list of all hero nicknames (for quick matching)
+  async getHeroNicknameList(): Promise<HeroNicknameList> {
+    const response = await this.client.get<HeroNicknameList>('/api/settings/hero-nicknames/list-names');
+    return response.data;
+  }
+
+  // ========================================
+  // My Game API (Hero with hole cards)
+  // ========================================
+
+  // Get overview of hero's performance
+  async getMyGameOverview(): Promise<MyGameOverview> {
+    const response = await this.client.get<MyGameOverview>('/api/my-game/overview');
+    return response.data;
+  }
+
+  // Get hero's sessions
+  async getMyGameSessions(limit: number = 50, offset: number = 0): Promise<HeroSessionResponse[]> {
+    const response = await this.client.get<HeroSessionResponse[]>('/api/my-game/sessions', {
+      params: { limit, offset }
+    });
+    return response.data;
+  }
+
+  // Check if a player is a hero
+  async checkIfMyPlayer(playerName: string): Promise<{ is_hero: boolean; player_name: string }> {
+    const response = await this.client.get<{ is_hero: boolean; player_name: string }>(
+      `/api/my-game/check/${encodeURIComponent(playerName)}`
+    );
+    return response.data;
+  }
+
+  // ========================================
+  // Pools API (Opponents by site + stake)
+  // ========================================
+
+  // Get all pools
+  async getPools(): Promise<PoolSummary[]> {
+    const response = await this.client.get<PoolSummary[]>('/api/pools/');
+    return response.data;
+  }
+
+  // Get pool detail
+  async getPoolDetail(stakeLevel: string, limit: number = 50, sortBy: string = 'total_hands'): Promise<PoolDetail> {
+    const response = await this.client.get<PoolDetail>(
+      `/api/pools/${encodeURIComponent(stakeLevel)}`,
+      { params: { limit, sort_by: sortBy } }
+    );
+    return response.data;
+  }
+
+  // Get player detail in a pool
+  async getPoolPlayerDetail(stakeLevel: string, playerName: string): Promise<any> {
+    const response = await this.client.get(
+      `/api/pools/${encodeURIComponent(stakeLevel)}/players/${encodeURIComponent(playerName)}`
     );
     return response.data;
   }

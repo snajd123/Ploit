@@ -13,20 +13,26 @@ import SessionDetail from './pages/SessionDetail';
 import SessionGroupAnalysis from './pages/SessionGroupAnalysis';
 import Settings from './pages/Settings';
 import StatsGlossary from './pages/StatsGlossary';
+import MyGame from './pages/MyGame';
+import Pools from './pages/Pools';
 
 function App() {
   return (
     <Router>
       <Routes>
         <Route path="/" element={<Layout />}>
-          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route index element={<Navigate to="/my-game" replace />} />
+          <Route path="my-game" element={<MyGame />} />
+          <Route path="pools" element={<Pools />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="upload" element={<Upload />} />
           <Route path="players" element={<PlayersList />} />
           <Route path="players/:playerName" element={<PlayerProfile />} />
           <Route path="claude" element={<ClaudeChat />} />
-          <Route path="strategy" element={<PreGameStrategy />} />
+          <Route path="pre-game" element={<PreGameStrategy />} />
+          <Route path="strategy" element={<Navigate to="/pre-game" replace />} />
           <Route path="gto" element={<Navigate to="/players" replace />} />
+          <Route path="gto-analysis" element={<Navigate to="/my-game" replace />} />
           <Route path="gto-browser" element={<GTOBrowser />} />
           <Route path="sessions" element={<Sessions />} />
           <Route path="sessions/analysis" element={<SessionGroupAnalysis />} />

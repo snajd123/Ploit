@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { RefreshCw, Trash2, AlertTriangle, CheckCircle, XCircle, Database, Shield, Upload, Clock, FileText } from 'lucide-react';
+import { RefreshCw, Trash2, AlertTriangle, CheckCircle, XCircle, Database, Shield, Upload, Clock, FileText, User, Plus, X } from 'lucide-react';
 import { api } from '../services/api';
-import type { ResetPreviewResponse, ClearDatabaseResponse, UploadSessionItem } from '../types';
+import type { ResetPreviewResponse, ClearDatabaseResponse, UploadSessionItem, HeroNickname } from '../types';
 
 const Settings = () => {
   const [recalculating, setRecalculating] = useState(false);
@@ -15,6 +15,62 @@ const Settings = () => {
   const [totalUploads, setTotalUploads] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+
+  // Hero nicknames state
+  const [heroNicknames, setHeroNicknames] = useState<HeroNickname[]>([]);
+  const [loadingNicknames, setLoadingNicknames] = useState(false);
+  const [newNickname, setNewNickname] = useState('');
+  const [newSite, setNewSite] = useState('');
+  const [addingNickname, setAddingNickname] = useState(false);
+  const [nicknameError, setNicknameError] = useState<string | null>(null);
+
+  // Load hero nicknames
+  const loadHeroNicknames = async () => {
+    setLoadingNicknames(true);
+    try {
+      const nicknames = await api.getHeroNicknames();
+      setHeroNicknames(nicknames);
+    } catch (err) {
+      console.error('Failed to load hero nicknames:', err);
+    } finally {
+      setLoadingNicknames(false);
+    }
+  };
+
+  // Add a new hero nickname
+  const handleAddNickname = async () => {
+    if (!newNickname.trim()) {
+      setNicknameError('Nickname is required');
+      return;
+    }
+
+    setAddingNickname(true);
+    setNicknameError(null);
+
+    try {
+      await api.addHeroNickname({
+        nickname: newNickname.trim(),
+        site: newSite.trim() || null
+      });
+      setNewNickname('');
+      setNewSite('');
+      loadHeroNicknames();
+    } catch (err: any) {
+      setNicknameError(err.response?.data?.detail || 'Failed to add nickname');
+    } finally {
+      setAddingNickname(false);
+    }
+  };
+
+  // Delete a hero nickname
+  const handleDeleteNickname = async (nicknameId: number) => {
+    try {
+      await api.deleteHeroNickname(nicknameId);
+      loadHeroNicknames();
+    } catch (err) {
+      console.error('Failed to delete nickname:', err);
+    }
+  };
 
   // Load reset preview
   const loadResetPreview = async () => {
@@ -45,6 +101,7 @@ const Settings = () => {
 
   // Load data on mount
   useEffect(() => {
+    loadHeroNicknames();
     loadResetPreview();
     loadUploadHistory();
   }, []);
@@ -125,8 +182,119 @@ const Settings = () => {
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
         <p className="mt-2 text-gray-600">
-          Database maintenance and administrative tools
+          Configure your player identity and manage database
         </p>
+      </div>
+
+      {/* Hero Nicknames */}
+      <div className="card">
+        <div className="flex items-start space-x-4">
+          <div className="p-3 bg-indigo-100 rounded-lg">
+            <User className="text-indigo-600" size={24} />
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-gray-900">My Nicknames</h2>
+              <button
+                onClick={loadHeroNicknames}
+                disabled={loadingNicknames}
+                className="text-sm text-gray-500 hover:text-gray-700 flex items-center space-x-1"
+              >
+                <RefreshCw className={`${loadingNicknames ? 'animate-spin' : ''}`} size={14} />
+                <span>Refresh</span>
+              </button>
+            </div>
+            <p className="mt-2 text-sm text-gray-600">
+              Add all your poker screen names. Hands played under these names will appear in <strong>"My Game"</strong> with hole card analysis.
+              Other players will be grouped in <strong>"Pools"</strong> by site and stakes.
+            </p>
+
+            {/* Add nickname form */}
+            <div className="mt-4 flex items-end space-x-3">
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nickname</label>
+                <input
+                  type="text"
+                  value={newNickname}
+                  onChange={(e) => setNewNickname(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAddNickname()}
+                  placeholder="e.g. Hero123"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                />
+              </div>
+              <div className="w-40">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Site (optional)</label>
+                <select
+                  value={newSite}
+                  onChange={(e) => setNewSite(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                >
+                  <option value="">All Sites</option>
+                  <option value="PokerStars">PokerStars</option>
+                  <option value="GGPoker">GGPoker</option>
+                  <option value="PartyPoker">PartyPoker</option>
+                  <option value="888poker">888poker</option>
+                  <option value="iPoker">iPoker</option>
+                  <option value="Winamax">Winamax</option>
+                </select>
+              </div>
+              <button
+                onClick={handleAddNickname}
+                disabled={addingNickname || !newNickname.trim()}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+              >
+                {addingNickname ? (
+                  <RefreshCw className="animate-spin" size={16} />
+                ) : (
+                  <Plus size={16} />
+                )}
+                <span>Add</span>
+              </button>
+            </div>
+
+            {nicknameError && (
+              <div className="mt-2 text-sm text-red-600 flex items-center space-x-1">
+                <XCircle size={14} />
+                <span>{nicknameError}</span>
+              </div>
+            )}
+
+            {/* Nicknames list */}
+            {loadingNicknames ? (
+              <div className="mt-4 flex items-center justify-center py-6">
+                <RefreshCw className="animate-spin text-gray-400" size={24} />
+              </div>
+            ) : heroNicknames.length === 0 ? (
+              <div className="mt-4 p-6 bg-gray-50 rounded-lg text-center">
+                <User className="mx-auto text-gray-400 mb-2" size={32} />
+                <p className="text-sm text-gray-500">No nicknames configured yet</p>
+                <p className="text-xs text-gray-400 mt-1">Add your poker screen names to enable "My Game" analysis</p>
+              </div>
+            ) : (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {heroNicknames.map((nickname) => (
+                  <div
+                    key={nickname.nickname_id}
+                    className="inline-flex items-center space-x-2 px-3 py-1.5 bg-indigo-50 text-indigo-800 rounded-full border border-indigo-200"
+                  >
+                    <span className="font-medium">{nickname.nickname}</span>
+                    {nickname.site && (
+                      <span className="text-xs text-indigo-600 bg-indigo-100 px-1.5 py-0.5 rounded">
+                        {nickname.site}
+                      </span>
+                    )}
+                    <button
+                      onClick={() => handleDeleteNickname(nickname.nickname_id)}
+                      className="text-indigo-400 hover:text-red-500 transition-colors"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Upload History */}

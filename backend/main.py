@@ -32,6 +32,9 @@ from backend.api.session_endpoints import router as session_router
 from backend.api.strategy_endpoints import router as strategy_router
 from backend.api.conversation_endpoints import router as conversation_router
 from backend.api.pool_analysis_endpoints import router as pool_analysis_router
+from backend.api.settings_endpoints import router as settings_router
+from backend.api.mygame_endpoints import router as mygame_router
+from backend.api.pools_endpoints import router as pools_router
 from backend.models.conversation_models import ClaudeConversation, ClaudeMessage
 from backend.auth import verify_api_key, InputValidator
 
@@ -83,6 +86,15 @@ app.include_router(conversation_router)
 
 # Include Pool Analysis router
 app.include_router(pool_analysis_router)
+
+# Include Settings router
+app.include_router(settings_router)
+
+# Include My Game router
+app.include_router(mygame_router)
+
+# Include Pools router
+app.include_router(pools_router)
 
 # ========================================
 # Pydantic Models

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Outlet, NavLink } from 'react-router-dom';
-import { LayoutDashboard, Upload, Users, MessageSquare, Target, Search, Menu, X, BookOpen, Grid3x3, BarChart2, Settings } from 'lucide-react';
+import { Upload, Users, MessageSquare, Target, Search, Menu, X, Grid3x3, BarChart2, Settings, User, Layers } from 'lucide-react';
 import QuickLookupModal from './QuickLookupModal';
 import OnboardingModal, { shouldShowOnboarding } from './OnboardingModal';
 
@@ -23,32 +23,27 @@ const Layout = () => {
 
   const navSections: NavSection[] = [
     {
-      label: 'Prepare',
+      label: 'Analysis',
       items: [
-        { to: '/strategy', icon: Target, label: 'Strategy', tooltip: 'Pre-game opponent strategy' },
+        { to: '/my-game', icon: User, label: 'My Game', tooltip: 'Your performance with hole cards' },
+        { to: '/pools', icon: Layers, label: 'Pools', tooltip: 'Opponents by stakes' },
+        { to: '/sessions', icon: BarChart2, label: 'Sessions', tooltip: 'Session history' },
+      ]
+    },
+    {
+      label: 'Tools',
+      items: [
+        { to: '/pre-game', icon: Target, label: 'Pre-Game', tooltip: 'Pre-game opponent strategy' },
         { to: '/gto-browser', icon: Grid3x3, label: 'GTO Ranges', tooltip: 'Browse GTO opening ranges' },
-      ]
-    },
-    {
-      label: 'Review',
-      items: [
-        { to: '/sessions', icon: BarChart2, label: 'Sessions', tooltip: 'Your session history' },
         { to: '/claude', icon: MessageSquare, label: 'Claude AI', tooltip: 'AI-powered analysis' },
-      ]
-    },
-    {
-      label: 'Research',
-      items: [
-        { to: '/players', icon: Users, label: 'Players', tooltip: 'Player stats database' },
-        { to: '/glossary', icon: BookOpen, label: 'Stats Guide', tooltip: 'Stats glossary' },
       ]
     },
     {
       label: 'Data',
       items: [
+        { to: '/players', icon: Users, label: 'Players', tooltip: 'All player stats' },
         { to: '/upload', icon: Upload, label: 'Upload', tooltip: 'Import hand histories' },
-        { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', tooltip: 'Database overview' },
-        { to: '/settings', icon: Settings, label: 'Settings', tooltip: 'Upload history & reset data' },
+        { to: '/settings', icon: Settings, label: 'Settings', tooltip: 'Nicknames & database' },
       ]
     },
   ];
