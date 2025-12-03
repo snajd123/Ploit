@@ -88,7 +88,7 @@ class HeroGTOAnalyzer:
         _set_cached_analysis(session_id, result)
         return result
 
-    def _get_hero_hands(self, session_id: int, limit: int = 500) -> List[Dict[str, Any]]:
+    def _get_hero_hands(self, session_id: int) -> List[Dict[str, Any]]:
         """
         Get all hands where hero has visible hole cards for this session.
 
@@ -115,10 +115,9 @@ class HeroGTOAnalyzer:
             JOIN raw_hands rh ON phs.hand_id = rh.hand_id
             WHERE phs.session_id = :session_id
             ORDER BY rh.timestamp ASC
-            LIMIT :limit
         """)
 
-        result = self.db.execute(query, {"session_id": session_id, "limit": limit})
+        result = self.db.execute(query, {"session_id": session_id})
         rows = [dict(row._mapping) for row in result]
 
         # Fast regex pattern to extract hole cards for a player
