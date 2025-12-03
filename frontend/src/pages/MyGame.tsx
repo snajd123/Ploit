@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   User, TrendingUp, TrendingDown, Calendar, Clock, Target, ChevronRight,
@@ -8,6 +8,7 @@ import {
 import { api } from '../services/api';
 import { GTOCategoryDetailView } from '../components/gto';
 import LeakAnalysisView from '../components/LeakAnalysisView';
+import ScenarioHandsModal, { type ScenarioSelection } from '../components/ScenarioHandsModal';
 import type { MyGameOverview, HeroSessionResponse, GTOAnalysisResponse } from '../types';
 
 // Tab configuration
@@ -49,15 +50,7 @@ const GTO_CATEGORY_CONFIG: Record<GTOCategoryKey, {
   },
 };
 
-// Scenario selection for drill-down
-interface ScenarioSelection {
-  scenario: 'opening' | 'defense' | 'facing_3bet' | 'facing_4bet';
-  position: string;
-  vsPosition?: string;
-}
-
 const MyGame = () => {
-  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<TabId>('overview');
   const [overview, setOverview] = useState<MyGameOverview | null>(null);
   const [sessions, setSessions] = useState<HeroSessionResponse[]>([]);
@@ -66,6 +59,7 @@ const MyGame = () => {
 
   // GTO analysis state
   const [selectedCategory, setSelectedCategory] = useState<GTOCategoryKey | null>(null);
+  const [selectedScenario, setSelectedScenario] = useState<ScenarioSelection | null>(null);
 
   // Get hero player name for links (first nickname with data)
   const heroPlayerName = overview?.stats_by_nickname?.[0]?.player_name;
@@ -75,6 +69,18 @@ const MyGame = () => {
     queryKey: ['my-game-gto-analysis'],
     queryFn: () => api.getMyGameGTOAnalysis(),
     enabled: !!(overview && overview.hero_nicknames.length > 0 && activeTab === 'gto'),
+  });
+
+  // Fetch scenario hands for drill-down modal (uses first hero nickname)
+  const { data: scenarioHandsData, isLoading: scenarioHandsLoading } = useQuery({
+    queryKey: ['scenarioHands', heroPlayerName, selectedScenario],
+    queryFn: () => api.getScenarioHands(
+      heroPlayerName!,
+      selectedScenario!.scenario,
+      selectedScenario!.position,
+      selectedScenario!.vsPosition
+    ),
+    enabled: !!heroPlayerName && !!selectedScenario,
   });
 
   useEffect(() => {
@@ -157,10 +163,10 @@ const MyGame = () => {
     return { avgDeviation, totalHands, leakCount };
   };
 
-  // Handle scenario click - navigate to player profile for drill-down
+  // Handle scenario click - show hands modal inline
   const handleRowClick = (selection: ScenarioSelection) => {
     if (heroPlayerName) {
-      navigate(`/players/${encodeURIComponent(heroPlayerName)}?tab=gto&category=${selection.scenario}&position=${selection.position}${selection.vsPosition ? `&vs=${selection.vsPosition}` : ''}`);
+      setSelectedScenario(selection);
     }
   };
 
@@ -548,6 +554,16 @@ const MyGame = () => {
             </div>
           )}
         </div>
+      )}
+
+      {/* Scenario Hands Drill-down Modal */}
+      {selectedScenario && (
+        <ScenarioHandsModal
+          data={scenarioHandsData}
+          isLoading={scenarioHandsLoading}
+          onClose={() => setSelectedScenario(null)}
+          selection={selectedScenario}
+        />
       )}
     </div>
   );
