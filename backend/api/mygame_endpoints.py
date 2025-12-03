@@ -199,3 +199,595 @@ def check_if_my_player(player_name: str, db: Session = Depends(get_db)):
         "is_hero": is_hero(player_name, db),
         "player_name": player_name
     }
+
+
+@router.get("/gto-analysis")
+def get_mygame_gto_analysis(db: Session = Depends(get_db)):
+    """
+    Get aggregated GTO analysis across all hero nicknames.
+    Combines stats from all configured hero names into a single analysis.
+    """
+    from typing import Dict, Any
+
+    hero_nicknames = list(get_hero_nicknames(db))
+
+    if not hero_nicknames:
+        raise HTTPException(
+            status_code=404,
+            detail="No hero nicknames configured. Add your screen names in Settings."
+        )
+
+    # ============================================
+    # 1. OPENING RANGES (RFI - Raise First In)
+    # ============================================
+    opening_query = text("""
+        SELECT
+            position,
+            COUNT(*) as total_hands,
+            COUNT(*) FILTER (WHERE faced_raise = false) as rfi_opportunities,
+            COUNT(*) FILTER (WHERE pfr = true AND faced_raise = false) as opened,
+            ROUND(100.0 * COUNT(*) FILTER (WHERE pfr = true AND faced_raise = false) /
+                NULLIF(COUNT(*) FILTER (WHERE faced_raise = false), 0), 1) as player_open_pct
+        FROM player_hand_summary
+        WHERE LOWER(player_name) = ANY(:nicknames)
+        AND position IS NOT NULL
+        AND position NOT IN ('BB')
+        GROUP BY position
+        HAVING COUNT(*) FILTER (WHERE faced_raise = false) >= 10
+        ORDER BY CASE position
+            WHEN 'UTG' THEN 1 WHEN 'MP' THEN 2 WHEN 'HJ' THEN 3
+            WHEN 'CO' THEN 4 WHEN 'BTN' THEN 5 WHEN 'SB' THEN 6
+        END
+    """)
+    opening_result = db.execute(opening_query, {"nicknames": hero_nicknames})
+    opening_rows = [dict(row._mapping) for row in opening_result]
+
+    # Get GTO opening frequencies
+    gto_opening_result = db.execute(text("""
+        SELECT position, SUM(gto_aggregate_freq) as gto_aggregate_freq
+        FROM gto_scenarios WHERE category = 'opening'
+        GROUP BY position
+    """))
+    gto_opening = {row[0]: float(row[1]) * 100 if row[1] else 0 for row in gto_opening_result}
+
+    opening_ranges = []
+    for row in opening_rows:
+        pos = row['position']
+        player_freq = float(row['player_open_pct']) if row['player_open_pct'] else 0
+        gto_freq = gto_opening.get(pos, 0)
+        diff = player_freq - gto_freq
+        severity = 'minor' if abs(diff) < 5 else 'moderate' if abs(diff) < 15 else 'major'
+        opening_ranges.append({
+            'position': pos,
+            'total_hands': row['rfi_opportunities'],
+            'player_frequency': player_freq,
+            'gto_frequency': round(gto_freq, 1),
+            'frequency_diff': round(diff, 1),
+            'leak_severity': severity,
+            'leak_type': 'Too Loose' if diff > 5 else 'Too Tight' if diff < -5 else None
+        })
+
+    # ============================================
+    # 2. DEFENSE VS OPENS (call/3bet/fold)
+    # ============================================
+    defense_query = text("""
+        SELECT
+            position,
+            COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false) as faced_open,
+            COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND vpip = false) as folded,
+            COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND vpip = true AND pfr = false) as called,
+            COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND made_three_bet = true) as three_bets,
+            ROUND(100.0 * COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND vpip = false) /
+                NULLIF(COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false), 0), 1) as fold_pct,
+            ROUND(100.0 * COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND vpip = true AND pfr = false) /
+                NULLIF(COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false), 0), 1) as call_pct,
+            ROUND(100.0 * COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND made_three_bet = true) /
+                NULLIF(COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false), 0), 1) as three_bet_pct
+        FROM player_hand_summary
+        WHERE LOWER(player_name) = ANY(:nicknames)
+        AND position IN ('BB', 'SB', 'BTN', 'CO', 'MP')
+        GROUP BY position
+        HAVING COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false) >= 5
+        ORDER BY position
+    """)
+    defense_result = db.execute(defense_query, {"nicknames": hero_nicknames})
+    defense_rows = [dict(row._mapping) for row in defense_result]
+
+    # Get GTO defense frequencies
+    gto_defense_result = db.execute(text("""
+        SELECT position, action, AVG(gto_aggregate_freq) * 100 as avg_freq
+        FROM gto_scenarios
+        WHERE category = 'defense'
+        AND action IN ('call', '3bet')
+        GROUP BY position, action
+    """))
+    gto_defense = {}
+    for row in gto_defense_result:
+        pos, action, freq = row[0], row[1], float(row[2]) if row[2] else 0
+        if pos not in gto_defense:
+            gto_defense[pos] = {}
+        gto_defense[pos][action] = freq
+
+    defense_vs_open = []
+    for row in defense_rows:
+        pos = row['position']
+        fold_freq = float(row['fold_pct']) if row['fold_pct'] else 0
+        call_freq = float(row['call_pct']) if row['call_pct'] else 0
+        threebet_freq = float(row['three_bet_pct']) if row['three_bet_pct'] else 0
+
+        gto_call = gto_defense.get(pos, {}).get('call', 15)
+        gto_3bet = gto_defense.get(pos, {}).get('3bet', 8)
+        gto_fold = 100 - gto_call - gto_3bet
+
+        defense_vs_open.append({
+            'position': pos,
+            'sample_size': row['faced_open'],
+            'player_fold': round(fold_freq, 1),
+            'player_call': round(call_freq, 1),
+            'player_3bet': round(threebet_freq, 1),
+            'gto_fold': round(gto_fold, 1),
+            'gto_call': round(gto_call, 1),
+            'gto_3bet': round(gto_3bet, 1),
+            'fold_diff': round(fold_freq - gto_fold, 1),
+            'call_diff': round(call_freq - gto_call, 1),
+            '3bet_diff': round(threebet_freq - gto_3bet, 1),
+        })
+
+    # ============================================
+    # 3. FACING 3-BET (after opening)
+    # ============================================
+    facing_3bet_query = text("""
+        SELECT
+            position,
+            COUNT(*) FILTER (WHERE faced_three_bet = true AND pfr = true) as faced_3bet,
+            COUNT(*) FILTER (WHERE folded_to_three_bet = true AND pfr = true) as folded,
+            COUNT(*) FILTER (WHERE called_three_bet = true AND pfr = true) as called,
+            COUNT(*) FILTER (WHERE four_bet = true AND pfr = true) as four_bet,
+            ROUND(100.0 * COUNT(*) FILTER (WHERE folded_to_three_bet = true AND pfr = true) /
+                NULLIF(COUNT(*) FILTER (WHERE faced_three_bet = true AND pfr = true), 0), 1) as fold_pct,
+            ROUND(100.0 * COUNT(*) FILTER (WHERE called_three_bet = true AND pfr = true) /
+                NULLIF(COUNT(*) FILTER (WHERE faced_three_bet = true AND pfr = true), 0), 1) as call_pct,
+            ROUND(100.0 * COUNT(*) FILTER (WHERE four_bet = true AND pfr = true) /
+                NULLIF(COUNT(*) FILTER (WHERE faced_three_bet = true AND pfr = true), 0), 1) as four_bet_pct
+        FROM player_hand_summary
+        WHERE LOWER(player_name) = ANY(:nicknames)
+        AND position IS NOT NULL
+        GROUP BY position
+        HAVING COUNT(*) FILTER (WHERE faced_three_bet = true AND pfr = true) >= 5
+        ORDER BY position
+    """)
+    facing_3bet_result = db.execute(facing_3bet_query, {"nicknames": hero_nicknames})
+    facing_3bet_rows = [dict(row._mapping) for row in facing_3bet_result]
+
+    # Get GTO facing 3-bet frequencies
+    gto_f3bet_result = db.execute(text("""
+        SELECT position, action, AVG(gto_aggregate_freq) * 100 as avg_freq
+        FROM gto_scenarios
+        WHERE category = 'facing_3bet'
+        AND action IN ('fold', 'call', '4bet')
+        GROUP BY position, action
+    """))
+    gto_f3bet = {}
+    for row in gto_f3bet_result:
+        pos, action, freq = row[0], row[1], float(row[2]) if row[2] else 0
+        if pos not in gto_f3bet:
+            gto_f3bet[pos] = {}
+        gto_f3bet[pos][action] = freq
+
+    facing_3bet = []
+    for row in facing_3bet_rows:
+        pos = row['position']
+        fold = float(row['fold_pct']) if row['fold_pct'] else 0
+        call = float(row['call_pct']) if row['call_pct'] else 0
+        four_bet = float(row['four_bet_pct']) if row['four_bet_pct'] else 0
+
+        gto_fold = gto_f3bet.get(pos, {}).get('fold', 55)
+        gto_call = gto_f3bet.get(pos, {}).get('call', 35)
+        gto_4bet = gto_f3bet.get(pos, {}).get('4bet', 10)
+
+        facing_3bet.append({
+            'position': pos,
+            'sample_size': row['faced_3bet'],
+            'player_fold': round(fold, 1),
+            'player_call': round(call, 1),
+            'player_4bet': round(four_bet, 1),
+            'gto_fold': round(gto_fold, 1),
+            'gto_call': round(gto_call, 1),
+            'gto_4bet': round(gto_4bet, 1),
+            'fold_diff': round(fold - gto_fold, 1),
+            'call_diff': round(call - gto_call, 1),
+            '4bet_diff': round(four_bet - gto_4bet, 1),
+        })
+
+    # ============================================
+    # 3b. FACING 3-BET BY MATCHUP
+    # ============================================
+    gto_f3bet_matchups_result = db.execute(text("""
+        SELECT position, opponent_position, action, gto_aggregate_freq * 100 as freq
+        FROM gto_scenarios
+        WHERE category = 'facing_3bet'
+        AND opponent_position IS NOT NULL
+        ORDER BY position, opponent_position, action
+    """))
+    gto_f3bet_matchups = {}
+    for row in gto_f3bet_matchups_result:
+        pos, opp, action, freq = row[0], row[1], row[2], float(row[3]) if row[3] else 0
+        key = f"{pos}_vs_{opp}"
+        if key not in gto_f3bet_matchups:
+            gto_f3bet_matchups[key] = {}
+        gto_f3bet_matchups[key][action] = freq
+
+    player_f3bet_matchups_result = db.execute(text("""
+        SELECT
+            position,
+            three_bettor_position,
+            COUNT(*) as faced_3bet,
+            COUNT(*) FILTER (WHERE folded_to_three_bet = true) as folded,
+            COUNT(*) FILTER (WHERE called_three_bet = true) as called,
+            COUNT(*) FILTER (WHERE four_bet = true) as four_bets
+        FROM player_hand_summary
+        WHERE LOWER(player_name) = ANY(:nicknames)
+          AND faced_three_bet = true
+          AND pfr = true
+          AND three_bettor_position IS NOT NULL
+          AND position IS NOT NULL
+        GROUP BY position, three_bettor_position
+        ORDER BY position, three_bettor_position
+    """), {"nicknames": hero_nicknames})
+
+    player_f3bet_stats = {}
+    for row in player_f3bet_matchups_result.mappings():
+        key = f"{row['position']}_vs_{row['three_bettor_position']}"
+        total = row['faced_3bet'] or 0
+        if total > 0:
+            player_f3bet_stats[key] = {
+                'sample_size': total,
+                'fold_pct': (row['folded'] or 0) / total * 100,
+                'call_pct': (row['called'] or 0) / total * 100,
+                '4bet_pct': (row['four_bets'] or 0) / total * 100
+            }
+
+    facing_3bet_matchups = []
+    for key, actions in sorted(gto_f3bet_matchups.items()):
+        pos, opp = key.split('_vs_')
+        player_stats = player_f3bet_stats.get(key, {})
+
+        gto_fold = actions.get('fold', 0)
+        gto_call = actions.get('call', 0)
+        gto_4bet = actions.get('4bet', 0)
+
+        player_fold = player_stats.get('fold_pct')
+        player_call = player_stats.get('call_pct')
+        player_4bet = player_stats.get('4bet_pct')
+
+        facing_3bet_matchups.append({
+            'position': pos,
+            'vs_position': opp,
+            'sample_size': player_stats.get('sample_size', 0),
+            'player_fold': round(player_fold, 1) if player_fold is not None else None,
+            'player_call': round(player_call, 1) if player_call is not None else None,
+            'player_4bet': round(player_4bet, 1) if player_4bet is not None else None,
+            'gto_fold': round(gto_fold, 1),
+            'gto_call': round(gto_call, 1),
+            'gto_4bet': round(gto_4bet, 1),
+            'fold_diff': round(player_fold - gto_fold, 1) if player_fold is not None else None,
+            'call_diff': round(player_call - gto_call, 1) if player_call is not None else None,
+            '4bet_diff': round(player_4bet - gto_4bet, 1) if player_4bet is not None else None,
+        })
+
+    # ============================================
+    # 4. BLIND DEFENSE (vs steals)
+    # ============================================
+    blind_defense_query = text("""
+        SELECT
+            position,
+            COUNT(*) FILTER (WHERE faced_steal = true AND faced_three_bet = false) as faced_steal,
+            COUNT(*) FILTER (WHERE fold_to_steal = true AND faced_three_bet = false) as folded,
+            COUNT(*) FILTER (WHERE call_steal = true AND faced_three_bet = false) as called,
+            COUNT(*) FILTER (WHERE three_bet_vs_steal = true AND faced_three_bet = false) as three_bet,
+            ROUND(100.0 * COUNT(*) FILTER (WHERE fold_to_steal = true AND faced_three_bet = false) /
+                NULLIF(COUNT(*) FILTER (WHERE faced_steal = true AND faced_three_bet = false), 0), 1) as fold_pct,
+            ROUND(100.0 * COUNT(*) FILTER (WHERE call_steal = true AND faced_three_bet = false) /
+                NULLIF(COUNT(*) FILTER (WHERE faced_steal = true AND faced_three_bet = false), 0), 1) as call_pct,
+            ROUND(100.0 * COUNT(*) FILTER (WHERE three_bet_vs_steal = true AND faced_three_bet = false) /
+                NULLIF(COUNT(*) FILTER (WHERE faced_steal = true AND faced_three_bet = false), 0), 1) as three_bet_pct
+        FROM player_hand_summary
+        WHERE LOWER(player_name) = ANY(:nicknames)
+        AND position IN ('BB', 'SB')
+        GROUP BY position
+        HAVING COUNT(*) FILTER (WHERE faced_steal = true AND faced_three_bet = false) >= 5
+        ORDER BY position
+    """)
+    blind_result = db.execute(blind_defense_query, {"nicknames": hero_nicknames})
+    blind_rows = [dict(row._mapping) for row in blind_result]
+
+    gto_blind_result = db.execute(text("""
+        SELECT position, action, gto_aggregate_freq * 100 as freq
+        FROM gto_scenarios
+        WHERE category = 'defense'
+        AND position IN ('BB', 'SB')
+        AND opponent_position = 'BTN'
+    """))
+    gto_blind = {}
+    for row in gto_blind_result:
+        pos, action, freq = row[0], row[1], float(row[2]) if row[2] else 0
+        if pos not in gto_blind:
+            gto_blind[pos] = {}
+        gto_blind[pos][action] = freq
+
+    blind_defense = []
+    for row in blind_rows:
+        pos = row['position']
+        fold = float(row['fold_pct']) if row['fold_pct'] else 0
+        call = float(row['call_pct']) if row['call_pct'] else 0
+        three_bet = float(row['three_bet_pct']) if row['three_bet_pct'] else 0
+
+        gto_call = gto_blind.get(pos, {}).get('call', 30)
+        gto_3bet = gto_blind.get(pos, {}).get('3bet', 15)
+        gto_fold = gto_blind.get(pos, {}).get('fold', 55)
+
+        blind_defense.append({
+            'position': pos,
+            'sample_size': row['faced_steal'],
+            'player_fold': round(fold, 1),
+            'player_call': round(call, 1),
+            'player_3bet': round(three_bet, 1),
+            'gto_fold': round(gto_fold, 1),
+            'gto_call': round(gto_call, 1),
+            'gto_3bet': round(gto_3bet, 1),
+            'fold_diff': round(fold - gto_fold, 1),
+            'call_diff': round(call - gto_call, 1),
+            '3bet_diff': round(three_bet - gto_3bet, 1),
+        })
+
+    # ============================================
+    # 5. STEAL ATTEMPTS
+    # ============================================
+    steal_query = text("""
+        SELECT
+            position,
+            COUNT(*) FILTER (WHERE faced_raise = false) as opportunities,
+            COUNT(*) FILTER (WHERE steal_attempt = true) as steals,
+            ROUND(100.0 * COUNT(*) FILTER (WHERE steal_attempt = true) /
+                NULLIF(COUNT(*) FILTER (WHERE faced_raise = false), 0), 1) as steal_pct
+        FROM player_hand_summary
+        WHERE LOWER(player_name) = ANY(:nicknames)
+        AND position IN ('CO', 'BTN', 'SB')
+        GROUP BY position
+        HAVING COUNT(*) FILTER (WHERE faced_raise = false) >= 10
+        ORDER BY position
+    """)
+    steal_result = db.execute(steal_query, {"nicknames": hero_nicknames})
+    steal_rows = [dict(row._mapping) for row in steal_result]
+
+    gto_steal_result = db.execute(text("""
+        SELECT position, gto_aggregate_freq * 100 as freq
+        FROM gto_scenarios
+        WHERE category = 'opening'
+        AND position IN ('CO', 'BTN', 'SB')
+    """))
+    gto_steal = {row[0]: float(row[1]) if row[1] else 0 for row in gto_steal_result}
+
+    steal_attempts = []
+    for row in steal_rows:
+        pos = row['position']
+        player_freq = float(row['steal_pct']) if row['steal_pct'] else 0
+        gto_freq = gto_steal.get(pos, 35)
+        diff = player_freq - gto_freq
+
+        steal_attempts.append({
+            'position': pos,
+            'sample_size': row['opportunities'],
+            'player_frequency': round(player_freq, 1),
+            'gto_frequency': round(gto_freq, 1),
+            'frequency_diff': round(diff, 1),
+            'leak_type': 'Over-stealing' if diff > 10 else 'Under-stealing' if diff < -10 else None
+        })
+
+    # ============================================
+    # 6. POSITION-SPECIFIC DEFENSE
+    # ============================================
+    gto_matchups_result = db.execute(text("""
+        SELECT position, opponent_position, action, gto_aggregate_freq * 100 as freq
+        FROM gto_scenarios
+        WHERE category = 'defense'
+        ORDER BY position, opponent_position, action
+    """))
+    gto_matchups = {}
+    for row in gto_matchups_result:
+        pos, opp, action, freq = row[0], row[1], row[2], float(row[3]) if row[3] else 0
+        key = f"{pos}_vs_{opp}"
+        if key not in gto_matchups:
+            gto_matchups[key] = {}
+        gto_matchups[key][action] = freq
+
+    player_matchups_result = db.execute(text("""
+        SELECT
+            position,
+            raiser_position,
+            COUNT(*) as faced_open,
+            COUNT(*) FILTER (WHERE vpip = false) as folded,
+            COUNT(*) FILTER (WHERE vpip = true AND pfr = false) as called,
+            COUNT(*) FILTER (WHERE made_three_bet = true) as three_bets
+        FROM player_hand_summary
+        WHERE LOWER(player_name) = ANY(:nicknames)
+          AND faced_raise = true
+          AND faced_three_bet = false
+          AND raiser_position IS NOT NULL
+          AND position IS NOT NULL
+        GROUP BY position, raiser_position
+        ORDER BY position, raiser_position
+    """), {"nicknames": hero_nicknames})
+
+    player_matchup_stats = {}
+    for row in player_matchups_result.mappings():
+        key = f"{row['position']}_vs_{row['raiser_position']}"
+        total = row['faced_open'] or 0
+        if total > 0:
+            player_matchup_stats[key] = {
+                'sample_size': total,
+                'fold_pct': (row['folded'] or 0) / total * 100,
+                'call_pct': (row['called'] or 0) / total * 100,
+                '3bet_pct': (row['three_bets'] or 0) / total * 100
+            }
+
+    position_matchups = []
+    for key, actions in sorted(gto_matchups.items()):
+        pos, opp = key.split('_vs_')
+        player_stats = player_matchup_stats.get(key, {})
+
+        gto_fold = actions.get('fold', 0)
+        gto_call = actions.get('call', 0)
+        gto_3bet = actions.get('3bet', 0)
+
+        player_fold = player_stats.get('fold_pct')
+        player_call = player_stats.get('call_pct')
+        player_3bet = player_stats.get('3bet_pct')
+
+        position_matchups.append({
+            'position': pos,
+            'vs_position': opp,
+            'sample_size': player_stats.get('sample_size', 0),
+            'player_fold': round(player_fold, 1) if player_fold is not None else None,
+            'player_call': round(player_call, 1) if player_call is not None else None,
+            'player_3bet': round(player_3bet, 1) if player_3bet is not None else None,
+            'gto_fold': round(gto_fold, 1),
+            'gto_call': round(gto_call, 1),
+            'gto_3bet': round(gto_3bet, 1),
+            'fold_diff': round(player_fold - gto_fold, 1) if player_fold is not None else None,
+            'call_diff': round(player_call - gto_call, 1) if player_call is not None else None,
+            '3bet_diff': round(player_3bet - gto_3bet, 1) if player_3bet is not None else None,
+        })
+
+    # ============================================
+    # 7. FACING 4-BET
+    # ============================================
+    gto_f4bet_result = db.execute(text("""
+        SELECT position, opponent_position, action, gto_aggregate_freq * 100 as freq
+        FROM gto_scenarios
+        WHERE category = 'facing_4bet'
+        ORDER BY position, opponent_position, action
+    """))
+    gto_facing_4bet = {}
+    for row in gto_f4bet_result:
+        pos, opp, action, freq = row[0], row[1], row[2], float(row[3]) if row[3] else 0
+        key = f"{pos}_vs_{opp}"
+        if key not in gto_facing_4bet:
+            gto_facing_4bet[key] = {}
+        gto_facing_4bet[key][action] = freq
+
+    player_f4bet_result = db.execute(text("""
+        SELECT
+            position,
+            raiser_position,
+            COUNT(*) as faced_4bet,
+            COUNT(*) FILTER (WHERE folded_to_four_bet = true) as folded,
+            COUNT(*) FILTER (WHERE called_four_bet = true) as called,
+            COUNT(*) FILTER (WHERE five_bet = true) as five_bets
+        FROM player_hand_summary
+        WHERE LOWER(player_name) = ANY(:nicknames)
+          AND faced_four_bet = true
+          AND raiser_position IS NOT NULL
+          AND position IS NOT NULL
+        GROUP BY position, raiser_position
+        ORDER BY position, raiser_position
+    """), {"nicknames": hero_nicknames})
+
+    player_f4bet_stats = {}
+    for row in player_f4bet_result.mappings():
+        key = f"{row['position']}_vs_{row['raiser_position']}"
+        total = row['faced_4bet'] or 0
+        if total > 0:
+            player_f4bet_stats[key] = {
+                'sample_size': total,
+                'fold_pct': (row['folded'] or 0) / total * 100,
+                'call_pct': (row['called'] or 0) / total * 100,
+                '5bet_pct': (row['five_bets'] or 0) / total * 100
+            }
+
+    facing_4bet_reference = []
+    for key, actions in sorted(gto_facing_4bet.items()):
+        pos, opp = key.split('_vs_')
+        player_stats = player_f4bet_stats.get(key, {})
+
+        gto_fold = actions.get('fold', 0)
+        gto_call = actions.get('call', 0)
+        gto_5bet = actions.get('5bet', 0) + actions.get('allin', 0)
+
+        player_fold = player_stats.get('fold_pct')
+        player_call = player_stats.get('call_pct')
+        player_5bet = player_stats.get('5bet_pct')
+
+        facing_4bet_reference.append({
+            'position': pos,
+            'vs_position': opp,
+            'sample_size': player_stats.get('sample_size', 0),
+            'player_fold': round(player_fold, 1) if player_fold is not None else None,
+            'player_call': round(player_call, 1) if player_call is not None else None,
+            'player_5bet': round(player_5bet, 1) if player_5bet is not None else None,
+            'gto_fold': round(gto_fold, 1),
+            'gto_call': round(gto_call, 1),
+            'gto_5bet': round(gto_5bet, 1),
+            'fold_diff': round(player_fold - gto_fold, 1) if player_fold is not None else None,
+            'call_diff': round(player_call - gto_call, 1) if player_call is not None else None,
+            '5bet_diff': round(player_5bet - gto_5bet, 1) if player_5bet is not None else None,
+        })
+
+    # ============================================
+    # CALCULATE OVERALL ADHERENCE SCORE
+    # ============================================
+    all_deviations = []
+
+    for r in opening_ranges:
+        all_deviations.append(abs(r['frequency_diff']))
+    for r in defense_vs_open:
+        all_deviations.append(abs(r['call_diff']))
+        all_deviations.append(abs(r['3bet_diff']))
+    for r in facing_3bet:
+        all_deviations.append(abs(r['fold_diff']))
+        all_deviations.append(abs(r['call_diff']))
+    for r in blind_defense:
+        all_deviations.append(abs(r['fold_diff']))
+        all_deviations.append(abs(r['3bet_diff']))
+    for r in steal_attempts:
+        all_deviations.append(abs(r['frequency_diff']))
+
+    avg_deviation = sum(all_deviations) / len(all_deviations) if all_deviations else 0
+    adherence_score = max(0, 100 - avg_deviation * 1.5)
+
+    major_leaks = sum(1 for d in all_deviations if d > 15)
+    moderate_leaks = sum(1 for d in all_deviations if 8 < d <= 15)
+
+    # Get total hands
+    total_hands_result = db.execute(text("""
+        SELECT COUNT(*) FROM player_hand_summary WHERE LOWER(player_name) = ANY(:nicknames)
+    """), {"nicknames": hero_nicknames})
+    total_hands = total_hands_result.scalar() or 0
+
+    # Build response
+    response_data = {
+        'player': 'Hero (combined)',
+        'hero_nicknames': [n for n in hero_nicknames],
+        'adherence': {
+            'gto_adherence_score': round(adherence_score, 1),
+            'avg_deviation': round(avg_deviation, 1),
+            'major_leaks_count': major_leaks,
+            'moderate_leaks_count': moderate_leaks,
+            'total_hands': total_hands
+        },
+        'opening_ranges': opening_ranges,
+        'defense_vs_open': defense_vs_open,
+        'facing_3bet': facing_3bet,
+        'facing_3bet_matchups': facing_3bet_matchups,
+        'blind_defense': blind_defense,
+        'steal_attempts': steal_attempts,
+        'position_matchups': position_matchups,
+        'facing_4bet_reference': facing_4bet_reference
+    }
+
+    # Build priority leaks
+    from backend.services.priority_scoring import build_priority_leaks_from_gto_analysis
+    priority_leaks = build_priority_leaks_from_gto_analysis(response_data)
+    response_data['priority_leaks'] = priority_leaks
+
+    return response_data

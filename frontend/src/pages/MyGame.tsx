@@ -67,14 +67,14 @@ const MyGame = () => {
   // GTO analysis state
   const [selectedCategory, setSelectedCategory] = useState<GTOCategoryKey | null>(null);
 
-  // Get hero player name for GTO queries
+  // Get hero player name for links (first nickname with data)
   const heroPlayerName = overview?.stats_by_nickname?.[0]?.player_name;
 
-  // Fetch GTO analysis data
-  const { data: gtoData, isLoading: gtoLoading } = useQuery({
-    queryKey: ['gto-analysis', heroPlayerName],
-    queryFn: () => api.getPlayerGTOAnalysis(heroPlayerName!),
-    enabled: !!heroPlayerName && activeTab === 'gto',
+  // Fetch aggregated GTO analysis across all hero nicknames
+  const { data: gtoData, isLoading: gtoLoading } = useQuery<GTOAnalysisResponse>({
+    queryKey: ['my-game-gto-analysis'],
+    queryFn: () => api.getMyGameGTOAnalysis(),
+    enabled: !!(overview && overview.hero_nicknames.length > 0 && activeTab === 'gto'),
   });
 
   useEffect(() => {
@@ -416,8 +416,8 @@ const MyGame = () => {
                 <LeakAnalysisView
                   gtoLeaks={[]}
                   statLeaks={[]}
-                  totalHands={overview?.total_hands || 0}
-                  playerName={heroPlayerName}
+                  totalHands={gtoData.adherence?.total_hands || overview?.total_hands || 0}
+                  playerName="Hero"
                   priorityLeaks={gtoData.priority_leaks}
                   onLeakClick={(selection) => handleRowClick(selection)}
                 />

@@ -430,6 +430,12 @@ class ApiClient {
     return response.data;
   }
 
+  // Get aggregated GTO analysis for all hero nicknames
+  async getMyGameGTOAnalysis(): Promise<GTOAnalysisResponse> {
+    const response = await this.client.get<GTOAnalysisResponse>('/api/my-game/gto-analysis');
+    return response.data;
+  }
+
   // ========================================
   // Pools API (Opponents by site + stake)
   // ========================================
