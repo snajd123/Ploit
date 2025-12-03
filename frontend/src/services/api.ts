@@ -25,6 +25,7 @@ import type {
   ScenarioHandsResponse,
   HandReplayResponse,
   AILeakAnalysisResponse,
+  SessionLeakComparisonResponse,
 } from '../types';
 
 class ApiClient {
@@ -270,6 +271,14 @@ class ApiClient {
     const response = await this.client.post('/api/sessions/detect-all', null, {
       params: { session_gap_minutes: sessionGapMinutes }
     });
+    return response.data;
+  }
+
+  // Get session leak comparison (session vs overall vs GTO)
+  async getSessionLeakComparison(sessionId: number): Promise<SessionLeakComparisonResponse> {
+    const response = await this.client.get<SessionLeakComparisonResponse>(
+      `/api/sessions/${sessionId}/leak-comparison`
+    );
     return response.data;
   }
 

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Calendar, Clock, TrendingUp, TrendingDown, Target, History, MessageSquare, FileText, Crosshair } from 'lucide-react';
+import { ArrowLeft, Calendar, Clock, TrendingUp, TrendingDown, Target, History, MessageSquare, FileText, Crosshair, BarChart3 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
+import LeakProgressView from '../components/LeakProgressView';
 
 interface Session {
   session_id: number;
@@ -84,7 +85,7 @@ interface Hand {
   table_name: string;
 }
 
-type TabType = 'overview' | 'gto' | 'hands' | 'claude' | 'notes';
+type TabType = 'overview' | 'gto' | 'leaks' | 'hands' | 'claude' | 'notes';
 
 const SessionDetail: React.FC = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -216,6 +217,7 @@ const SessionDetail: React.FC = () => {
   const tabs = [
     { id: 'overview' as TabType, label: 'Overview', icon: Target },
     { id: 'gto' as TabType, label: 'GTO Analysis', icon: TrendingUp },
+    { id: 'leaks' as TabType, label: 'Leak Progress', icon: BarChart3 },
     { id: 'hands' as TabType, label: 'Hand History', icon: History },
     { id: 'claude' as TabType, label: 'AI Analysis', icon: MessageSquare },
     { id: 'notes' as TabType, label: 'Notes', icon: FileText },
@@ -570,6 +572,11 @@ const SessionDetail: React.FC = () => {
                 </div>
               )}
             </div>
+          )}
+
+          {/* Leak Progress Tab */}
+          {activeTab === 'leaks' && (
+            <LeakProgressView sessionId={parseInt(sessionId || '0')} />
           )}
 
           {/* Hand History Tab */}

@@ -648,3 +648,62 @@ export interface AILeakAnalysisResponse {
   analysis_text: string;
   error?: string;
 }
+
+// Session Leak Comparison Types
+export type ImprovementStatus = 'improved' | 'same' | 'worse' | 'overcorrected';
+export type LeakSeverity = 'none' | 'minor' | 'moderate' | 'major';
+export type ConfidenceLevel = 'insufficient' | 'low' | 'moderate' | 'high';
+export type LeakDirection = 'too_tight' | 'too_loose' | 'too_high' | 'too_low' | null;
+
+export interface ScenarioComparison {
+  // Scenario identification (the "link")
+  scenario_id: string;
+  category: 'opening' | 'defense' | 'facing_3bet';
+  position: string;
+  vs_position: string | null;
+  action: string;
+  display_name: string;
+
+  // Overall player stats (lifetime)
+  overall_value: number;
+  overall_sample: number;
+  overall_deviation: number;
+  is_leak: boolean;
+  leak_direction: LeakDirection;
+  leak_severity: LeakSeverity;
+
+  // GTO baseline
+  gto_value: number;
+
+  // Session stats
+  session_value: number | null;
+  session_sample: number;
+  session_deviation: number | null;
+
+  // Improvement analysis
+  improvement_score: number | null;
+  improvement_status: ImprovementStatus | null;
+  within_gto_zone: boolean | null;
+  overcorrected: boolean;
+  confidence_level: ConfidenceLevel;
+}
+
+export interface SessionLeakComparisonSummary {
+  total_scenarios: number;
+  scenarios_with_leaks: number;
+  scenarios_improved: number;
+  scenarios_same: number;
+  scenarios_worse: number;
+  scenarios_overcorrected: number;
+  overall_improvement_score: number;
+  session_grade: 'A' | 'B' | 'C' | 'D' | 'F';
+}
+
+export interface SessionLeakComparisonResponse {
+  session_id: number;
+  player_name: string;
+  session_hands: number;
+  confidence: 'low' | 'moderate' | 'high';
+  scenarios: ScenarioComparison[];
+  summary: SessionLeakComparisonSummary;
+}
