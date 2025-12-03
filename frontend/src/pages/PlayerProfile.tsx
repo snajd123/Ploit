@@ -441,13 +441,33 @@ const extractGTOPositionalLeaks = (data: GTOAnalysisResponse): LeakExtractionRes
     });
   });
 
-  // Sort by severity (major first), then confidence (high first), then by absolute deviation
-  leaks.sort((a, b) => {
-    if (a.severity !== b.severity) return a.severity === 'major' ? -1 : 1;
-    const confOrder = { high: 0, moderate: 1, low: 2 };
-    if (a.confidence !== b.confidence) return confOrder[a.confidence] - confOrder[b.confidence];
-    return Math.abs(b.deviation) - Math.abs(a.deviation);
-  });
+  // EV weights by position (same as session analysis)
+  const EV_WEIGHTS: Record<string, number> = {
+    // Opening - BTN most frequent
+    'Opening_BTN': 1.5, 'Opening_CO': 1.3, 'Opening_SB': 1.4, 'Opening_MP': 1.1, 'Opening_UTG': 1.0,
+    // Defense - BB highest frequency
+    'Defense_BB': 1.6, 'Defense_SB': 1.2, 'Defense_BTN': 1.0, 'Defense_CO': 0.9, 'Defense_MP': 0.8,
+    // Facing 3-bet
+    'Facing 3-Bet_BTN': 1.4, 'Facing 3-Bet_CO': 1.3, 'Facing 3-Bet_SB': 1.2, 'Facing 3-Bet_MP': 1.0, 'Facing 3-Bet_UTG': 0.9,
+    // Facing 4-bet
+    'Facing 4-Bet_BTN': 1.3, 'Facing 4-Bet_CO': 1.2, 'Facing 4-Bet_SB': 1.1, 'Facing 4-Bet_MP': 1.0, 'Facing 4-Bet_UTG': 0.9,
+  };
+
+  // Calculate priority score (same formula as session analysis)
+  const calculatePriorityScore = (leak: GTOPositionalLeak): number => {
+    const severityScores = { minor: 1, moderate: 2, major: 3 };
+    const confidenceScores = { low: 0.6, moderate: 0.85, high: 1.0 };
+
+    const severityScore = severityScores[leak.severity] || 1;
+    const evWeight = EV_WEIGHTS[`${leak.category}_${leak.position}`] || 1.0;
+    const deviation = Math.abs(leak.deviation);
+    const confidence = confidenceScores[leak.confidence] || 0.5;
+
+    return (severityScore * 10 + deviation * 0.5) * evWeight * confidence;
+  };
+
+  // Sort by priority score (higher = more important to fix)
+  leaks.sort((a, b) => calculatePriorityScore(b) - calculatePriorityScore(a));
 
   // Build insufficient samples array
   const categoryThresholds: Record<string, number> = {
