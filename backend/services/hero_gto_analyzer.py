@@ -53,7 +53,23 @@ class HeroGTOAnalyzer:
     def _get_hero_hands(self, session_id: int) -> List[Dict[str, Any]]:
         """
         Get all hands where hero has visible hole cards for this session.
+
+        Note: hole_cards column may not exist in player_hand_summary table.
+        In that case, we return an empty list (no hero hands available for analysis).
         """
+        # First check if hole_cards column exists
+        try:
+            check_query = text("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'player_hand_summary' AND column_name = 'hole_cards'
+            """)
+            result = self.db.execute(check_query)
+            if not result.first():
+                # hole_cards column doesn't exist, return empty list
+                return []
+        except Exception:
+            return []
+
         query = text("""
             SELECT
                 phs.hand_id,
