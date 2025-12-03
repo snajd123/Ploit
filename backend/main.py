@@ -2442,7 +2442,8 @@ async def get_player_gto_analysis(
         """), {"player_name": validated_name})
         total_hands = total_hands_result.scalar() or 0
 
-        return {
+        # Build response data
+        response_data = {
             'player': validated_name,
             'adherence': {
                 'gto_adherence_score': round(adherence_score, 1),
@@ -2460,6 +2461,13 @@ async def get_player_gto_analysis(
             'position_matchups': position_matchups,
             'facing_4bet_reference': facing_4bet_reference
         }
+
+        # Build priority leaks using shared scoring algorithm
+        from backend.services.priority_scoring import build_priority_leaks_from_gto_analysis
+        priority_leaks = build_priority_leaks_from_gto_analysis(response_data)
+        response_data['priority_leaks'] = priority_leaks
+
+        return response_data
 
     except HTTPException:
         raise

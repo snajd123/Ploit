@@ -378,67 +378,16 @@ def get_session_opponents_analysis(session_id: int, db: Session = Depends(get_db
 
 import math
 
-# Sample thresholds by scenario type (per poker professor recommendations)
-SAMPLE_THRESHOLDS = {
-    'opening': {'min_display': 30, 'confident': 75, 'very_confident': 150},
-    'defense': {'min_display': 25, 'confident': 60, 'very_confident': 120},
-    'facing_3bet': {'min_display': 20, 'confident': 50, 'very_confident': 100},
-}
-
-# Leak weights by position and scenario (based on EV impact)
-LEAK_WEIGHTS = {
-    # Opening (RFI) - BTN most frequent, highest impact
-    'opening_BTN': 1.5,
-    'opening_CO': 1.3,
-    'opening_SB': 1.4,
-    'opening_MP': 1.1,
-    'opening_UTG': 1.0,
-    # Defense - BB vs BTN highest frequency
-    'defense_BB_fold': 1.6,
-    'defense_BB_call': 1.4,
-    'defense_BB_3bet': 1.3,
-    'defense_SB_fold': 1.2,
-    'defense_SB_call': 1.1,
-    'defense_SB_3bet': 1.2,
-    'defense_BTN_fold': 1.0,
-    'defense_BTN_call': 0.9,
-    'defense_BTN_3bet': 1.0,
-    'defense_CO_fold': 0.9,
-    'defense_CO_call': 0.8,
-    'defense_CO_3bet': 0.9,
-    'defense_MP_fold': 0.8,
-    'defense_MP_call': 0.7,
-    'defense_MP_3bet': 0.8,
-    # Facing 3-bet - fold to 3bet is huge leak
-    'facing_3bet_BTN_fold': 1.4,
-    'facing_3bet_BTN_call': 1.2,
-    'facing_3bet_BTN_4bet': 1.1,
-    'facing_3bet_CO_fold': 1.3,
-    'facing_3bet_CO_call': 1.1,
-    'facing_3bet_CO_4bet': 1.0,
-    'facing_3bet_SB_fold': 1.2,
-    'facing_3bet_SB_call': 1.0,
-    'facing_3bet_SB_4bet': 1.0,
-    'facing_3bet_MP_fold': 1.0,
-    'facing_3bet_MP_call': 0.9,
-    'facing_3bet_MP_4bet': 0.9,
-    'facing_3bet_UTG_fold': 0.9,
-    'facing_3bet_UTG_call': 0.8,
-    'facing_3bet_UTG_4bet': 0.8,
-}
-
-# Severity multipliers for improvement scoring
-SEVERITY_MULTIPLIERS = {
-    'none': 0.5,
-    'minor': 0.8,
-    'moderate': 1.0,
-    'major': 1.3,
-}
-
-
-def get_leak_weight(scenario_id: str) -> float:
-    """Get the EV-based weight for a leak scenario."""
-    return LEAK_WEIGHTS.get(scenario_id, 1.0)
+# Import shared priority scoring utilities
+from backend.services.priority_scoring import (
+    SAMPLE_THRESHOLDS,
+    LEAK_WEIGHTS,
+    SEVERITY_MULTIPLIERS,
+    get_leak_weight,
+    get_leak_severity,
+    get_confidence_level,
+    calculate_priority_score,
+)
 
 
 def calculate_improvement_score(
@@ -520,68 +469,6 @@ def get_improvement_status(
         return "worse"
     else:
         return "same"
-
-
-def get_leak_severity(deviation: float) -> str:
-    """Determine leak severity based on deviation from GTO"""
-    abs_dev = abs(deviation)
-    if abs_dev < 5:
-        return "none"
-    elif abs_dev < 10:
-        return "minor"
-    elif abs_dev < 20:
-        return "moderate"
-    else:
-        return "major"
-
-
-def get_confidence_level(sample: int, scenario_type: str) -> str:
-    """Determine confidence level based on sample size and scenario type"""
-    thresholds = SAMPLE_THRESHOLDS.get(scenario_type, SAMPLE_THRESHOLDS['opening'])
-
-    if sample < thresholds['min_display']:
-        return "insufficient"
-    elif sample < thresholds['confident']:
-        return "low"
-    elif sample < thresholds['very_confident']:
-        return "moderate"
-    else:
-        return "high"
-
-
-def calculate_priority_score(scenario: dict) -> float:
-    """
-    Calculate priority score for sorting leaks by importance.
-    Higher score = higher priority to fix.
-
-    Factors:
-    - Leak severity (major > moderate > minor)
-    - EV weight (position importance)
-    - Improvement potential (distance to GTO)
-    - Sample confidence
-    """
-    if not scenario.get('is_leak'):
-        return 0
-
-    # Base priority from severity
-    severity_scores = {'none': 0, 'minor': 1, 'moderate': 2, 'major': 3}
-    severity_score = severity_scores.get(scenario.get('leak_severity', 'none'), 0)
-
-    # EV weight
-    ev_weight = get_leak_weight(scenario.get('scenario_id', ''))
-
-    # Distance to GTO (improvement potential)
-    deviation = abs(scenario.get('overall_deviation', 0))
-
-    # Confidence factor
-    confidence_scores = {'insufficient': 0.3, 'low': 0.6, 'moderate': 0.85, 'high': 1.0}
-    conf_level = scenario.get('confidence_level', 'low')
-    confidence = confidence_scores.get(conf_level, 0.5)
-
-    # Combined priority score
-    priority = (severity_score * 10 + deviation * 0.5) * ev_weight * confidence
-
-    return round(priority, 2)
 
 
 @router.get("/{session_id}/leak-comparison")
