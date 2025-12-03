@@ -3,7 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, TrendingDown, CheckCircle, AlertTriangle,
   Minus, Loader2, AlertCircle, ChevronDown, ChevronRight,
-  TrendingUp, Circle, ListOrdered
+  TrendingUp, Circle, ListOrdered, HelpCircle
 } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -167,7 +167,9 @@ const PriorityLeakCard: React.FC<{
               </span>
               <span className="text-xs text-gray-500">{evWeightLabel}</span>
               {scenario.priority_score && (
-                <span className="text-xs text-gray-400">Score: {scenario.priority_score.toFixed(1)}</span>
+                <span className="text-xs text-gray-400" title="Priority score based on severity, EV impact, deviation, and sample confidence">
+                  Score: {scenario.priority_score.toFixed(1)}
+                </span>
               )}
             </div>
           </div>
@@ -678,7 +680,22 @@ const SessionGroupAnalysis: React.FC = () => {
           <div className="bg-white rounded-lg border border-gray-200 p-6">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">Priority Leaks</h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-lg font-semibold text-gray-900">Priority Leaks</h3>
+                  <div className="relative group">
+                    <HelpCircle size={16} className="text-gray-400 cursor-help" />
+                    <div className="absolute left-0 top-6 w-72 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                      <p className="font-semibold mb-2">Priority Score Formula:</p>
+                      <ul className="space-y-1 text-gray-300">
+                        <li><span className="text-white">Severity:</span> Major (30pts) &gt; Moderate (20pts) &gt; Minor (10pts)</li>
+                        <li><span className="text-white">EV Weight:</span> High-frequency spots weighted more (BTN 1.5x, BB 1.6x)</li>
+                        <li><span className="text-white">Deviation:</span> Larger deviations from GTO = higher priority</li>
+                        <li><span className="text-white">Confidence:</span> More sample = more reliable score</li>
+                      </ul>
+                      <p className="mt-2 text-gray-400">Higher scores = fix these first for maximum EV gain</p>
+                    </div>
+                  </div>
+                </div>
                 <p className="text-sm text-gray-500 mt-1">
                   Leaks ranked by EV impact, severity, and sample confidence
                 </p>
