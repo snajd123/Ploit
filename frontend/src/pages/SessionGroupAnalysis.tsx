@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, TrendingDown, CheckCircle, AlertTriangle,
-  Minus, Loader2, AlertCircle, ChevronDown, ChevronRight
+  Minus, Loader2, AlertCircle, ChevronDown, ChevronRight,
+  TrendingUp, Circle
 } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -52,6 +53,80 @@ const StatusBadge: React.FC<{ status: ImprovementStatus | null }> = ({ status })
       <Icon size={12} />
       {label}
     </span>
+  );
+};
+
+// View mode type
+type ViewMode = 'trend' | 'aggregate';
+
+// Spectrum visualization component (aggregate view)
+const SpectrumBar: React.FC<{
+  gtoValue: number;
+  overallValue: number;
+  sessionValue: number | null;
+  leakDirection: string | null;
+}> = ({ gtoValue, overallValue, sessionValue, leakDirection }) => {
+  const min = Math.min(0, gtoValue - 30, overallValue - 10, (sessionValue || overallValue) - 10);
+  const max = Math.max(100, gtoValue + 30, overallValue + 10, (sessionValue || overallValue) + 10);
+  const range = max - min;
+
+  const getPosition = (value: number) => ((value - min) / range) * 100;
+
+  const gtoPos = getPosition(gtoValue);
+  const overallPos = getPosition(overallValue);
+  const sessionPos = sessionValue !== null ? getPosition(sessionValue) : null;
+
+  const gtoZoneLeft = getPosition(gtoValue - 5);
+  const gtoZoneRight = getPosition(gtoValue + 5);
+  const gtoZoneWidth = gtoZoneRight - gtoZoneLeft;
+
+  return (
+    <div className="relative h-12 w-full">
+      {/* Base bar */}
+      <div className="absolute top-5 left-0 right-0 h-2 bg-gray-200 rounded-full" />
+
+      {/* GTO zone */}
+      <div
+        className="absolute top-5 h-2 bg-green-200 rounded-full"
+        style={{ left: `${gtoZoneLeft}%`, width: `${gtoZoneWidth}%` }}
+      />
+
+      {/* GTO marker */}
+      <div
+        className="absolute top-4 w-0.5 h-4 bg-green-600"
+        style={{ left: `${gtoPos}%` }}
+      />
+      <div
+        className="absolute top-0 text-[10px] text-green-700 font-medium transform -translate-x-1/2"
+        style={{ left: `${gtoPos}%` }}
+      >
+        GTO {gtoValue.toFixed(0)}%
+      </div>
+
+      {/* Overall marker (hollow circle) */}
+      <div
+        className="absolute top-4.5 w-3 h-3 rounded-full border-2 border-gray-500 bg-white transform -translate-x-1/2"
+        style={{ left: `${overallPos}%`, top: '14px' }}
+        title={`Overall: ${overallValue.toFixed(1)}%`}
+      />
+
+      {/* Session/Combined marker (filled circle) */}
+      {sessionPos !== null && (
+        <div
+          className="absolute w-3 h-3 rounded-full bg-blue-600 transform -translate-x-1/2"
+          style={{ left: `${sessionPos}%`, top: '14px' }}
+          title={`Combined: ${sessionValue?.toFixed(1)}%`}
+        />
+      )}
+
+      {/* Labels at bottom */}
+      <div className="absolute top-8 left-0 text-[10px] text-gray-400">
+        {leakDirection === 'too_tight' || leakDirection === 'too_low' ? 'Too Tight/Low' : '0%'}
+      </div>
+      <div className="absolute top-8 right-0 text-[10px] text-gray-400">
+        {leakDirection === 'too_loose' || leakDirection === 'too_high' ? 'Too Loose/High' : '100%'}
+      </div>
+    </div>
   );
 };
 
@@ -165,8 +240,9 @@ const ScenarioTrendChart: React.FC<{
 const ScenarioSection: React.FC<{
   scenario: ScenarioComparison;
   trends: SessionTrendData[];
+  viewMode: ViewMode;
   defaultExpanded?: boolean;
-}> = ({ scenario, trends, defaultExpanded = false }) => {
+}> = ({ scenario, trends, viewMode, defaultExpanded = false }) => {
   const [expanded, setExpanded] = useState(defaultExpanded);
 
   return (
@@ -200,7 +276,16 @@ const ScenarioSection: React.FC<{
 
       {expanded && (
         <div className="p-4 border-t border-gray-200 bg-white">
-          <ScenarioTrendChart scenario={scenario} trends={trends} />
+          {viewMode === 'trend' ? (
+            <ScenarioTrendChart scenario={scenario} trends={trends} />
+          ) : (
+            <SpectrumBar
+              gtoValue={scenario.gto_value}
+              overallValue={scenario.overall_value}
+              sessionValue={scenario.session_value}
+              leakDirection={scenario.leak_direction}
+            />
+          )}
           {scenario.session_sample !== null && scenario.session_sample > 0 && (
             <div className="mt-3 flex items-center justify-between text-sm">
               <div className="text-gray-600">
@@ -225,7 +310,8 @@ const CategorySection: React.FC<{
   title: string;
   scenarios: ScenarioComparison[];
   trends: SessionTrendData[];
-}> = ({ title, scenarios, trends }) => {
+  viewMode: ViewMode;
+}> = ({ title, scenarios, trends, viewMode }) => {
   const [expanded, setExpanded] = useState(true);
   const leaksCount = scenarios.filter(s => s.is_leak).length;
   const improvedCount = scenarios.filter(s => s.is_leak && s.improvement_status === 'improved').length;
@@ -254,6 +340,7 @@ const CategorySection: React.FC<{
               key={scenario.scenario_id}
               scenario={scenario}
               trends={trends}
+              viewMode={viewMode}
               defaultExpanded={scenario.is_leak && scenario.leak_severity === 'major'}
             />
           ))}
@@ -270,6 +357,7 @@ const SessionGroupAnalysis: React.FC = () => {
   const [data, setData] = useState<SessionGroupAnalysisResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('trend');
 
   const sessionIds = useMemo(() => {
     const idsParam = searchParams.get('ids');
@@ -430,24 +518,70 @@ const SessionGroupAnalysis: React.FC = () => {
 
       {/* Scenario Analysis */}
       <div className="space-y-4">
-        <h2 className="text-lg font-semibold text-gray-900">Scenario Analysis</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900">Scenario Analysis</h2>
+
+          {/* View Mode Toggle */}
+          <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-lg">
+            <button
+              onClick={() => setViewMode('trend')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors ${
+                viewMode === 'trend'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <TrendingUp size={14} />
+              Trend
+            </button>
+            <button
+              onClick={() => setViewMode('aggregate')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors ${
+                viewMode === 'aggregate'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <Circle size={14} />
+              Aggregate
+            </button>
+          </div>
+        </div>
+
+        {/* Legend for aggregate view */}
+        {viewMode === 'aggregate' && (
+          <div className="flex items-center gap-4 text-xs text-gray-500 px-2">
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full border border-gray-500" /> Overall
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-blue-600" /> Combined Sessions
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-4 h-2 bg-green-200 rounded" /> GTO Zone
+            </span>
+          </div>
+        )}
 
         <CategorySection
           title="Opening (RFI)"
           scenarios={groupedScenarios.opening}
           trends={session_trends}
+          viewMode={viewMode}
         />
 
         <CategorySection
           title="Defense vs Opens"
           scenarios={groupedScenarios.defense}
           trends={session_trends}
+          viewMode={viewMode}
         />
 
         <CategorySection
           title="Facing 3-Bet"
           scenarios={groupedScenarios.facing_3bet}
           trends={session_trends}
+          viewMode={viewMode}
         />
       </div>
 
