@@ -185,6 +185,7 @@ const PriorityLeakCard: React.FC<{
         <div>
           <span className="text-gray-500">Overall:</span>
           <span className="ml-1 font-medium text-gray-700">{scenario.overall_value.toFixed(1)}%</span>
+          <span className="text-gray-400 text-xs ml-1">({scenario.overall_sample})</span>
         </div>
         <div>
           <span className="text-gray-500">GTO:</span>
@@ -195,6 +196,9 @@ const PriorityLeakCard: React.FC<{
           <span className="ml-1 font-medium text-blue-700">
             {scenario.session_value?.toFixed(1) ?? '—'}%
           </span>
+          {scenario.session_sample > 0 && (
+            <span className="text-gray-400 text-xs ml-1">({scenario.session_sample})</span>
+          )}
         </div>
         <div>
           <span className="text-gray-500">Deviation:</span>
