@@ -71,16 +71,15 @@ const MyGame = () => {
     enabled: !!(overview && overview.hero_nicknames.length > 0 && activeTab === 'gto'),
   });
 
-  // Fetch scenario hands for drill-down modal (uses first hero nickname)
+  // Fetch scenario hands for drill-down modal (aggregated across all hero nicknames)
   const { data: scenarioHandsData, isLoading: scenarioHandsLoading } = useQuery({
-    queryKey: ['scenarioHands', heroPlayerName, selectedScenario],
-    queryFn: () => api.getScenarioHands(
-      heroPlayerName!,
+    queryKey: ['myGameScenarioHands', selectedScenario],
+    queryFn: () => api.getMyGameScenarioHands(
       selectedScenario!.scenario,
       selectedScenario!.position,
       selectedScenario!.vsPosition
     ),
-    enabled: !!heroPlayerName && !!selectedScenario,
+    enabled: !!selectedScenario,
   });
 
   useEffect(() => {
@@ -165,9 +164,7 @@ const MyGame = () => {
 
   // Handle scenario click - show hands modal inline
   const handleRowClick = (selection: ScenarioSelection) => {
-    if (heroPlayerName) {
-      setSelectedScenario(selection);
-    }
+    setSelectedScenario(selection);
   };
 
   if (loading) {

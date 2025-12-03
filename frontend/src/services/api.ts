@@ -436,6 +436,27 @@ class ApiClient {
     return response.data;
   }
 
+  // Get scenario hands aggregated across all hero nicknames
+  async getMyGameScenarioHands(
+    scenario: string,
+    position: string,
+    vsPosition?: string,
+    limit: number = 1000
+  ): Promise<ScenarioHandsResponse> {
+    const params = new URLSearchParams({
+      scenario,
+      position,
+      limit: limit.toString()
+    });
+    if (vsPosition) {
+      params.append('vs_position', vsPosition);
+    }
+    const response = await this.client.get<ScenarioHandsResponse>(
+      `/api/my-game/scenario-hands?${params}`
+    );
+    return response.data;
+  }
+
   // ========================================
   // Pools API (Opponents by site + stake)
   // ========================================
