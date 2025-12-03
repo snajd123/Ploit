@@ -756,3 +756,94 @@ export interface SessionGroupAnalysisResponse {
 
   session_trends: SessionTrendData[];
 }
+
+// Positional P/L Breakdown Types (Phase 1 Feature)
+export interface PositionalPL {
+  position: string;
+  hands: number;
+  profit_bb: number;
+  profit_dollars: number;
+  bb_100: number;
+  expected_bb_100: number;
+  vs_expected: number;
+  performance: 'above' | 'below' | 'expected';
+  win_rate: number;
+  hands_won: number;
+}
+
+export interface PositionalPLSummary {
+  profitable_positions: number;
+  losing_positions: number;
+  above_expected: number;
+  below_expected: number;
+}
+
+export interface PositionalPLResponse {
+  session_id: number;
+  player_name: string;
+  total_hands: number;
+  total_profit_bb: number;
+  big_blind: number;
+  positions: PositionalPL[];
+  best_position: string | null;
+  worst_position: string | null;
+  summary: PositionalPLSummary;
+}
+
+// Preflop Mistakes Types (Phase 1 Feature)
+export interface PreflopMistake {
+  hand_id: number;
+  timestamp: string | null;
+  position: string;
+  scenario: string;
+  hole_cards: string;
+  action_taken: string;
+  gto_action: string;
+  gto_frequency: number;
+  ev_loss_bb: number;
+  severity: 'minor' | 'moderate' | 'major';
+  in_gto_range: boolean;
+  description: string;
+}
+
+export interface PreflopMistakesResponse {
+  session_id: number;
+  player_name: string;
+  total_mistakes: number;
+  total_ev_loss_bb: number;
+  mistakes_by_severity: Record<string, number>;
+  mistakes: PreflopMistake[];
+}
+
+// GTO Score Types (Phase 1 Feature)
+export interface GTOScoreComponent {
+  score: number;
+  weight: number;
+  description: string;
+}
+
+export interface GTOMistakesSummary {
+  total: number;
+  major: number;
+  moderate: number;
+  minor: number;
+  ev_loss_bb: number;
+}
+
+export interface GTOScoreResponse {
+  session_id: number;
+  player_name: string;
+  total_hands: number;
+  gto_score: number;
+  grade: string;
+  rating: string;
+  components: {
+    frequency_accuracy: GTOScoreComponent;
+    mistake_avoidance: GTOScoreComponent;
+    ev_preservation: GTOScoreComponent;
+  };
+  mistakes_summary: GTOMistakesSummary;
+  weakest_area: 'frequency_accuracy' | 'mistake_avoidance' | 'ev_preservation';
+  improvement_suggestion: string;
+  confidence: 'low' | 'moderate' | 'high';
+}

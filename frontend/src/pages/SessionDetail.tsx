@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Calendar, Clock, TrendingUp, TrendingDown } from 'lucide-react';
 import LeakProgressView from '../components/LeakProgressView';
+import PositionalPLView from '../components/PositionalPLView';
+import PreflopMistakesView from '../components/PreflopMistakesView';
+import GTOScoreView from '../components/GTOScoreView';
 
 interface Session {
   session_id: number;
@@ -141,6 +144,21 @@ const SessionDetail: React.FC = () => {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* GTO Deviation Score */}
+      <div className="bg-white rounded-lg shadow-sm p-6">
+        <GTOScoreView sessionId={parseInt(sessionId || '0')} />
+      </div>
+
+      {/* Positional P/L Breakdown */}
+      <div className="bg-white rounded-lg shadow-sm p-6">
+        <PositionalPLView sessionId={parseInt(sessionId || '0')} />
+      </div>
+
+      {/* Biggest Preflop Mistakes */}
+      <div className="bg-white rounded-lg shadow-sm p-6">
+        <PreflopMistakesView sessionId={parseInt(sessionId || '0')} />
       </div>
 
       {/* Leak Progress Analysis */}

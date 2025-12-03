@@ -27,6 +27,9 @@ import type {
   AILeakAnalysisResponse,
   SessionLeakComparisonResponse,
   SessionGroupAnalysisResponse,
+  PositionalPLResponse,
+  PreflopMistakesResponse,
+  GTOScoreResponse,
 } from '../types';
 
 class ApiClient {
@@ -295,6 +298,31 @@ class ApiClient {
   // Get GTO optimal ranges from database
   async getGTOOptimalRanges(): Promise<GTOOptimalRangesResponse> {
     const response = await this.client.get<GTOOptimalRangesResponse>('/api/gto/optimal-ranges');
+    return response.data;
+  }
+
+  // Get positional P/L breakdown for a session
+  async getSessionPositionalPL(sessionId: number): Promise<PositionalPLResponse> {
+    const response = await this.client.get<PositionalPLResponse>(
+      `/api/sessions/${sessionId}/positional-pl`
+    );
+    return response.data;
+  }
+
+  // Get biggest preflop mistakes for a session
+  async getSessionPreflopMistakes(sessionId: number, limit: number = 10): Promise<PreflopMistakesResponse> {
+    const response = await this.client.get<PreflopMistakesResponse>(
+      `/api/sessions/${sessionId}/preflop-mistakes`,
+      { params: { limit } }
+    );
+    return response.data;
+  }
+
+  // Get GTO deviation score for a session
+  async getSessionGTOScore(sessionId: number): Promise<GTOScoreResponse> {
+    const response = await this.client.get<GTOScoreResponse>(
+      `/api/sessions/${sessionId}/gto-score`
+    );
     return response.data;
   }
 }
