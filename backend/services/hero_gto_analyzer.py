@@ -9,7 +9,36 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from typing import List, Dict, Any, Optional, Tuple
 from decimal import Decimal
+from functools import lru_cache
 import re
+import time
+
+# Module-level cache for session analysis results
+# TTL: 60 seconds (results are cached briefly to avoid re-parsing during same request cycle)
+_session_analysis_cache: Dict[int, Tuple[float, Dict[str, Any]]] = {}
+_CACHE_TTL = 60  # seconds
+
+
+def _get_cached_analysis(session_id: int) -> Optional[Dict[str, Any]]:
+    """Get cached analysis if still valid."""
+    if session_id in _session_analysis_cache:
+        cached_time, cached_result = _session_analysis_cache[session_id]
+        if time.time() - cached_time < _CACHE_TTL:
+            return cached_result
+        else:
+            del _session_analysis_cache[session_id]
+    return None
+
+
+def _set_cached_analysis(session_id: int, result: Dict[str, Any]) -> None:
+    """Cache analysis result."""
+    # Limit cache size to prevent memory issues
+    if len(_session_analysis_cache) > 100:
+        # Remove oldest entries
+        oldest = sorted(_session_analysis_cache.items(), key=lambda x: x[1][0])[:50]
+        for sid, _ in oldest:
+            del _session_analysis_cache[sid]
+    _session_analysis_cache[session_id] = (time.time(), result)
 
 
 class HeroGTOAnalyzer:
@@ -28,11 +57,16 @@ class HeroGTOAnalyzer:
             Dictionary with analysis results including total mistakes,
             total EV loss, and breakdown by street/position
         """
+        # Check cache first
+        cached = _get_cached_analysis(session_id)
+        if cached is not None:
+            return cached
+
         # Get all hero hands from session (hands with hole cards)
         hero_hands = self._get_hero_hands(session_id)
 
         if not hero_hands:
-            return {
+            result = {
                 "session_id": session_id,
                 "total_mistakes": 0,
                 "total_ev_loss_bb": 0.0,
@@ -40,6 +74,8 @@ class HeroGTOAnalyzer:
                 "mistakes_by_severity": {},
                 "biggest_mistakes": []
             }
+            _set_cached_analysis(session_id, result)
+            return result
 
         # Analyze each hand
         mistakes = []
@@ -48,16 +84,16 @@ class HeroGTOAnalyzer:
             mistakes.extend(hand_mistakes)
 
         # Aggregate results
-        return self._aggregate_mistakes(mistakes, session_id)
+        result = self._aggregate_mistakes(mistakes, session_id)
+        _set_cached_analysis(session_id, result)
+        return result
 
-    def _get_hero_hands(self, session_id: int) -> List[Dict[str, Any]]:
+    def _get_hero_hands(self, session_id: int, limit: int = 500) -> List[Dict[str, Any]]:
         """
         Get all hands where hero has visible hole cards for this session.
 
-        Parses hole cards from raw_hand_text since they're not stored in a column.
+        Uses fast regex extraction for hole cards instead of full parsing.
         """
-        from backend.parser.pokerstars_parser import PokerStarsParser
-
         # Get all hands for this session with raw text
         query = text("""
             SELECT
@@ -79,13 +115,16 @@ class HeroGTOAnalyzer:
             JOIN raw_hands rh ON phs.hand_id = rh.hand_id
             WHERE phs.session_id = :session_id
             ORDER BY rh.timestamp ASC
+            LIMIT :limit
         """)
 
-        result = self.db.execute(query, {"session_id": session_id})
+        result = self.db.execute(query, {"session_id": session_id, "limit": limit})
         rows = [dict(row._mapping) for row in result]
 
-        # Parse hole cards from raw_hand_text
-        parser = PokerStarsParser()
+        # Fast regex pattern to extract hole cards for a player
+        # Pattern: "Dealt to PlayerName [Ac Kd]" or "Dealt to PlayerName [AcKd]"
+        hole_card_pattern = re.compile(r'Dealt to ([^\[]+)\s*\[([^\]]+)\]')
+
         hero_hands = []
 
         for row in rows:
@@ -94,18 +133,19 @@ class HeroGTOAnalyzer:
                 continue
 
             try:
-                parsed = parser.parse_single_hand(raw_text)
-                if not parsed:
+                # Fast regex extraction instead of full parsing
+                match = hole_card_pattern.search(raw_text)
+                if not match:
                     continue
 
-                # Find hero (player with hole cards visible)
-                hero_player = next((p for p in parsed.players if p.hole_cards), None)
-                if not hero_player:
-                    continue
+                dealt_to_player = match.group(1).strip()
+                hole_cards_str = match.group(2).strip()
 
-                # Only include if this row is for the hero player
-                if row['player_name'] == hero_player.name:
-                    row['hole_cards'] = hero_player.hole_cards
+                # Only include if this row is for the hero player (the one dealt cards)
+                if row['player_name'] == dealt_to_player:
+                    # Normalize hole cards format (e.g., "Ac Kd" -> "AcKd")
+                    hole_cards = hole_cards_str.replace(' ', '')
+                    row['hole_cards'] = hole_cards
                     hero_hands.append(row)
             except Exception:
                 continue
