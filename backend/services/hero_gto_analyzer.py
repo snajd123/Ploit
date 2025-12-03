@@ -54,28 +54,16 @@ class HeroGTOAnalyzer:
         """
         Get all hands where hero has visible hole cards for this session.
 
-        Note: hole_cards column may not exist in player_hand_summary table.
-        In that case, we return an empty list (no hero hands available for analysis).
+        Parses hole cards from raw_hand_text since they're not stored in a column.
         """
-        # First check if hole_cards column exists
-        try:
-            check_query = text("""
-                SELECT column_name FROM information_schema.columns
-                WHERE table_name = 'player_hand_summary' AND column_name = 'hole_cards'
-            """)
-            result = self.db.execute(check_query)
-            if not result.first():
-                # hole_cards column doesn't exist, return empty list
-                return []
-        except Exception:
-            return []
+        from backend.parser.pokerstars_parser import PokerStarsParser
 
+        # Get all hands for this session with raw text
         query = text("""
             SELECT
                 phs.hand_id,
                 phs.player_name,
                 phs.position,
-                phs.hole_cards,
                 phs.profit_loss,
                 phs.vpip,
                 phs.pfr,
@@ -85,16 +73,44 @@ class HeroGTOAnalyzer:
                 phs.folded_to_three_bet,
                 phs.called_three_bet,
                 rh.stake_level,
-                rh.timestamp
+                rh.timestamp,
+                rh.raw_hand_text
             FROM player_hand_summary phs
             JOIN raw_hands rh ON phs.hand_id = rh.hand_id
             WHERE phs.session_id = :session_id
-            AND phs.hole_cards IS NOT NULL
             ORDER BY rh.timestamp ASC
         """)
 
         result = self.db.execute(query, {"session_id": session_id})
-        return [dict(row._mapping) for row in result]
+        rows = [dict(row._mapping) for row in result]
+
+        # Parse hole cards from raw_hand_text
+        parser = PokerStarsParser()
+        hero_hands = []
+
+        for row in rows:
+            raw_text = row.get('raw_hand_text')
+            if not raw_text:
+                continue
+
+            try:
+                parsed = parser.parse_single_hand(raw_text)
+                if not parsed:
+                    continue
+
+                # Find hero (player with hole cards visible)
+                hero_player = next((p for p in parsed.players if p.hole_cards), None)
+                if not hero_player:
+                    continue
+
+                # Only include if this row is for the hero player
+                if row['player_name'] == hero_player.name:
+                    row['hole_cards'] = hero_player.hole_cards
+                    hero_hands.append(row)
+            except Exception:
+                continue
+
+        return hero_hands
 
     def _analyze_hand(self, hand: Dict[str, Any], session_id: int) -> List[Dict[str, Any]]:
         """
