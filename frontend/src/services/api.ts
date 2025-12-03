@@ -325,6 +325,32 @@ class ApiClient {
     );
     return response.data;
   }
+
+  // Aggregate endpoints for multiple sessions
+  async getAggregatePositionalPL(sessionIds: number[]): Promise<PositionalPLResponse> {
+    const response = await this.client.post<PositionalPLResponse>(
+      '/api/sessions/aggregate/positional-pl',
+      { session_ids: sessionIds }
+    );
+    return response.data;
+  }
+
+  async getAggregatePreflopMistakes(sessionIds: number[], limit: number = 10): Promise<PreflopMistakesResponse> {
+    const response = await this.client.post<PreflopMistakesResponse>(
+      '/api/sessions/aggregate/preflop-mistakes',
+      { session_ids: sessionIds },
+      { params: { limit } }
+    );
+    return response.data;
+  }
+
+  async getAggregateGTOScore(sessionIds: number[]): Promise<GTOScoreResponse> {
+    const response = await this.client.post<GTOScoreResponse>(
+      '/api/sessions/aggregate/gto-score',
+      { session_ids: sessionIds }
+    );
+    return response.data;
+  }
 }
 
 // Export singleton instance

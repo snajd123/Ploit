@@ -1,10 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Calendar, Clock, TrendingUp, TrendingDown } from 'lucide-react';
+import { ArrowLeft, Calendar, Clock, TrendingUp, TrendingDown, Target, AlertTriangle, LineChart } from 'lucide-react';
 import LeakProgressView from '../components/LeakProgressView';
 import PositionalPLView from '../components/PositionalPLView';
 import PreflopMistakesView from '../components/PreflopMistakesView';
 import GTOScoreView from '../components/GTOScoreView';
+
+type SessionTab = 'overview' | 'mistakes' | 'leaks';
+
+const TAB_CONFIG: { id: SessionTab; label: string; icon: React.ReactNode }[] = [
+  { id: 'overview', label: 'Overview', icon: <Target size={16} /> },
+  { id: 'mistakes', label: 'Mistakes', icon: <AlertTriangle size={16} /> },
+  { id: 'leaks', label: 'Leak Progress', icon: <LineChart size={16} /> },
+];
 
 interface Session {
   session_id: number;
@@ -23,6 +31,7 @@ const SessionDetail: React.FC = () => {
   const navigate = useNavigate();
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<SessionTab>('overview');
 
   useEffect(() => {
     if (sessionId) {
@@ -144,27 +153,52 @@ const SessionDetail: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {/* Tabs */}
+        <div className="flex gap-1 mt-4 border-b border-gray-200">
+          {TAB_CONFIG.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
+                activeTab === tab.id
+                  ? 'bg-white text-blue-600 border border-b-0 border-gray-200'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+              }`}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* GTO Deviation Score */}
-      <div className="bg-white rounded-lg shadow-sm p-6">
-        <GTOScoreView sessionId={parseInt(sessionId || '0')} />
-      </div>
+      {/* Tab Content */}
+      {activeTab === 'overview' && (
+        <>
+          {/* GTO Deviation Score */}
+          <div className="bg-white rounded-lg shadow-sm p-6">
+            <GTOScoreView sessionId={parseInt(sessionId || '0')} />
+          </div>
 
-      {/* Positional P/L Breakdown */}
-      <div className="bg-white rounded-lg shadow-sm p-6">
-        <PositionalPLView sessionId={parseInt(sessionId || '0')} />
-      </div>
+          {/* Positional P/L Breakdown */}
+          <div className="bg-white rounded-lg shadow-sm p-6">
+            <PositionalPLView sessionId={parseInt(sessionId || '0')} />
+          </div>
+        </>
+      )}
 
-      {/* Biggest Preflop Mistakes */}
-      <div className="bg-white rounded-lg shadow-sm p-6">
-        <PreflopMistakesView sessionId={parseInt(sessionId || '0')} />
-      </div>
+      {activeTab === 'mistakes' && (
+        <div className="bg-white rounded-lg shadow-sm p-6">
+          <PreflopMistakesView sessionId={parseInt(sessionId || '0')} />
+        </div>
+      )}
 
-      {/* Leak Progress Analysis */}
-      <div className="bg-white rounded-lg shadow-sm p-6">
-        <LeakProgressView sessionId={parseInt(sessionId || '0')} />
-      </div>
+      {activeTab === 'leaks' && (
+        <div className="bg-white rounded-lg shadow-sm p-6">
+          <LeakProgressView sessionId={parseInt(sessionId || '0')} />
+        </div>
+      )}
     </div>
   );
 };

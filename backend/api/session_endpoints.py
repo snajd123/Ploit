@@ -2019,3 +2019,344 @@ def get_session_gto_score(session_id: int, db: Session = Depends(get_db)):
         # Confidence
         "confidence": "high" if total_hands >= 100 else "moderate" if total_hands >= 50 else "low"
     }
+
+
+# ============================================================================
+# MULTI-SESSION AGGREGATE ENDPOINTS
+# ============================================================================
+
+class MultiSessionRequest(BaseModel):
+    session_ids: List[int]
+
+
+@router.post("/aggregate/positional-pl")
+def get_aggregate_positional_pl(request: MultiSessionRequest, db: Session = Depends(get_db)):
+    """
+    Get aggregated positional P/L across multiple sessions.
+    """
+    session_ids = request.session_ids
+    if not session_ids:
+        raise HTTPException(status_code=400, detail="No session IDs provided")
+
+    # Get session info
+    session_query = text("""
+        SELECT s.player_name, rh.big_blind
+        FROM sessions s
+        LEFT JOIN player_hand_summary phs ON phs.session_id = s.session_id
+        LEFT JOIN raw_hands rh ON rh.hand_id = phs.hand_id
+        WHERE s.session_id = ANY(:session_ids)
+        LIMIT 1
+    """)
+    session_result = db.execute(session_query, {"session_ids": session_ids})
+    session = session_result.first()
+
+    if not session:
+        raise HTTPException(status_code=404, detail="No sessions found")
+
+    player_name = session._mapping["player_name"]
+    big_blind = float(session._mapping["big_blind"] or 0.02)
+
+    # Get aggregated positional P/L
+    pl_query = text("""
+        SELECT
+            phs.position,
+            COUNT(*) as hands,
+            COALESCE(SUM(phs.profit_loss), 0) as total_profit,
+            COALESCE(SUM(CASE WHEN phs.won_hand THEN 1 ELSE 0 END), 0) as hands_won
+        FROM player_hand_summary phs
+        JOIN sessions s ON s.session_id = phs.session_id
+        WHERE phs.session_id = ANY(:session_ids)
+        AND phs.player_name = s.player_name
+        AND phs.position IS NOT NULL
+        GROUP BY phs.position
+    """)
+
+    pl_result = db.execute(pl_query, {"session_ids": session_ids})
+
+    EXPECTED_BB_100 = {
+        'BTN': 35, 'CO': 15, 'MP': 5, 'UTG': 0, 'SB': -25, 'BB': -40,
+    }
+
+    positions = []
+    total_profit = 0
+    total_hands = 0
+
+    for row in pl_result:
+        pos = row[0]
+        hands = row[1] or 0
+        profit_dollars = float(row[2] or 0)
+        hands_won = row[3] or 0
+
+        profit_bb = profit_dollars / big_blind if big_blind > 0 else 0
+        bb_100 = (profit_bb / hands * 100) if hands > 0 else 0
+        win_rate = (hands_won / hands * 100) if hands > 0 else 0
+        expected_bb_100 = EXPECTED_BB_100.get(pos, 0)
+        vs_expected = bb_100 - expected_bb_100
+        performance = "above" if vs_expected > 5 else "below" if vs_expected < -5 else "expected"
+
+        positions.append({
+            "position": pos,
+            "hands": hands,
+            "profit_bb": round(profit_bb, 1),
+            "profit_dollars": round(profit_dollars, 2),
+            "bb_100": round(bb_100, 1),
+            "expected_bb_100": expected_bb_100,
+            "vs_expected": round(vs_expected, 1),
+            "performance": performance,
+            "win_rate": round(win_rate, 1),
+            "hands_won": hands_won
+        })
+
+        total_profit += profit_bb
+        total_hands += hands
+
+    position_order = ['BTN', 'CO', 'MP', 'UTG', 'SB', 'BB']
+    positions_sorted = sorted(
+        positions,
+        key=lambda x: position_order.index(x['position']) if x['position'] in position_order else 99
+    )
+
+    best_position = max(positions, key=lambda x: x['profit_bb']) if positions else None
+    worst_position = min(positions, key=lambda x: x['profit_bb']) if positions else None
+
+    return {
+        "session_count": len(session_ids),
+        "player_name": player_name,
+        "total_hands": total_hands,
+        "total_profit_bb": round(total_profit, 1),
+        "big_blind": big_blind,
+        "positions": positions_sorted,
+        "best_position": best_position["position"] if best_position else None,
+        "worst_position": worst_position["position"] if worst_position else None,
+        "summary": {
+            "profitable_positions": len([p for p in positions if p['profit_bb'] > 0]),
+            "losing_positions": len([p for p in positions if p['profit_bb'] < 0]),
+            "above_expected": len([p for p in positions if p['performance'] == 'above']),
+            "below_expected": len([p for p in positions if p['performance'] == 'below'])
+        }
+    }
+
+
+@router.post("/aggregate/preflop-mistakes")
+def get_aggregate_preflop_mistakes(request: MultiSessionRequest, limit: int = 10, db: Session = Depends(get_db)):
+    """
+    Get aggregated biggest preflop mistakes across multiple sessions.
+    """
+    session_ids = request.session_ids
+    if not session_ids:
+        raise HTTPException(status_code=400, detail="No session IDs provided")
+
+    # Get player name
+    session_query = text("SELECT player_name FROM sessions WHERE session_id = ANY(:session_ids) LIMIT 1")
+    result = db.execute(session_query, {"session_ids": session_ids})
+    session = result.first()
+    if not session:
+        raise HTTPException(status_code=404, detail="No sessions found")
+
+    player_name = session._mapping["player_name"]
+
+    # Analyze all sessions
+    analyzer = HeroGTOAnalyzer(db)
+    all_mistakes = []
+    total_ev_loss = 0
+    mistakes_by_severity = {"major": 0, "moderate": 0, "minor": 0}
+
+    for session_id in session_ids:
+        analysis = analyzer.analyze_session(session_id)
+        all_mistakes.extend(analysis.get("biggest_mistakes", []))
+        total_ev_loss += analysis.get("total_ev_loss_bb", 0)
+        for sev, count in analysis.get("mistakes_by_severity", {}).items():
+            mistakes_by_severity[sev] = mistakes_by_severity.get(sev, 0) + count
+
+    # Sort by EV loss and take top N
+    all_mistakes.sort(key=lambda x: x.get('ev_loss_bb', 0), reverse=True)
+    biggest_mistakes = all_mistakes[:limit]
+
+    enriched_mistakes = []
+    for mistake in biggest_mistakes:
+        enriched = {
+            "hand_id": mistake.get("hand_id"),
+            "timestamp": mistake.get("timestamp"),
+            "position": mistake.get("position"),
+            "scenario": mistake.get("scenario"),
+            "hole_cards": mistake.get("hero_hand"),
+            "action_taken": mistake.get("action_taken"),
+            "gto_action": mistake.get("gto_action"),
+            "gto_frequency": mistake.get("gto_frequency"),
+            "ev_loss_bb": mistake.get("ev_loss_bb"),
+            "severity": mistake.get("mistake_severity"),
+            "in_gto_range": mistake.get("hand_in_gto_range", False),
+            "description": _generate_mistake_description(mistake)
+        }
+        enriched_mistakes.append(enriched)
+
+    return {
+        "session_count": len(session_ids),
+        "player_name": player_name,
+        "total_mistakes": len(all_mistakes),
+        "total_ev_loss_bb": round(total_ev_loss, 2),
+        "mistakes_by_severity": mistakes_by_severity,
+        "mistakes": enriched_mistakes
+    }
+
+
+@router.post("/aggregate/gto-score")
+def get_aggregate_gto_score(request: MultiSessionRequest, db: Session = Depends(get_db)):
+    """
+    Get aggregated GTO score across multiple sessions.
+    """
+    session_ids = request.session_ids
+    if not session_ids:
+        raise HTTPException(status_code=400, detail="No session IDs provided")
+
+    # Get total hands and player name
+    session_query = text("""
+        SELECT s.player_name, COALESCE(SUM(s.total_hands), 0) as total_hands
+        FROM sessions s
+        WHERE s.session_id = ANY(:session_ids)
+        GROUP BY s.player_name
+        LIMIT 1
+    """)
+    result = db.execute(session_query, {"session_ids": session_ids})
+    session = result.first()
+
+    if not session:
+        raise HTTPException(status_code=404, detail="No sessions found")
+
+    player_name = session._mapping["player_name"]
+    total_hands = int(session._mapping["total_hands"] or 0)
+
+    # Get aggregated leak comparison using existing group analysis
+    group_data = get_session_group_analysis(MultiSessionRequest(session_ids=session_ids), db)
+    scenarios = group_data.get("aggregated", {}).get("scenarios", [])
+
+    # Calculate Frequency Accuracy Score
+    frequency_scores = []
+    position_weights = {
+        'BTN': 1.5, 'CO': 1.3, 'SB': 1.4, 'BB': 1.6,
+        'MP': 1.1, 'UTG': 1.0
+    }
+
+    for scenario in scenarios:
+        if scenario.get("session_sample", 0) < 3:
+            continue
+
+        session_val = scenario.get("session_value")
+        gto_val = scenario.get("gto_value")
+
+        if session_val is None or gto_val is None or gto_val == 0:
+            continue
+
+        deviation = abs(session_val - gto_val)
+        accuracy = max(0, 100 - deviation * 2)
+
+        pos = scenario.get("position", "")
+        weight = position_weights.get(pos, 1.0)
+
+        frequency_scores.append({
+            "score": accuracy,
+            "weight": weight,
+            "sample": scenario.get("session_sample", 0)
+        })
+
+    if frequency_scores:
+        total_weighted_score = sum(s["score"] * s["weight"] * s["sample"] for s in frequency_scores)
+        total_weight = sum(s["weight"] * s["sample"] for s in frequency_scores)
+        frequency_accuracy = total_weighted_score / total_weight if total_weight > 0 else 50
+    else:
+        frequency_accuracy = 50
+
+    # Get aggregated mistake data
+    total_mistakes = 0
+    total_ev_loss = 0
+    mistakes_by_severity = {"major": 0, "moderate": 0, "minor": 0}
+
+    analyzer = HeroGTOAnalyzer(db)
+    for session_id in session_ids:
+        analysis = analyzer.analyze_session(session_id)
+        total_mistakes += analysis.get("total_mistakes", 0)
+        total_ev_loss += analysis.get("total_ev_loss_bb", 0)
+        for sev, count in analysis.get("mistakes_by_severity", {}).items():
+            mistakes_by_severity[sev] = mistakes_by_severity.get(sev, 0) + count
+
+    major_mistakes = mistakes_by_severity.get("major", 0)
+    moderate_mistakes = mistakes_by_severity.get("moderate", 0)
+    minor_mistakes = mistakes_by_severity.get("minor", 0)
+
+    hands_analyzed = max(total_hands, 1)
+    weighted_mistakes = (major_mistakes * 3) + (moderate_mistakes * 2) + (minor_mistakes * 1)
+    weighted_mistake_rate = (weighted_mistakes / hands_analyzed) * 100
+    mistake_penalty_score = max(0, 100 * math.exp(-weighted_mistake_rate * 0.1))
+
+    ev_loss_per_100 = (total_ev_loss / hands_analyzed) * 100 if hands_analyzed > 0 else 0
+    ev_score = max(0, 100 - ev_loss_per_100 * 5)
+
+    overall_score = (
+        frequency_accuracy * 0.40 +
+        mistake_penalty_score * 0.35 +
+        ev_score * 0.25
+    )
+
+    if overall_score >= 90:
+        grade, rating = "A+", "Elite GTO"
+    elif overall_score >= 80:
+        grade, rating = "A", "Strong GTO"
+    elif overall_score >= 70:
+        grade, rating = "B+", "Good GTO"
+    elif overall_score >= 60:
+        grade, rating = "B", "Above Average"
+    elif overall_score >= 50:
+        grade, rating = "C", "Average"
+    elif overall_score >= 40:
+        grade, rating = "D", "Below Average"
+    else:
+        grade, rating = "F", "Needs Work"
+
+    component_scores = {
+        "frequency_accuracy": frequency_accuracy,
+        "mistake_avoidance": mistake_penalty_score,
+        "ev_preservation": ev_score
+    }
+    weakest_area = min(component_scores, key=component_scores.get)
+
+    improvement_suggestions = {
+        "frequency_accuracy": "Focus on adjusting your opening and defense frequencies to match GTO ranges",
+        "mistake_avoidance": "Review the biggest mistakes and focus on those specific spots in study",
+        "ev_preservation": "Your EV leaks are significant - prioritize fixing high-EV situations"
+    }
+
+    return {
+        "session_count": len(session_ids),
+        "player_name": player_name,
+        "total_hands": total_hands,
+        "gto_score": round(overall_score, 1),
+        "grade": grade,
+        "rating": rating,
+        "components": {
+            "frequency_accuracy": {
+                "score": round(frequency_accuracy, 1),
+                "weight": 0.40,
+                "description": "How close your frequencies are to GTO"
+            },
+            "mistake_avoidance": {
+                "score": round(mistake_penalty_score, 1),
+                "weight": 0.35,
+                "description": "Penalty for GTO deviations"
+            },
+            "ev_preservation": {
+                "score": round(ev_score, 1),
+                "weight": 0.25,
+                "description": "EV lost due to mistakes"
+            }
+        },
+        "mistakes_summary": {
+            "total": total_mistakes,
+            "major": major_mistakes,
+            "moderate": moderate_mistakes,
+            "minor": minor_mistakes,
+            "ev_loss_bb": round(total_ev_loss, 2)
+        },
+        "weakest_area": weakest_area,
+        "improvement_suggestion": improvement_suggestions.get(weakest_area, ""),
+        "confidence": "high" if total_hands >= 200 else "moderate" if total_hands >= 100 else "low"
+    }

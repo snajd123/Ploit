@@ -3,7 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, TrendingDown, CheckCircle, AlertTriangle,
   Minus, Loader2, AlertCircle, ChevronDown, ChevronRight,
-  TrendingUp, Circle, ListOrdered, HelpCircle
+  TrendingUp, Circle, ListOrdered, HelpCircle, Target, LineChart as LineChartIcon
 } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -14,8 +14,29 @@ import type {
   SessionGroupAnalysisResponse,
   SessionTrendData,
   ScenarioComparison,
-  ImprovementStatus
+  ImprovementStatus,
+  PositionalPLResponse,
+  PreflopMistakesResponse,
+  GTOScoreResponse
 } from '../types';
+
+type GroupTab = 'overview' | 'mistakes' | 'leaks';
+
+const TAB_CONFIG: { id: GroupTab; label: string; icon: React.ReactNode }[] = [
+  { id: 'overview', label: 'Overview', icon: <Target size={16} /> },
+  { id: 'mistakes', label: 'Mistakes', icon: <AlertTriangle size={16} /> },
+  { id: 'leaks', label: 'Leak Progress', icon: <LineChartIcon size={16} /> },
+];
+
+// Position colors for P/L
+const POSITION_COLORS: Record<string, { bg: string; border: string; text: string }> = {
+  BTN: { bg: 'bg-green-50', border: 'border-green-300', text: 'text-green-800' },
+  CO: { bg: 'bg-blue-50', border: 'border-blue-300', text: 'text-blue-800' },
+  MP: { bg: 'bg-purple-50', border: 'border-purple-300', text: 'text-purple-800' },
+  UTG: { bg: 'bg-orange-50', border: 'border-orange-300', text: 'text-orange-800' },
+  SB: { bg: 'bg-red-50', border: 'border-red-300', text: 'text-red-800' },
+  BB: { bg: 'bg-pink-50', border: 'border-pink-300', text: 'text-pink-800' },
+};
 
 // Grade display component
 const GradeDisplay: React.FC<{ grade: string; score: number }> = ({ grade, score }) => {
@@ -463,6 +484,13 @@ const SessionGroupAnalysis: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('trend');
+  const [activeTab, setActiveTab] = useState<GroupTab>('overview');
+
+  // Aggregate data states
+  const [gtoScore, setGtoScore] = useState<GTOScoreResponse | null>(null);
+  const [positionalPL, setPositionalPL] = useState<PositionalPLResponse | null>(null);
+  const [mistakes, setMistakes] = useState<PreflopMistakesResponse | null>(null);
+  const [aggregateLoading, setAggregateLoading] = useState(false);
 
   const sessionIds = useMemo(() => {
     const idsParam = searchParams.get('ids');
@@ -494,6 +522,34 @@ const SessionGroupAnalysis: React.FC = () => {
 
     fetchData();
   }, [sessionIds]);
+
+  // Fetch aggregate data when tab changes
+  useEffect(() => {
+    const fetchAggregateData = async () => {
+      if (sessionIds.length === 0) return;
+
+      setAggregateLoading(true);
+      try {
+        if (activeTab === 'overview' && !gtoScore) {
+          const [score, pl] = await Promise.all([
+            api.getAggregateGTOScore(sessionIds),
+            api.getAggregatePositionalPL(sessionIds)
+          ]);
+          setGtoScore(score);
+          setPositionalPL(pl);
+        } else if (activeTab === 'mistakes' && !mistakes) {
+          const result = await api.getAggregatePreflopMistakes(sessionIds, 10);
+          setMistakes(result);
+        }
+      } catch (err) {
+        console.error('Error fetching aggregate data:', err);
+      } finally {
+        setAggregateLoading(false);
+      }
+    };
+
+    fetchAggregateData();
+  }, [activeTab, sessionIds, gtoScore, mistakes]);
 
   // Group scenarios by category
   const groupedScenarios = useMemo(() => {
@@ -545,81 +601,255 @@ const SessionGroupAnalysis: React.FC = () => {
           Back to Sessions
         </button>
 
-        <h1 className="text-2xl font-bold text-gray-900">Leak Progress Analysis</h1>
-        <p className="text-gray-600 mt-1">
-          Analyzing {data.session_count} sessions ({data.total_hands.toLocaleString()} hands)
-          {data.date_range.start && data.date_range.end && (
-            <span className="text-gray-500">
-              {' '}from {new Date(data.date_range.start).toLocaleDateString()} to {new Date(data.date_range.end).toLocaleDateString()}
-            </span>
-          )}
-        </p>
-      </div>
-
-      {/* Summary Card */}
-      <div className="bg-gradient-to-r from-blue-50 to-white rounded-lg border border-blue-200 p-6">
-        <div className="flex items-start gap-6">
-          <GradeDisplay grade={summary.session_grade} score={summary.overall_improvement_score} />
-
-          <div className="flex-1">
-            <h2 className="text-lg font-semibold text-gray-900 mb-3">Overall Progress</h2>
-            <div className="grid grid-cols-4 gap-4">
-              <div className="flex items-center gap-2">
-                <CheckCircle size={18} className="text-green-600" />
-                <div>
-                  <div className="text-2xl font-bold text-gray-900">{summary.scenarios_improved}</div>
-                  <div className="text-xs text-gray-600">Improved</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Minus size={18} className="text-gray-500" />
-                <div>
-                  <div className="text-2xl font-bold text-gray-900">{summary.scenarios_same}</div>
-                  <div className="text-xs text-gray-600">Same</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <TrendingDown size={18} className="text-red-600" />
-                <div>
-                  <div className="text-2xl font-bold text-gray-900">{summary.scenarios_worse}</div>
-                  <div className="text-xs text-gray-600">Worse</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <AlertTriangle size={18} className="text-orange-600" />
-                <div>
-                  <div className="text-2xl font-bold text-gray-900">{summary.scenarios_overcorrected}</div>
-                  <div className="text-xs text-gray-600">Overcorrected</div>
-                </div>
-              </div>
-            </div>
-            <p className="text-sm text-gray-500 mt-3">
-              {summary.scenarios_with_leaks} scenarios with leaks identified (out of {summary.total_scenarios} total)
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Session Analysis</h1>
+            <p className="text-gray-600 mt-1">
+              Analyzing {data.session_count} sessions ({data.total_hands.toLocaleString()} hands)
+              {data.date_range.start && data.date_range.end && (
+                <span className="text-gray-500">
+                  {' '}from {new Date(data.date_range.start).toLocaleDateString()} to {new Date(data.date_range.end).toLocaleDateString()}
+                </span>
+              )}
             </p>
           </div>
-
           <div className="text-right">
             <div className={`text-2xl font-bold ${data.total_profit_bb >= 0 ? 'text-green-600' : 'text-red-600'}`}>
               {data.total_profit_bb >= 0 ? '+' : ''}{data.total_profit_bb.toFixed(1)} bb
             </div>
             <div className="text-sm text-gray-500">Total P/L</div>
-            <div className={`text-sm mt-1 ${data.confidence === 'low' ? 'text-orange-500' : 'text-gray-500'}`}>
-              {data.confidence} confidence
-            </div>
           </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex gap-1 mt-4 border-b border-gray-200">
+          {TAB_CONFIG.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
+                activeTab === tab.id
+                  ? 'bg-white text-blue-600 border border-b-0 border-gray-200'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+              }`}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Stats Trends */}
-      <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Stat Trends Over Sessions</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatsTrendChart trends={session_trends} statKey="vpip_pct" label="VPIP%" color="#3b82f6" />
-          <StatsTrendChart trends={session_trends} statKey="pfr_pct" label="PFR%" color="#10b981" />
-          <StatsTrendChart trends={session_trends} statKey="three_bet_pct" label="3-Bet%" color="#f59e0b" />
-          <StatsTrendChart trends={session_trends} statKey="fold_to_3bet_pct" label="Fold to 3-Bet%" color="#ef4444" />
+      {/* Tab Content */}
+      {activeTab === 'overview' && (
+        <>
+          {/* GTO Score */}
+          {aggregateLoading && !gtoScore ? (
+            <div className="bg-white rounded-lg shadow-sm p-6 flex items-center justify-center">
+              <Loader2 className="animate-spin text-blue-600 mr-2" size={20} />
+              <span className="text-gray-600">Loading GTO score...</span>
+            </div>
+          ) : gtoScore && (
+            <div className="bg-white rounded-lg shadow-sm p-6">
+              <div className="flex items-center gap-6">
+                <div className={`flex flex-col items-center justify-center p-4 rounded-lg border-2 ${
+                  gtoScore.grade.startsWith('A') ? 'text-green-600 bg-green-100 border-green-300' :
+                  gtoScore.grade.startsWith('B') ? 'text-blue-600 bg-blue-100 border-blue-300' :
+                  gtoScore.grade === 'C' ? 'text-yellow-600 bg-yellow-100 border-yellow-300' :
+                  gtoScore.grade === 'D' ? 'text-orange-600 bg-orange-100 border-orange-300' :
+                  'text-red-600 bg-red-100 border-red-300'
+                }`}>
+                  <span className="text-4xl font-bold">{gtoScore.grade}</span>
+                  <span className="text-sm opacity-75">Score: {gtoScore.gto_score.toFixed(0)}</span>
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-gray-900 text-lg">{gtoScore.rating}</h3>
+                  <p className="text-gray-600 text-sm mt-1">GTO Deviation Score across all sessions</p>
+                  <div className="grid grid-cols-3 gap-4 mt-3">
+                    <div className="text-sm">
+                      <span className="text-gray-500">Frequency:</span>
+                      <span className="ml-1 font-medium">{gtoScore.components.frequency_accuracy.score.toFixed(0)}</span>
+                    </div>
+                    <div className="text-sm">
+                      <span className="text-gray-500">Mistakes:</span>
+                      <span className="ml-1 font-medium">{gtoScore.components.mistake_avoidance.score.toFixed(0)}</span>
+                    </div>
+                    <div className="text-sm">
+                      <span className="text-gray-500">EV:</span>
+                      <span className="ml-1 font-medium">{gtoScore.components.ev_preservation.score.toFixed(0)}</span>
+                    </div>
+                  </div>
+                </div>
+                {gtoScore.improvement_suggestion && (
+                  <div className="max-w-xs text-sm text-blue-700 bg-blue-50 p-3 rounded-lg">
+                    <span className="font-medium">Focus:</span> {gtoScore.improvement_suggestion}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Positional P/L */}
+          {positionalPL && (
+            <div className="bg-white rounded-lg shadow-sm p-6">
+              <h3 className="font-semibold text-gray-900 mb-4">Positional P/L Breakdown</h3>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {positionalPL.positions.map(pos => {
+                  const colors = POSITION_COLORS[pos.position] || POSITION_COLORS.MP;
+                  return (
+                    <div key={pos.position} className={`p-3 rounded-lg border ${colors.border} ${colors.bg}`}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className={`font-bold ${colors.text}`}>{pos.position}</span>
+                        <span className={`font-bold ${pos.profit_bb >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {pos.profit_bb >= 0 ? '+' : ''}{pos.profit_bb.toFixed(1)} bb
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {pos.hands} hands | {pos.bb_100.toFixed(1)} bb/100
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Stats Trends */}
+          <div className="bg-white rounded-lg border border-gray-200 p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Stat Trends Over Sessions</h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <StatsTrendChart trends={session_trends} statKey="vpip_pct" label="VPIP%" color="#3b82f6" />
+              <StatsTrendChart trends={session_trends} statKey="pfr_pct" label="PFR%" color="#10b981" />
+              <StatsTrendChart trends={session_trends} statKey="three_bet_pct" label="3-Bet%" color="#f59e0b" />
+              <StatsTrendChart trends={session_trends} statKey="fold_to_3bet_pct" label="Fold to 3-Bet%" color="#ef4444" />
+            </div>
+          </div>
+        </>
+      )}
+
+      {activeTab === 'mistakes' && (
+        <div className="bg-white rounded-lg shadow-sm p-6">
+          {aggregateLoading && !mistakes ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="animate-spin text-blue-600 mr-2" size={20} />
+              <span className="text-gray-600">Analyzing preflop decisions...</span>
+            </div>
+          ) : mistakes && mistakes.mistakes.length > 0 ? (
+            <>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="font-semibold text-gray-900">Biggest Preflop Mistakes</h3>
+                  <p className="text-sm text-gray-500">GTO deviations ranked by EV loss across all sessions</p>
+                </div>
+                <div className="text-right">
+                  <div className="text-xl font-bold text-red-600">-{mistakes.total_ev_loss_bb.toFixed(1)} bb</div>
+                  <div className="text-xs text-gray-500">{mistakes.total_mistakes} total mistakes</div>
+                </div>
+              </div>
+              <div className="space-y-3">
+                {mistakes.mistakes.map((mistake, idx) => (
+                  <div key={mistake.hand_id} className="p-3 rounded-lg border border-gray-200 bg-gray-50">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-200 text-gray-600 font-bold text-sm">
+                          {idx + 1}
+                        </span>
+                        <div>
+                          <span className="font-mono font-bold">{mistake.hole_cards}</span>
+                          <span className="text-gray-400 mx-2">in</span>
+                          <span className="font-medium text-gray-700">{mistake.position}</span>
+                          <span className={`ml-2 px-2 py-0.5 text-xs font-medium rounded ${
+                            mistake.severity === 'major' ? 'bg-red-100 text-red-700' :
+                            mistake.severity === 'moderate' ? 'bg-orange-100 text-orange-700' :
+                            'bg-yellow-100 text-yellow-700'
+                          }`}>
+                            {mistake.severity?.toUpperCase()}
+                          </span>
+                        </div>
+                      </div>
+                      <span className="text-lg font-bold text-red-600">-{mistake.ev_loss_bb.toFixed(2)} bb</span>
+                    </div>
+                    <p className="text-sm text-gray-600 mt-2">{mistake.description}</p>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="text-center py-8 bg-green-50 rounded-lg">
+              <CheckCircle className="mx-auto mb-2 text-green-600" size={32} />
+              <p className="text-green-700 font-medium">No preflop mistakes found</p>
+              <p className="text-sm text-green-600 mt-1">Great play across all sessions!</p>
+            </div>
+          )}
         </div>
-      </div>
+      )}
+
+      {activeTab === 'leaks' && (
+        <>
+          {/* Summary Card */}
+          <div className="bg-gradient-to-r from-blue-50 to-white rounded-lg border border-blue-200 p-6">
+            <div className="flex items-start gap-6">
+              <GradeDisplay grade={summary.session_grade} score={summary.overall_improvement_score} />
+
+              <div className="flex-1">
+                <h2 className="text-lg font-semibold text-gray-900 mb-3">Overall Progress</h2>
+                <div className="grid grid-cols-4 gap-4">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle size={18} className="text-green-600" />
+                    <div>
+                      <div className="text-2xl font-bold text-gray-900">{summary.scenarios_improved}</div>
+                      <div className="text-xs text-gray-600">Improved</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Minus size={18} className="text-gray-500" />
+                    <div>
+                      <div className="text-2xl font-bold text-gray-900">{summary.scenarios_same}</div>
+                      <div className="text-xs text-gray-600">Same</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <TrendingDown size={18} className="text-red-600" />
+                    <div>
+                      <div className="text-2xl font-bold text-gray-900">{summary.scenarios_worse}</div>
+                      <div className="text-xs text-gray-600">Worse</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle size={18} className="text-orange-600" />
+                    <div>
+                      <div className="text-2xl font-bold text-gray-900">{summary.scenarios_overcorrected}</div>
+                      <div className="text-xs text-gray-600">Overcorrected</div>
+                    </div>
+                  </div>
+                </div>
+                <p className="text-sm text-gray-500 mt-3">
+                  {summary.scenarios_with_leaks} scenarios with leaks identified (out of {summary.total_scenarios} total)
+                </p>
+              </div>
+
+              <div className="text-right">
+                <div className={`text-2xl font-bold ${data.total_profit_bb >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {data.total_profit_bb >= 0 ? '+' : ''}{data.total_profit_bb.toFixed(1)} bb
+                </div>
+                <div className="text-sm text-gray-500">Total P/L</div>
+                <div className={`text-sm mt-1 ${data.confidence === 'low' ? 'text-orange-500' : 'text-gray-500'}`}>
+                  {data.confidence} confidence
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Stats Trends */}
+          <div className="bg-white rounded-lg border border-gray-200 p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Stat Trends Over Sessions</h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <StatsTrendChart trends={session_trends} statKey="vpip_pct" label="VPIP%" color="#3b82f6" />
+              <StatsTrendChart trends={session_trends} statKey="pfr_pct" label="PFR%" color="#10b981" />
+              <StatsTrendChart trends={session_trends} statKey="three_bet_pct" label="3-Bet%" color="#f59e0b" />
+              <StatsTrendChart trends={session_trends} statKey="fold_to_3bet_pct" label="Fold to 3-Bet%" color="#ef4444" />
+            </div>
+          </div>
 
       {/* Scenario Analysis */}
       <div className="space-y-4">
@@ -753,42 +983,44 @@ const SessionGroupAnalysis: React.FC = () => {
         )}
       </div>
 
-      {/* Session Details Table */}
-      <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Session Details</h2>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Hands</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">P/L (bb)</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">VPIP</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">PFR</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">3-Bet</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Fold to 3B</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {session_trends.map((trend, idx) => (
-                <tr key={trend.session_id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 text-sm text-gray-900">
-                    {trend.date ? new Date(trend.date).toLocaleDateString() : `Session ${idx + 1}`}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-600 text-right">{trend.hands}</td>
-                  <td className={`px-4 py-3 text-sm text-right font-medium ${trend.profit_bb >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {trend.profit_bb >= 0 ? '+' : ''}{trend.profit_bb.toFixed(1)}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-600 text-right">{trend.stats.vpip_pct.toFixed(1)}%</td>
-                  <td className="px-4 py-3 text-sm text-gray-600 text-right">{trend.stats.pfr_pct.toFixed(1)}%</td>
-                  <td className="px-4 py-3 text-sm text-gray-600 text-right">{trend.stats.three_bet_pct.toFixed(1)}%</td>
-                  <td className="px-4 py-3 text-sm text-gray-600 text-right">{trend.stats.fold_to_3bet_pct.toFixed(1)}%</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+          {/* Session Details Table */}
+          <div className="bg-white rounded-lg border border-gray-200 p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Session Details</h2>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Hands</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">P/L (bb)</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">VPIP</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">PFR</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">3-Bet</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Fold to 3B</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {session_trends.map((trend, idx) => (
+                    <tr key={trend.session_id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 text-sm text-gray-900">
+                        {trend.date ? new Date(trend.date).toLocaleDateString() : `Session ${idx + 1}`}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600 text-right">{trend.hands}</td>
+                      <td className={`px-4 py-3 text-sm text-right font-medium ${trend.profit_bb >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {trend.profit_bb >= 0 ? '+' : ''}{trend.profit_bb.toFixed(1)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600 text-right">{trend.stats.vpip_pct.toFixed(1)}%</td>
+                      <td className="px-4 py-3 text-sm text-gray-600 text-right">{trend.stats.pfr_pct.toFixed(1)}%</td>
+                      <td className="px-4 py-3 text-sm text-gray-600 text-right">{trend.stats.three_bet_pct.toFixed(1)}%</td>
+                      <td className="px-4 py-3 text-sm text-gray-600 text-right">{trend.stats.fold_to_3bet_pct.toFixed(1)}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 };
