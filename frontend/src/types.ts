@@ -707,3 +707,48 @@ export interface SessionLeakComparisonResponse {
   scenarios: ScenarioComparison[];
   summary: SessionLeakComparisonSummary;
 }
+
+// Session Group Analysis Types (for multi-session trend analysis)
+export interface SessionTrendStats {
+  hands: number;
+  vpip_pct: number;
+  pfr_pct: number;
+  three_bet_pct: number;
+  fold_to_3bet_pct: number;
+  wtsd_pct: number;
+  won_at_sd_pct: number;
+}
+
+export interface SessionTrendScenario {
+  value: number;
+  sample: number;
+}
+
+export interface SessionTrendData {
+  session_id: number;
+  date: string | null;
+  hands: number;
+  profit_bb: number;
+  stats: SessionTrendStats;
+  scenarios: Record<string, SessionTrendScenario>;
+}
+
+export interface SessionGroupAnalysisResponse {
+  session_ids: number[];
+  player_name: string;
+  total_hands: number;
+  total_profit_bb: number;
+  session_count: number;
+  date_range: {
+    start: string | null;
+    end: string | null;
+  };
+  confidence: 'low' | 'moderate' | 'high';
+
+  aggregated: {
+    scenarios: ScenarioComparison[];
+    summary: SessionLeakComparisonSummary;
+  };
+
+  session_trends: SessionTrendData[];
+}

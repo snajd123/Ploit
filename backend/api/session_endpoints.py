@@ -887,3 +887,534 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
             "session_grade": grade
         }
     }
+
+
+# ============================================================================
+# GROUP ANALYSIS ENDPOINT - Analyze multiple sessions with trends
+# ============================================================================
+
+class GroupAnalysisRequest(BaseModel):
+    """Request body for group analysis"""
+    session_ids: List[int]
+
+
+def get_session_stats(db: Session, session_id: int, player_name: str) -> Dict[str, Any]:
+    """Get basic stats for a single session"""
+    stats_query = text("""
+        SELECT
+            COUNT(*) as total_hands,
+            SUM(CASE WHEN vpip THEN 1 ELSE 0 END)::float / NULLIF(COUNT(*), 0) * 100 as vpip_pct,
+            SUM(CASE WHEN pfr THEN 1 ELSE 0 END)::float / NULLIF(COUNT(*), 0) * 100 as pfr_pct,
+            SUM(CASE WHEN made_three_bet THEN 1 ELSE 0 END)::float /
+                NULLIF(SUM(CASE WHEN faced_raise THEN 1 ELSE 0 END), 0) * 100 as three_bet_pct,
+            SUM(CASE WHEN folded_to_three_bet THEN 1 ELSE 0 END)::float /
+                NULLIF(SUM(CASE WHEN faced_three_bet THEN 1 ELSE 0 END), 0) * 100 as fold_to_3bet_pct,
+            SUM(CASE WHEN went_to_showdown THEN 1 ELSE 0 END)::float / NULLIF(COUNT(*), 0) * 100 as wtsd_pct,
+            SUM(CASE WHEN won_hand AND went_to_showdown THEN 1 ELSE 0 END)::float /
+                NULLIF(SUM(CASE WHEN went_to_showdown THEN 1 ELSE 0 END), 0) * 100 as won_at_sd_pct
+        FROM player_hand_summary
+        WHERE session_id = :session_id AND player_name = :player_name
+    """)
+    result = db.execute(stats_query, {"session_id": session_id, "player_name": player_name})
+    row = result.first()
+    if not row:
+        return {}
+
+    return {
+        "hands": row[0] or 0,
+        "vpip_pct": round(float(row[1] or 0), 1),
+        "pfr_pct": round(float(row[2] or 0), 1),
+        "three_bet_pct": round(float(row[3] or 0), 1),
+        "fold_to_3bet_pct": round(float(row[4] or 0), 1),
+        "wtsd_pct": round(float(row[5] or 0), 1),
+        "won_at_sd_pct": round(float(row[6] or 0), 1)
+    }
+
+
+def get_session_scenario_values(db: Session, session_id: int, player_name: str) -> Dict[str, Dict[str, Any]]:
+    """Get scenario values for a single session (for trend data)"""
+    scenarios = {}
+
+    # Opening (RFI) by position
+    opening_result = db.execute(text("""
+        SELECT
+            position,
+            COUNT(*) FILTER (WHERE faced_raise = false) as opportunities,
+            COUNT(*) FILTER (WHERE pfr = true AND faced_raise = false) as opened
+        FROM player_hand_summary
+        WHERE player_name = :player_name
+        AND session_id = :session_id
+        AND position IS NOT NULL
+        AND position NOT IN ('BB')
+        GROUP BY position
+    """), {"player_name": player_name, "session_id": session_id})
+
+    for row in opening_result:
+        pos, opps, opened = row[0], row[1] or 0, row[2] or 0
+        if opps > 0:
+            scenarios[f"opening_{pos}"] = {
+                "value": round((opened / opps) * 100, 1),
+                "sample": opps
+            }
+
+    # Defense by position
+    defense_result = db.execute(text("""
+        SELECT
+            position,
+            COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false) as faced_open,
+            COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND vpip = false) as folded,
+            COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND vpip = true AND pfr = false) as called,
+            COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND made_three_bet = true) as three_bets
+        FROM player_hand_summary
+        WHERE player_name = :player_name
+        AND session_id = :session_id
+        AND position IN ('BB', 'SB', 'BTN', 'CO', 'MP')
+        GROUP BY position
+    """), {"player_name": player_name, "session_id": session_id})
+
+    for row in defense_result:
+        pos, total = row[0], row[1] or 0
+        if total > 0:
+            scenarios[f"defense_{pos}_fold"] = {"value": round((row[2] or 0) / total * 100, 1), "sample": total}
+            scenarios[f"defense_{pos}_call"] = {"value": round((row[3] or 0) / total * 100, 1), "sample": total}
+            scenarios[f"defense_{pos}_3bet"] = {"value": round((row[4] or 0) / total * 100, 1), "sample": total}
+
+    # Facing 3-bet by position
+    f3bet_result = db.execute(text("""
+        SELECT
+            position,
+            COUNT(*) FILTER (WHERE faced_three_bet = true AND pfr = true) as faced_3bet,
+            COUNT(*) FILTER (WHERE folded_to_three_bet = true AND pfr = true) as folded,
+            COUNT(*) FILTER (WHERE called_three_bet = true AND pfr = true) as called,
+            COUNT(*) FILTER (WHERE four_bet = true AND pfr = true) as four_bet
+        FROM player_hand_summary
+        WHERE player_name = :player_name
+        AND session_id = :session_id
+        AND position IS NOT NULL
+        GROUP BY position
+    """), {"player_name": player_name, "session_id": session_id})
+
+    for row in f3bet_result:
+        pos, total = row[0], row[1] or 0
+        if total > 0:
+            scenarios[f"facing_3bet_{pos}_fold"] = {"value": round((row[2] or 0) / total * 100, 1), "sample": total}
+            scenarios[f"facing_3bet_{pos}_call"] = {"value": round((row[3] or 0) / total * 100, 1), "sample": total}
+            scenarios[f"facing_3bet_{pos}_4bet"] = {"value": round((row[4] or 0) / total * 100, 1), "sample": total}
+
+    return scenarios
+
+
+@router.post("/group-analysis")
+def get_session_group_analysis(request: GroupAnalysisRequest, db: Session = Depends(get_db)):
+    """
+    Analyze multiple sessions together with trend data.
+
+    Returns:
+    - Aggregated leak comparison (combined data vs GTO)
+    - Per-session trend data for charts
+    - Basic stats trends (VPIP, PFR, etc.)
+    """
+    session_ids = request.session_ids
+
+    if not session_ids:
+        raise HTTPException(status_code=400, detail="No session IDs provided")
+
+    if len(session_ids) < 1:
+        raise HTTPException(status_code=400, detail="At least one session ID required")
+
+    # Get session info and validate all belong to same player
+    sessions_query = text("""
+        SELECT session_id, player_name, start_time, total_hands, profit_loss_bb
+        FROM sessions
+        WHERE session_id = ANY(:session_ids)
+        ORDER BY start_time ASC
+    """)
+    sessions_result = db.execute(sessions_query, {"session_ids": session_ids})
+    sessions = [dict(row._mapping) for row in sessions_result]
+
+    if not sessions:
+        raise HTTPException(status_code=404, detail="No sessions found")
+
+    # Validate all sessions belong to same player
+    player_names = set(s["player_name"] for s in sessions)
+    if len(player_names) > 1:
+        raise HTTPException(status_code=400, detail="All sessions must belong to the same player")
+
+    player_name = sessions[0]["player_name"]
+    total_hands = sum(s["total_hands"] or 0 for s in sessions)
+    total_profit_bb = sum(float(s["profit_loss_bb"] or 0) for s in sessions)
+
+    # Date range
+    date_range = {
+        "start": sessions[0]["start_time"].isoformat() if sessions[0]["start_time"] else None,
+        "end": sessions[-1]["start_time"].isoformat() if sessions[-1]["start_time"] else None
+    }
+
+    # ============================================
+    # GET PER-SESSION TREND DATA
+    # ============================================
+    session_trends = []
+    for sess in sessions:
+        sid = sess["session_id"]
+        stats = get_session_stats(db, sid, player_name)
+        scenario_values = get_session_scenario_values(db, sid, player_name)
+
+        session_trends.append({
+            "session_id": sid,
+            "date": sess["start_time"].strftime("%Y-%m-%d") if sess["start_time"] else None,
+            "hands": sess["total_hands"] or 0,
+            "profit_bb": float(sess["profit_loss_bb"] or 0),
+            "stats": stats,
+            "scenarios": scenario_values
+        })
+
+    # ============================================
+    # GET AGGREGATED DATA (combined sessions vs GTO)
+    # ============================================
+    # This is similar to single session leak comparison but with multiple session_ids
+
+    # Determine overall confidence
+    if total_hands < 200:
+        confidence = "low"
+    elif total_hands < 500:
+        confidence = "moderate"
+    else:
+        confidence = "high"
+
+    scenarios = []
+
+    # Get GTO baselines (same as single session)
+    gto_opening_result = db.execute(text("""
+        SELECT position, SUM(gto_aggregate_freq) * 100 as gto_freq
+        FROM gto_scenarios WHERE category = 'opening'
+        GROUP BY position
+    """))
+    gto_opening = {row[0]: float(row[1]) if row[1] else 0 for row in gto_opening_result}
+
+    gto_defense_result = db.execute(text("""
+        SELECT position, action, AVG(gto_aggregate_freq) * 100 as avg_freq
+        FROM gto_scenarios
+        WHERE category = 'defense' AND action IN ('fold', 'call', '3bet')
+        GROUP BY position, action
+    """))
+    gto_defense = {}
+    for row in gto_defense_result:
+        pos, action, freq = row[0], row[1], float(row[2]) if row[2] else 0
+        if pos not in gto_defense:
+            gto_defense[pos] = {}
+        gto_defense[pos][action] = freq
+
+    gto_f3bet_result = db.execute(text("""
+        SELECT position, action, AVG(gto_aggregate_freq) * 100 as avg_freq
+        FROM gto_scenarios
+        WHERE category = 'facing_3bet' AND action IN ('fold', 'call', '4bet')
+        GROUP BY position, action
+    """))
+    gto_f3bet = {}
+    for row in gto_f3bet_result:
+        pos, action, freq = row[0], row[1], float(row[2]) if row[2] else 0
+        if pos not in gto_f3bet:
+            gto_f3bet[pos] = {}
+        gto_f3bet[pos][action] = freq
+
+    # Get overall player frequencies (lifetime)
+    overall_opening_result = db.execute(text("""
+        SELECT position,
+            COUNT(*) FILTER (WHERE faced_raise = false) as opportunities,
+            COUNT(*) FILTER (WHERE pfr = true AND faced_raise = false) as opened
+        FROM player_hand_summary
+        WHERE player_name = :player_name AND position IS NOT NULL AND position NOT IN ('BB')
+        GROUP BY position HAVING COUNT(*) FILTER (WHERE faced_raise = false) >= 10
+    """), {"player_name": player_name})
+    overall_opening = {row[0]: {"sample": row[1], "value": (row[2] / row[1] * 100) if row[1] > 0 else 0}
+                       for row in overall_opening_result}
+
+    # Get combined sessions frequencies (using IN clause)
+    combined_opening_result = db.execute(text("""
+        SELECT position,
+            COUNT(*) FILTER (WHERE faced_raise = false) as opportunities,
+            COUNT(*) FILTER (WHERE pfr = true AND faced_raise = false) as opened
+        FROM player_hand_summary
+        WHERE player_name = :player_name AND session_id = ANY(:session_ids)
+        AND position IS NOT NULL AND position NOT IN ('BB')
+        GROUP BY position
+    """), {"player_name": player_name, "session_ids": session_ids})
+    combined_opening = {row[0]: {"sample": row[1], "value": (row[2] / row[1] * 100) if row[1] > 0 else 0}
+                        for row in combined_opening_result}
+
+    # Build opening scenarios
+    min_sample_opening = 15
+    for pos in ["UTG", "MP", "CO", "BTN", "SB"]:
+        gto_value = gto_opening.get(pos, 0)
+        overall_data = overall_opening.get(pos, {"sample": 0, "value": 0})
+        combined_data = combined_opening.get(pos, {"sample": 0, "value": 0})
+
+        overall_value = overall_data["value"]
+        overall_sample = overall_data["sample"]
+        combined_value = combined_data["value"]
+        combined_sample = combined_data["sample"]
+
+        overall_deviation = overall_value - gto_value
+        combined_deviation = combined_value - gto_value
+        is_leak = abs(overall_deviation) >= 5 and overall_sample >= 10
+
+        scenarios.append({
+            "scenario_id": f"opening_{pos}",
+            "category": "opening",
+            "position": pos,
+            "vs_position": None,
+            "action": "RFI",
+            "display_name": f"{pos} Open (RFI)",
+            "overall_value": round(overall_value, 1),
+            "overall_sample": overall_sample,
+            "overall_deviation": round(overall_deviation, 1),
+            "is_leak": is_leak,
+            "leak_direction": "too_loose" if overall_deviation > 0 else "too_tight" if overall_deviation < 0 else None,
+            "leak_severity": get_leak_severity(overall_deviation) if is_leak else "none",
+            "gto_value": round(gto_value, 1),
+            "session_value": round(combined_value, 1) if combined_sample > 0 else None,
+            "session_sample": combined_sample,
+            "session_deviation": round(combined_deviation, 1) if combined_sample > 0 else None,
+            "improvement_score": round(calculate_improvement_score(
+                overall_value, combined_value, gto_value, combined_sample, min_sample_opening
+            ), 1) if combined_sample > 0 and is_leak else None,
+            "improvement_status": get_improvement_status(
+                overall_value, combined_value, gto_value, combined_sample, min_sample_opening
+            ) if combined_sample > 0 and is_leak else None,
+            "within_gto_zone": abs(combined_deviation) < 5 if combined_sample > 0 else None,
+            "overcorrected": get_improvement_status(
+                overall_value, combined_value, gto_value, combined_sample, min_sample_opening
+            ) == "overcorrected" if combined_sample > 0 and is_leak else False,
+            "confidence_level": get_confidence_level(combined_sample, min_sample_opening)
+        })
+
+    # Defense scenarios
+    overall_defense_result = db.execute(text("""
+        SELECT position,
+            COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false) as faced_open,
+            COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND vpip = false) as folded,
+            COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND vpip = true AND pfr = false) as called,
+            COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND made_three_bet = true) as three_bets
+        FROM player_hand_summary
+        WHERE player_name = :player_name AND position IN ('BB', 'SB', 'BTN', 'CO', 'MP')
+        GROUP BY position HAVING COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false) >= 5
+    """), {"player_name": player_name})
+    overall_defense = {}
+    for row in overall_defense_result:
+        pos, total = row[0], row[1] or 0
+        if total > 0:
+            overall_defense[pos] = {
+                "sample": total, "fold": (row[2] or 0) / total * 100,
+                "call": (row[3] or 0) / total * 100, "3bet": (row[4] or 0) / total * 100
+            }
+
+    combined_defense_result = db.execute(text("""
+        SELECT position,
+            COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false) as faced_open,
+            COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND vpip = false) as folded,
+            COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND vpip = true AND pfr = false) as called,
+            COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND made_three_bet = true) as three_bets
+        FROM player_hand_summary
+        WHERE player_name = :player_name AND session_id = ANY(:session_ids)
+        AND position IN ('BB', 'SB', 'BTN', 'CO', 'MP')
+        GROUP BY position
+    """), {"player_name": player_name, "session_ids": session_ids})
+    combined_defense = {}
+    for row in combined_defense_result:
+        pos, total = row[0], row[1] or 0
+        if total > 0:
+            combined_defense[pos] = {
+                "sample": total, "fold": (row[2] or 0) / total * 100,
+                "call": (row[3] or 0) / total * 100, "3bet": (row[4] or 0) / total * 100
+            }
+
+    min_sample_defense = 10
+    for pos in ["BB", "SB", "BTN", "CO", "MP"]:
+        gto_actions = gto_defense.get(pos, {})
+        overall_data = overall_defense.get(pos, {})
+        combined_data = combined_defense.get(pos, {})
+
+        for action in ["fold", "call", "3bet"]:
+            action_display = "Fold" if action == "fold" else "Call" if action == "call" else "3-Bet"
+            gto_value = gto_actions.get(action, 0)
+            if action == "fold" and gto_value == 0 and gto_actions:
+                gto_value = 100 - gto_actions.get("call", 0) - gto_actions.get("3bet", 0)
+
+            overall_value = overall_data.get(action, 0)
+            overall_sample = overall_data.get("sample", 0)
+            combined_value = combined_data.get(action, 0)
+            combined_sample = combined_data.get("sample", 0)
+
+            overall_deviation = overall_value - gto_value
+            combined_deviation = combined_value - gto_value
+            is_leak = abs(overall_deviation) >= 5 and overall_sample >= 5
+
+            scenarios.append({
+                "scenario_id": f"defense_{pos}_{action}",
+                "category": "defense",
+                "position": pos,
+                "vs_position": None,
+                "action": action_display,
+                "display_name": f"{pos} Defense - {action_display}%",
+                "overall_value": round(overall_value, 1),
+                "overall_sample": overall_sample,
+                "overall_deviation": round(overall_deviation, 1),
+                "is_leak": is_leak,
+                "leak_direction": "too_high" if overall_deviation > 0 else "too_low" if overall_deviation < 0 else None,
+                "leak_severity": get_leak_severity(overall_deviation) if is_leak else "none",
+                "gto_value": round(gto_value, 1),
+                "session_value": round(combined_value, 1) if combined_sample > 0 else None,
+                "session_sample": combined_sample,
+                "session_deviation": round(combined_deviation, 1) if combined_sample > 0 else None,
+                "improvement_score": round(calculate_improvement_score(
+                    overall_value, combined_value, gto_value, combined_sample, min_sample_defense
+                ), 1) if combined_sample > 0 and is_leak else None,
+                "improvement_status": get_improvement_status(
+                    overall_value, combined_value, gto_value, combined_sample, min_sample_defense
+                ) if combined_sample > 0 and is_leak else None,
+                "within_gto_zone": abs(combined_deviation) < 5 if combined_sample > 0 else None,
+                "overcorrected": get_improvement_status(
+                    overall_value, combined_value, gto_value, combined_sample, min_sample_defense
+                ) == "overcorrected" if combined_sample > 0 and is_leak else False,
+                "confidence_level": get_confidence_level(combined_sample, min_sample_defense)
+            })
+
+    # Facing 3-bet scenarios
+    overall_f3bet_result = db.execute(text("""
+        SELECT position,
+            COUNT(*) FILTER (WHERE faced_three_bet = true AND pfr = true) as faced_3bet,
+            COUNT(*) FILTER (WHERE folded_to_three_bet = true AND pfr = true) as folded,
+            COUNT(*) FILTER (WHERE called_three_bet = true AND pfr = true) as called,
+            COUNT(*) FILTER (WHERE four_bet = true AND pfr = true) as four_bet
+        FROM player_hand_summary
+        WHERE player_name = :player_name AND position IS NOT NULL
+        GROUP BY position HAVING COUNT(*) FILTER (WHERE faced_three_bet = true AND pfr = true) >= 5
+    """), {"player_name": player_name})
+    overall_f3bet = {}
+    for row in overall_f3bet_result:
+        pos, total = row[0], row[1] or 0
+        if total > 0:
+            overall_f3bet[pos] = {
+                "sample": total, "fold": (row[2] or 0) / total * 100,
+                "call": (row[3] or 0) / total * 100, "4bet": (row[4] or 0) / total * 100
+            }
+
+    combined_f3bet_result = db.execute(text("""
+        SELECT position,
+            COUNT(*) FILTER (WHERE faced_three_bet = true AND pfr = true) as faced_3bet,
+            COUNT(*) FILTER (WHERE folded_to_three_bet = true AND pfr = true) as folded,
+            COUNT(*) FILTER (WHERE called_three_bet = true AND pfr = true) as called,
+            COUNT(*) FILTER (WHERE four_bet = true AND pfr = true) as four_bet
+        FROM player_hand_summary
+        WHERE player_name = :player_name AND session_id = ANY(:session_ids)
+        AND position IS NOT NULL
+        GROUP BY position
+    """), {"player_name": player_name, "session_ids": session_ids})
+    combined_f3bet = {}
+    for row in combined_f3bet_result:
+        pos, total = row[0], row[1] or 0
+        if total > 0:
+            combined_f3bet[pos] = {
+                "sample": total, "fold": (row[2] or 0) / total * 100,
+                "call": (row[3] or 0) / total * 100, "4bet": (row[4] or 0) / total * 100
+            }
+
+    min_sample_f3bet = 8
+    for pos in ["UTG", "MP", "CO", "BTN", "SB"]:
+        gto_actions = gto_f3bet.get(pos, {})
+        overall_data = overall_f3bet.get(pos, {})
+        combined_data = combined_f3bet.get(pos, {})
+
+        for action in ["fold", "call", "4bet"]:
+            action_display = "Fold" if action == "fold" else "Call" if action == "call" else "4-Bet"
+            gto_value = gto_actions.get(action, 0)
+
+            overall_value = overall_data.get(action, 0)
+            overall_sample = overall_data.get("sample", 0)
+            combined_value = combined_data.get(action, 0)
+            combined_sample = combined_data.get("sample", 0)
+
+            overall_deviation = overall_value - gto_value
+            combined_deviation = combined_value - gto_value
+            is_leak = abs(overall_deviation) >= 5 and overall_sample >= 5
+
+            scenarios.append({
+                "scenario_id": f"facing_3bet_{pos}_{action}",
+                "category": "facing_3bet",
+                "position": pos,
+                "vs_position": None,
+                "action": action_display,
+                "display_name": f"{pos} vs 3-Bet - {action_display}%",
+                "overall_value": round(overall_value, 1),
+                "overall_sample": overall_sample,
+                "overall_deviation": round(overall_deviation, 1),
+                "is_leak": is_leak,
+                "leak_direction": "too_high" if overall_deviation > 0 else "too_low" if overall_deviation < 0 else None,
+                "leak_severity": get_leak_severity(overall_deviation) if is_leak else "none",
+                "gto_value": round(gto_value, 1),
+                "session_value": round(combined_value, 1) if combined_sample > 0 else None,
+                "session_sample": combined_sample,
+                "session_deviation": round(combined_deviation, 1) if combined_sample > 0 else None,
+                "improvement_score": round(calculate_improvement_score(
+                    overall_value, combined_value, gto_value, combined_sample, min_sample_f3bet
+                ), 1) if combined_sample > 0 and is_leak else None,
+                "improvement_status": get_improvement_status(
+                    overall_value, combined_value, gto_value, combined_sample, min_sample_f3bet
+                ) if combined_sample > 0 and is_leak else None,
+                "within_gto_zone": abs(combined_deviation) < 5 if combined_sample > 0 else None,
+                "overcorrected": get_improvement_status(
+                    overall_value, combined_value, gto_value, combined_sample, min_sample_f3bet
+                ) == "overcorrected" if combined_sample > 0 and is_leak else False,
+                "confidence_level": get_confidence_level(combined_sample, min_sample_f3bet)
+            })
+
+    # ============================================
+    # CALCULATE SUMMARY
+    # ============================================
+    leaks_only = [s for s in scenarios if s["is_leak"]]
+    leaks_with_data = [s for s in leaks_only if s["session_sample"] and s["session_sample"] > 0]
+
+    improved = len([s for s in leaks_with_data if s["improvement_status"] == "improved"])
+    same = len([s for s in leaks_with_data if s["improvement_status"] == "same"])
+    worse = len([s for s in leaks_with_data if s["improvement_status"] == "worse"])
+    overcorrected = len([s for s in leaks_with_data if s["improvement_status"] == "overcorrected"])
+
+    leak_scores = [s["improvement_score"] for s in leaks_with_data if s["improvement_score"] is not None]
+    overall_score = sum(leak_scores) / len(leak_scores) if leak_scores else 50.0
+
+    if overall_score >= 80:
+        grade = "A"
+    elif overall_score >= 65:
+        grade = "B"
+    elif overall_score >= 50:
+        grade = "C"
+    elif overall_score >= 35:
+        grade = "D"
+    else:
+        grade = "F"
+
+    return {
+        "session_ids": session_ids,
+        "player_name": player_name,
+        "total_hands": total_hands,
+        "total_profit_bb": round(total_profit_bb, 2),
+        "session_count": len(sessions),
+        "date_range": date_range,
+        "confidence": confidence,
+
+        "aggregated": {
+            "scenarios": scenarios,
+            "summary": {
+                "total_scenarios": len(scenarios),
+                "scenarios_with_leaks": len(leaks_only),
+                "scenarios_improved": improved,
+                "scenarios_same": same,
+                "scenarios_worse": worse,
+                "scenarios_overcorrected": overcorrected,
+                "overall_improvement_score": round(overall_score, 1),
+                "session_grade": grade
+            }
+        },
+
+        "session_trends": session_trends
+    }

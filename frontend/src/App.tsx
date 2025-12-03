@@ -10,6 +10,7 @@ import PreGameStrategy from './pages/PreGameStrategy';
 import GTOBrowser from './pages/GTOBrowser';
 import Sessions from './pages/Sessions';
 import SessionDetail from './pages/SessionDetail';
+import SessionGroupAnalysis from './pages/SessionGroupAnalysis';
 import Settings from './pages/Settings';
 import StatsGlossary from './pages/StatsGlossary';
 
@@ -28,6 +29,7 @@ function App() {
           <Route path="gto" element={<Navigate to="/players" replace />} />
           <Route path="gto-browser" element={<GTOBrowser />} />
           <Route path="sessions" element={<Sessions />} />
+          <Route path="sessions/analysis" element={<SessionGroupAnalysis />} />
           <Route path="sessions/:sessionId" element={<SessionDetail />} />
           <Route path="glossary" element={<StatsGlossary />} />
           <Route path="settings" element={<Settings />} />

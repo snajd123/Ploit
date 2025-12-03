@@ -26,6 +26,7 @@ import type {
   HandReplayResponse,
   AILeakAnalysisResponse,
   SessionLeakComparisonResponse,
+  SessionGroupAnalysisResponse,
 } from '../types';
 
 class ApiClient {
@@ -278,6 +279,15 @@ class ApiClient {
   async getSessionLeakComparison(sessionId: number): Promise<SessionLeakComparisonResponse> {
     const response = await this.client.get<SessionLeakComparisonResponse>(
       `/api/sessions/${sessionId}/leak-comparison`
+    );
+    return response.data;
+  }
+
+  // Get group analysis for multiple sessions with trend data
+  async getSessionGroupAnalysis(sessionIds: number[]): Promise<SessionGroupAnalysisResponse> {
+    const response = await this.client.post<SessionGroupAnalysisResponse>(
+      '/api/sessions/group-analysis',
+      { session_ids: sessionIds }
     );
     return response.data;
   }
