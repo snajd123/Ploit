@@ -297,6 +297,7 @@ def get_session_stats(session_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Session not found")
 
     # Get aggregated stats from player_hand_summary
+    # Note: postflop stats (saw_flop, cbet) not available - player_hand_summary is preflop-focused
     stats_query = text("""
         SELECT
             COUNT(*) as total_hands,
@@ -304,8 +305,8 @@ def get_session_stats(session_id: int, db: Session = Depends(get_db)):
             SUM(CASE WHEN pfr THEN 1 ELSE 0 END)::float / NULLIF(COUNT(*), 0) * 100 as pfr_pct,
             SUM(CASE WHEN made_three_bet THEN 1 ELSE 0 END)::float / NULLIF(SUM(CASE WHEN faced_raise THEN 1 ELSE 0 END), 0) * 100 as three_bet_pct,
             SUM(CASE WHEN folded_to_three_bet THEN 1 ELSE 0 END)::float / NULLIF(SUM(CASE WHEN faced_three_bet THEN 1 ELSE 0 END), 0) * 100 as fold_to_3bet_pct,
-            SUM(CASE WHEN saw_flop THEN 1 ELSE 0 END)::float / NULLIF(COUNT(*), 0) * 100 as saw_flop_pct,
-            SUM(CASE WHEN cbet_made_flop THEN 1 ELSE 0 END)::float / NULLIF(SUM(CASE WHEN cbet_opportunity_flop THEN 1 ELSE 0 END), 0) * 100 as cbet_flop_pct,
+            SUM(CASE WHEN went_to_showdown THEN 1 ELSE 0 END)::float / NULLIF(COUNT(*), 0) * 100 as wtsd_pct,
+            SUM(CASE WHEN won_hand AND went_to_showdown THEN 1 ELSE 0 END)::float / NULLIF(SUM(CASE WHEN went_to_showdown THEN 1 ELSE 0 END), 0) * 100 as won_at_sd_pct,
             SUM(profit_loss) as total_profit_loss
         FROM player_hand_summary
         WHERE session_id = :session_id
@@ -318,15 +319,15 @@ def get_session_stats(session_id: int, db: Session = Depends(get_db)):
         "session_id": session._mapping["session_id"],
         "player_name": session._mapping["player_name"],
         "total_hands": session._mapping["total_hands"],
-        "profit_loss_bb": float(session._mapping["profit_loss_bb"]),
-        "bb_100": float(session._mapping["bb_100"]),
+        "profit_loss_bb": float(session._mapping["profit_loss_bb"]) if session._mapping["profit_loss_bb"] else 0.0,
+        "bb_100": float(session._mapping["bb_100"]) if session._mapping["bb_100"] else 0.0,
         "duration_minutes": session._mapping["duration_minutes"],
         "vpip_pct": round(float(stats["vpip_pct"] or 0), 1),
         "pfr_pct": round(float(stats["pfr_pct"] or 0), 1),
         "three_bet_pct": round(float(stats["three_bet_pct"] or 0), 1),
         "fold_to_3bet_pct": round(float(stats["fold_to_3bet_pct"] or 0), 1),
-        "saw_flop_pct": round(float(stats["saw_flop_pct"] or 0), 1),
-        "cbet_flop_pct": round(float(stats["cbet_flop_pct"] or 0), 1)
+        "wtsd_pct": round(float(stats["wtsd_pct"] or 0), 1),
+        "won_at_sd_pct": round(float(stats["won_at_sd_pct"] or 0), 1)
     }
 
 @router.get("/{session_id}/gto-analysis")

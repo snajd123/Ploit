@@ -30,8 +30,8 @@ interface SessionStats {
   pfr_pct: number;
   three_bet_pct: number;
   fold_to_3bet_pct: number;
-  saw_flop_pct: number;
-  cbet_flop_pct: number;
+  wtsd_pct: number;
+  won_at_sd_pct: number;
 }
 
 interface GTOAnalysis {
@@ -330,12 +330,12 @@ const SessionDetail: React.FC = () => {
                     <div className="text-2xl font-bold text-gray-900">{stats.fold_to_3bet_pct.toFixed(1)}%</div>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-4">
-                    <div className="text-sm text-gray-600">Saw Flop</div>
-                    <div className="text-2xl font-bold text-gray-900">{stats.saw_flop_pct.toFixed(1)}%</div>
+                    <div className="text-sm text-gray-600">WTSD%</div>
+                    <div className="text-2xl font-bold text-gray-900">{stats.wtsd_pct.toFixed(1)}%</div>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-4">
-                    <div className="text-sm text-gray-600">C-Bet Flop</div>
-                    <div className="text-2xl font-bold text-gray-900">{stats.cbet_flop_pct.toFixed(1)}%</div>
+                    <div className="text-sm text-gray-600">W$SD%</div>
+                    <div className="text-2xl font-bold text-gray-900">{stats.won_at_sd_pct.toFixed(1)}%</div>
                   </div>
                 </div>
               </div>
