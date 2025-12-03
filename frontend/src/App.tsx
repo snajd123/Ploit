@@ -32,7 +32,6 @@ function App() {
           <Route path="pre-game" element={<PreGameStrategy />} />
           <Route path="strategy" element={<Navigate to="/pre-game" replace />} />
           <Route path="gto" element={<Navigate to="/players" replace />} />
-          <Route path="gto-analysis" element={<Navigate to="/my-game" replace />} />
           <Route path="gto-browser" element={<GTOBrowser />} />
           <Route path="sessions" element={<Sessions />} />
           <Route path="sessions/analysis" element={<SessionGroupAnalysis />} />
