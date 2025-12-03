@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Calendar, Clock, TrendingUp, TrendingDown, Target, History, MessageSquare, FileText, Crosshair, BarChart3 } from 'lucide-react';
+import { ArrowLeft, Calendar, Clock, TrendingUp, TrendingDown, Target, History, MessageSquare, FileText, Crosshair, BarChart3, Play, Loader2 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import LeakProgressView from '../components/LeakProgressView';
+import HandReplayModal from '../components/HandReplayModal';
+import { api } from '../services/api';
+import type { HandReplayResponse } from '../types';
 
 interface Session {
   session_id: number;
@@ -99,6 +102,9 @@ const SessionDetail: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [notes, setNotes] = useState('');
   const [savingNotes, setSavingNotes] = useState(false);
+  const [selectedHandId, setSelectedHandId] = useState<number | null>(null);
+  const [replayData, setReplayData] = useState<HandReplayResponse | null>(null);
+  const [loadingReplay, setLoadingReplay] = useState(false);
 
   useEffect(() => {
     if (sessionId) {
@@ -170,6 +176,26 @@ const SessionDetail: React.FC = () => {
     } finally {
       setSavingNotes(false);
     }
+  };
+
+  const openHandReplay = async (handId: number) => {
+    setSelectedHandId(handId);
+    setLoadingReplay(true);
+    try {
+      const data = await api.getHandReplay(handId);
+      setReplayData(data);
+    } catch (error) {
+      console.error('Error fetching hand replay:', error);
+      alert('Failed to load hand replay');
+      setSelectedHandId(null);
+    } finally {
+      setLoadingReplay(false);
+    }
+  };
+
+  const closeHandReplay = () => {
+    setSelectedHandId(null);
+    setReplayData(null);
   };
 
   const formatDate = (dateString: string) => {
@@ -582,15 +608,28 @@ const SessionDetail: React.FC = () => {
           {/* Hand History Tab */}
           {activeTab === 'hands' && (
             <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900">Hand History ({hands.length} hands)</h3>
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-gray-900">Hand History ({hands.length} hands)</h3>
+                <p className="text-sm text-gray-500">Click a hand to replay</p>
+              </div>
               <div className="space-y-2">
                 {hands.map((hand) => (
-                  <div
+                  <button
                     key={hand.hand_id}
-                    className="bg-gray-50 rounded-lg p-4 hover:bg-gray-100 transition-colors"
+                    onClick={() => openHandReplay(hand.hand_id)}
+                    disabled={loadingReplay && selectedHandId === hand.hand_id}
+                    className="w-full bg-gray-50 rounded-lg p-4 hover:bg-blue-50 hover:border-blue-200 border border-transparent transition-colors text-left group"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2">
+                          {loadingReplay && selectedHandId === hand.hand_id ? (
+                            <Loader2 size={16} className="animate-spin text-blue-600" />
+                          ) : (
+                            <Play size={16} className="text-gray-400 group-hover:text-blue-600 transition-colors" />
+                          )}
+                          <span className="text-xs text-gray-500">#{hand.hand_id}</span>
+                        </div>
                         <div>
                           <span className="text-sm text-gray-600">Position:</span>
                           <span className="ml-2 font-medium text-gray-900">{hand.position}</span>
@@ -609,7 +648,7 @@ const SessionDetail: React.FC = () => {
                         {hand.profit_loss >= 0 ? '+' : ''}{hand.profit_loss.toFixed(2)}
                       </div>
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
@@ -651,6 +690,11 @@ const SessionDetail: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Hand Replay Modal */}
+      {replayData && (
+        <HandReplayModal data={replayData} onClose={closeHandReplay} />
+      )}
     </div>
   );
 };
