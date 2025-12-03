@@ -3,7 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, TrendingDown, CheckCircle, AlertTriangle,
   Minus, Loader2, AlertCircle, ChevronDown, ChevronRight,
-  TrendingUp, Circle
+  TrendingUp, Circle, ListOrdered
 } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -57,7 +57,7 @@ const StatusBadge: React.FC<{ status: ImprovementStatus | null }> = ({ status })
 };
 
 // View mode type
-type ViewMode = 'trend' | 'aggregate';
+type ViewMode = 'trend' | 'aggregate' | 'priority';
 
 // Spectrum visualization component (aggregate view)
 const SpectrumBar: React.FC<{
@@ -125,6 +125,105 @@ const SpectrumBar: React.FC<{
       </div>
       <div className="absolute top-8 right-0 text-[10px] text-gray-400">
         {leakDirection === 'too_loose' || leakDirection === 'too_high' ? 'Too Loose/High' : '100%'}
+      </div>
+    </div>
+  );
+};
+
+// Priority Leak Card component (for priority view)
+const PriorityLeakCard: React.FC<{
+  scenario: ScenarioComparison;
+  rank: number;
+}> = ({ scenario, rank }) => {
+  const severityColors = {
+    major: 'border-l-red-500 bg-red-50',
+    moderate: 'border-l-orange-500 bg-orange-50',
+    minor: 'border-l-yellow-500 bg-yellow-50',
+    none: 'border-l-gray-300 bg-gray-50'
+  };
+
+  const evWeightLabel = scenario.ev_weight
+    ? scenario.ev_weight >= 1.4 ? 'High EV Impact'
+    : scenario.ev_weight >= 1.2 ? 'Medium EV Impact'
+    : 'Standard EV'
+    : 'Standard EV';
+
+  return (
+    <div className={`rounded-lg border-l-4 ${severityColors[scenario.leak_severity]} p-4 shadow-sm`}>
+      <div className="flex items-start justify-between">
+        <div className="flex items-center gap-3">
+          <span className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-200 text-gray-700 font-bold text-sm">
+            #{rank}
+          </span>
+          <div>
+            <h4 className="font-semibold text-gray-900">{scenario.display_name}</h4>
+            <div className="flex items-center gap-2 mt-1">
+              <span className={`px-2 py-0.5 text-xs font-medium rounded ${
+                scenario.leak_severity === 'major' ? 'bg-red-100 text-red-700' :
+                scenario.leak_severity === 'moderate' ? 'bg-orange-100 text-orange-700' :
+                'bg-yellow-100 text-yellow-700'
+              }`}>
+                {scenario.leak_severity?.toUpperCase()}
+              </span>
+              <span className="text-xs text-gray-500">{evWeightLabel}</span>
+              {scenario.priority_score && (
+                <span className="text-xs text-gray-400">Score: {scenario.priority_score.toFixed(1)}</span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="text-right">
+          <StatusBadge status={scenario.improvement_status} />
+        </div>
+      </div>
+
+      {/* Stats row */}
+      <div className="mt-3 grid grid-cols-4 gap-4 text-sm">
+        <div>
+          <span className="text-gray-500">Overall:</span>
+          <span className="ml-1 font-medium text-gray-700">{scenario.overall_value.toFixed(1)}%</span>
+        </div>
+        <div>
+          <span className="text-gray-500">GTO:</span>
+          <span className="ml-1 font-medium text-green-700">{scenario.gto_value.toFixed(1)}%</span>
+        </div>
+        <div>
+          <span className="text-gray-500">Session:</span>
+          <span className="ml-1 font-medium text-blue-700">
+            {scenario.session_value?.toFixed(1) ?? '—'}%
+          </span>
+        </div>
+        <div>
+          <span className="text-gray-500">Deviation:</span>
+          <span className={`ml-1 font-medium ${
+            Math.abs(scenario.overall_deviation) >= 20 ? 'text-red-600' :
+            Math.abs(scenario.overall_deviation) >= 10 ? 'text-orange-600' :
+            'text-yellow-600'
+          }`}>
+            {scenario.overall_deviation > 0 ? '+' : ''}{scenario.overall_deviation.toFixed(1)}%
+          </span>
+        </div>
+      </div>
+
+      {/* Spectrum bar */}
+      <div className="mt-3">
+        <SpectrumBar
+          gtoValue={scenario.gto_value}
+          overallValue={scenario.overall_value}
+          sessionValue={scenario.session_value}
+          leakDirection={scenario.leak_direction}
+        />
+      </div>
+
+      {/* Action recommendation */}
+      <div className="mt-3 text-xs text-gray-600 bg-white rounded px-3 py-2">
+        <span className="font-medium">Direction: </span>
+        {scenario.leak_direction === 'too_tight' && 'Open wider / Call more / Be more aggressive'}
+        {scenario.leak_direction === 'too_loose' && 'Tighten up / Be more selective'}
+        {scenario.leak_direction === 'too_high' && 'Reduce frequency / Fold more'}
+        {scenario.leak_direction === 'too_low' && 'Increase frequency / Play more'}
+        {!scenario.leak_direction && 'Within acceptable range'}
       </div>
     </div>
   );
@@ -524,6 +623,17 @@ const SessionGroupAnalysis: React.FC = () => {
           {/* View Mode Toggle */}
           <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-lg">
             <button
+              onClick={() => setViewMode('priority')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors ${
+                viewMode === 'priority'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <ListOrdered size={14} />
+              Priority
+            </button>
+            <button
               onClick={() => setViewMode('trend')}
               className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors ${
                 viewMode === 'trend'
@@ -563,26 +673,63 @@ const SessionGroupAnalysis: React.FC = () => {
           </div>
         )}
 
-        <CategorySection
-          title="Opening (RFI)"
-          scenarios={groupedScenarios.opening}
-          trends={session_trends}
-          viewMode={viewMode}
-        />
+        {/* Priority View */}
+        {viewMode === 'priority' ? (
+          <div className="bg-white rounded-lg border border-gray-200 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Priority Leaks</h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  Leaks ranked by EV impact, severity, and sample confidence
+                </p>
+              </div>
+              <div className="text-sm text-gray-500">
+                {data.aggregated.priority_leaks?.length || 0} leaks to address
+              </div>
+            </div>
 
-        <CategorySection
-          title="Defense vs Opens"
-          scenarios={groupedScenarios.defense}
-          trends={session_trends}
-          viewMode={viewMode}
-        />
+            {data.aggregated.priority_leaks && data.aggregated.priority_leaks.length > 0 ? (
+              <div className="space-y-4">
+                {data.aggregated.priority_leaks.map((scenario, idx) => (
+                  <PriorityLeakCard
+                    key={scenario.scenario_id}
+                    scenario={scenario}
+                    rank={idx + 1}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <CheckCircle size={48} className="mx-auto mb-3 text-green-500" />
+                <p>No significant leaks identified!</p>
+                <p className="text-sm mt-1">Your play is within GTO ranges across all scenarios.</p>
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
+            <CategorySection
+              title="Opening (RFI)"
+              scenarios={groupedScenarios.opening}
+              trends={session_trends}
+              viewMode={viewMode}
+            />
 
-        <CategorySection
-          title="Facing 3-Bet"
-          scenarios={groupedScenarios.facing_3bet}
-          trends={session_trends}
-          viewMode={viewMode}
-        />
+            <CategorySection
+              title="Defense vs Opens"
+              scenarios={groupedScenarios.defense}
+              trends={session_trends}
+              viewMode={viewMode}
+            />
+
+            <CategorySection
+              title="Facing 3-Bet"
+              scenarios={groupedScenarios.facing_3bet}
+              trends={session_trends}
+              viewMode={viewMode}
+            />
+          </>
+        )}
       </div>
 
       {/* Session Details Table */}

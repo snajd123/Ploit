@@ -376,16 +376,88 @@ def get_session_opponents_analysis(session_id: int, db: Session = Depends(get_db
 # LEAK COMPARISON ENDPOINT - Compare session vs overall vs GTO
 # ============================================================================
 
+import math
+
+# Sample thresholds by scenario type (per poker professor recommendations)
+SAMPLE_THRESHOLDS = {
+    'opening': {'min_display': 30, 'confident': 75, 'very_confident': 150},
+    'defense': {'min_display': 25, 'confident': 60, 'very_confident': 120},
+    'facing_3bet': {'min_display': 20, 'confident': 50, 'very_confident': 100},
+}
+
+# Leak weights by position and scenario (based on EV impact)
+LEAK_WEIGHTS = {
+    # Opening (RFI) - BTN most frequent, highest impact
+    'opening_BTN': 1.5,
+    'opening_CO': 1.3,
+    'opening_SB': 1.4,
+    'opening_MP': 1.1,
+    'opening_UTG': 1.0,
+    # Defense - BB vs BTN highest frequency
+    'defense_BB_fold': 1.6,
+    'defense_BB_call': 1.4,
+    'defense_BB_3bet': 1.3,
+    'defense_SB_fold': 1.2,
+    'defense_SB_call': 1.1,
+    'defense_SB_3bet': 1.2,
+    'defense_BTN_fold': 1.0,
+    'defense_BTN_call': 0.9,
+    'defense_BTN_3bet': 1.0,
+    'defense_CO_fold': 0.9,
+    'defense_CO_call': 0.8,
+    'defense_CO_3bet': 0.9,
+    'defense_MP_fold': 0.8,
+    'defense_MP_call': 0.7,
+    'defense_MP_3bet': 0.8,
+    # Facing 3-bet - fold to 3bet is huge leak
+    'facing_3bet_BTN_fold': 1.4,
+    'facing_3bet_BTN_call': 1.2,
+    'facing_3bet_BTN_4bet': 1.1,
+    'facing_3bet_CO_fold': 1.3,
+    'facing_3bet_CO_call': 1.1,
+    'facing_3bet_CO_4bet': 1.0,
+    'facing_3bet_SB_fold': 1.2,
+    'facing_3bet_SB_call': 1.0,
+    'facing_3bet_SB_4bet': 1.0,
+    'facing_3bet_MP_fold': 1.0,
+    'facing_3bet_MP_call': 0.9,
+    'facing_3bet_MP_4bet': 0.9,
+    'facing_3bet_UTG_fold': 0.9,
+    'facing_3bet_UTG_call': 0.8,
+    'facing_3bet_UTG_4bet': 0.8,
+}
+
+# Severity multipliers for improvement scoring
+SEVERITY_MULTIPLIERS = {
+    'none': 0.5,
+    'minor': 0.8,
+    'moderate': 1.0,
+    'major': 1.3,
+}
+
+
+def get_leak_weight(scenario_id: str) -> float:
+    """Get the EV-based weight for a leak scenario."""
+    return LEAK_WEIGHTS.get(scenario_id, 1.0)
+
+
 def calculate_improvement_score(
     overall_value: float,
     session_value: float,
     gto_value: float,
     session_sample: int,
-    min_sample: int
+    min_sample: int,
+    leak_severity: str = "moderate"
 ) -> float:
     """
-    Calculate improvement score (0-100).
+    Calculate improvement score (0-100) with enhanced formula.
     50 = no change, >50 = improved, <50 = worse
+
+    Features:
+    - Zone bonus: +15% for landing within ±5% of GTO
+    - Overcorrection penalty: -20% for crossing to wrong side
+    - Severity weighting: Major leaks fixed = more credit
+    - Sqrt confidence scaling: Diminishing returns on sample size
     """
     overall_distance = abs(overall_value - gto_value)
     session_distance = abs(session_value - gto_value)
@@ -393,10 +465,30 @@ def calculate_improvement_score(
     if overall_distance == 0:
         return 50.0  # No leak to improve
 
+    # Base improvement ratio
     improvement_ratio = (overall_distance - session_distance) / overall_distance
-    confidence = min(1.0, session_sample / (min_sample * 2))
 
-    return 50 + (improvement_ratio * 50 * confidence)
+    # Zone bonus: Extra credit for landing in GTO zone (±5%)
+    in_gto_zone = session_distance <= 5.0
+    zone_bonus = 0.15 if in_gto_zone else 0
+
+    # Overcorrection penalty: Crossed GTO to other side
+    overall_side = 1 if overall_value > gto_value else -1
+    session_side = 1 if session_value > gto_value else -1
+    overcorrected = overall_side != session_side and session_distance > 3
+    overcorrection_penalty = -0.20 if overcorrected else 0
+
+    # Severity multiplier (more credit for fixing major leaks)
+    severity_mult = SEVERITY_MULTIPLIERS.get(leak_severity, 1.0)
+
+    # Confidence using sqrt scaling (diminishing returns)
+    confidence = min(1.0, math.sqrt(session_sample / min_sample) / math.sqrt(2))
+
+    # Final score calculation
+    raw_improvement = improvement_ratio + zone_bonus + overcorrection_penalty
+    weighted_improvement = raw_improvement * severity_mult * confidence
+
+    return 50 + (weighted_improvement * 50)
 
 
 def get_improvement_status(
@@ -411,7 +503,7 @@ def get_improvement_status(
     overall_side = "high" if overall_value > gto_value else "low"
     session_side = "high" if session_value > gto_value else "low"
 
-    if overall_side != session_side and abs(session_value - gto_value) > 5:
+    if overall_side != session_side and abs(session_value - gto_value) > 3:
         return "overcorrected"
 
     # Insufficient sample
@@ -443,16 +535,53 @@ def get_leak_severity(deviation: float) -> str:
         return "major"
 
 
-def get_confidence_level(sample: int, min_sample: int) -> str:
-    """Determine confidence level based on sample size"""
-    if sample < min_sample:
+def get_confidence_level(sample: int, scenario_type: str) -> str:
+    """Determine confidence level based on sample size and scenario type"""
+    thresholds = SAMPLE_THRESHOLDS.get(scenario_type, SAMPLE_THRESHOLDS['opening'])
+
+    if sample < thresholds['min_display']:
         return "insufficient"
-    elif sample < min_sample * 2:
+    elif sample < thresholds['confident']:
         return "low"
-    elif sample < min_sample * 4:
+    elif sample < thresholds['very_confident']:
         return "moderate"
     else:
         return "high"
+
+
+def calculate_priority_score(scenario: dict) -> float:
+    """
+    Calculate priority score for sorting leaks by importance.
+    Higher score = higher priority to fix.
+
+    Factors:
+    - Leak severity (major > moderate > minor)
+    - EV weight (position importance)
+    - Improvement potential (distance to GTO)
+    - Sample confidence
+    """
+    if not scenario.get('is_leak'):
+        return 0
+
+    # Base priority from severity
+    severity_scores = {'none': 0, 'minor': 1, 'moderate': 2, 'major': 3}
+    severity_score = severity_scores.get(scenario.get('leak_severity', 'none'), 0)
+
+    # EV weight
+    ev_weight = get_leak_weight(scenario.get('scenario_id', ''))
+
+    # Distance to GTO (improvement potential)
+    deviation = abs(scenario.get('overall_deviation', 0))
+
+    # Confidence factor
+    confidence_scores = {'insufficient': 0.3, 'low': 0.6, 'moderate': 0.85, 'high': 1.0}
+    conf_level = scenario.get('confidence_level', 'low')
+    confidence = confidence_scores.get(conf_level, 0.5)
+
+    # Combined priority score
+    priority = (severity_score * 10 + deviation * 0.5) * ev_weight * confidence
+
+    return round(priority, 2)
 
 
 @router.get("/{session_id}/leak-comparison")
@@ -536,7 +665,7 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
     } for row in session_opening_result}
 
     # Build opening scenarios
-    min_sample_opening = 15
+    min_sample_opening = SAMPLE_THRESHOLDS['opening']['min_display']
     for pos in ["UTG", "MP", "CO", "BTN", "SB"]:
         gto_value = gto_opening.get(pos, 0)
         overall_data = overall_opening.get(pos, {"sample": 0, "value": 0})
@@ -551,8 +680,12 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
         session_deviation = session_value - gto_value
         is_leak = abs(overall_deviation) >= 5 and overall_sample >= 10
 
-        scenarios.append({
-            "scenario_id": f"opening_{pos}",
+        scenario_id = f"opening_{pos}"
+        leak_severity = get_leak_severity(overall_deviation) if is_leak else "none"
+        ev_weight = get_leak_weight(scenario_id)
+
+        scenario = {
+            "scenario_id": scenario_id,
             "category": "opening",
             "position": pos,
             "vs_position": None,
@@ -564,7 +697,8 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
             "overall_deviation": round(overall_deviation, 1),
             "is_leak": is_leak,
             "leak_direction": "too_loose" if overall_deviation > 0 else "too_tight" if overall_deviation < 0 else None,
-            "leak_severity": get_leak_severity(overall_deviation) if is_leak else "none",
+            "leak_severity": leak_severity,
+            "ev_weight": ev_weight,
 
             "gto_value": round(gto_value, 1),
 
@@ -573,7 +707,7 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
             "session_deviation": round(session_deviation, 1) if session_sample > 0 else None,
 
             "improvement_score": round(calculate_improvement_score(
-                overall_value, session_value, gto_value, session_sample, min_sample_opening
+                overall_value, session_value, gto_value, session_sample, min_sample_opening, leak_severity
             ), 1) if session_sample > 0 and is_leak else None,
             "improvement_status": get_improvement_status(
                 overall_value, session_value, gto_value, session_sample, min_sample_opening
@@ -582,8 +716,10 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
             "overcorrected": get_improvement_status(
                 overall_value, session_value, gto_value, session_sample, min_sample_opening
             ) == "overcorrected" if session_sample > 0 and is_leak else False,
-            "confidence_level": get_confidence_level(session_sample, min_sample_opening)
-        })
+            "confidence_level": get_confidence_level(session_sample, 'opening')
+        }
+        scenario["priority_score"] = calculate_priority_score(scenario)
+        scenarios.append(scenario)
 
     # ============================================
     # 2. DEFENSE VS OPENS - Fold/Call/3bet by position
@@ -658,7 +794,7 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
             }
 
     # Build defense scenarios
-    min_sample_defense = 10
+    min_sample_defense = SAMPLE_THRESHOLDS['defense']['min_display']
     for pos in ["BB", "SB", "BTN", "CO", "MP"]:
         gto_actions = gto_defense.get(pos, {})
         overall_data = overall_defense.get(pos, {})
@@ -681,8 +817,12 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
             session_deviation = session_value - gto_value
             is_leak = abs(overall_deviation) >= 5 and overall_sample >= 5
 
-            scenarios.append({
-                "scenario_id": f"defense_{pos}_{action}",
+            scenario_id = f"defense_{pos}_{action}"
+            leak_severity = get_leak_severity(overall_deviation) if is_leak else "none"
+            ev_weight = get_leak_weight(scenario_id)
+
+            scenario = {
+                "scenario_id": scenario_id,
                 "category": "defense",
                 "position": pos,
                 "vs_position": None,
@@ -694,7 +834,8 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
                 "overall_deviation": round(overall_deviation, 1),
                 "is_leak": is_leak,
                 "leak_direction": "too_high" if overall_deviation > 0 else "too_low" if overall_deviation < 0 else None,
-                "leak_severity": get_leak_severity(overall_deviation) if is_leak else "none",
+                "leak_severity": leak_severity,
+                "ev_weight": ev_weight,
 
                 "gto_value": round(gto_value, 1),
 
@@ -703,7 +844,7 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
                 "session_deviation": round(session_deviation, 1) if session_sample > 0 else None,
 
                 "improvement_score": round(calculate_improvement_score(
-                    overall_value, session_value, gto_value, session_sample, min_sample_defense
+                    overall_value, session_value, gto_value, session_sample, min_sample_defense, leak_severity
                 ), 1) if session_sample > 0 and is_leak else None,
                 "improvement_status": get_improvement_status(
                     overall_value, session_value, gto_value, session_sample, min_sample_defense
@@ -712,8 +853,10 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
                 "overcorrected": get_improvement_status(
                     overall_value, session_value, gto_value, session_sample, min_sample_defense
                 ) == "overcorrected" if session_sample > 0 and is_leak else False,
-                "confidence_level": get_confidence_level(session_sample, min_sample_defense)
-            })
+                "confidence_level": get_confidence_level(session_sample, 'defense')
+            }
+            scenario["priority_score"] = calculate_priority_score(scenario)
+            scenarios.append(scenario)
 
     # ============================================
     # 3. FACING 3-BET - Fold/Call/4bet by position
@@ -788,7 +931,7 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
             }
 
     # Build facing 3-bet scenarios
-    min_sample_f3bet = 8
+    min_sample_f3bet = SAMPLE_THRESHOLDS['facing_3bet']['min_display']
     for pos in ["UTG", "MP", "CO", "BTN", "SB"]:
         gto_actions = gto_f3bet.get(pos, {})
         overall_data = overall_f3bet.get(pos, {})
@@ -807,8 +950,12 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
             session_deviation = session_value - gto_value
             is_leak = abs(overall_deviation) >= 5 and overall_sample >= 5
 
-            scenarios.append({
-                "scenario_id": f"facing_3bet_{pos}_{action}",
+            scenario_id = f"facing_3bet_{pos}_{action}"
+            leak_severity = get_leak_severity(overall_deviation) if is_leak else "none"
+            ev_weight = get_leak_weight(scenario_id)
+
+            scenario = {
+                "scenario_id": scenario_id,
                 "category": "facing_3bet",
                 "position": pos,
                 "vs_position": None,
@@ -820,7 +967,8 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
                 "overall_deviation": round(overall_deviation, 1),
                 "is_leak": is_leak,
                 "leak_direction": "too_high" if overall_deviation > 0 else "too_low" if overall_deviation < 0 else None,
-                "leak_severity": get_leak_severity(overall_deviation) if is_leak else "none",
+                "leak_severity": leak_severity,
+                "ev_weight": ev_weight,
 
                 "gto_value": round(gto_value, 1),
 
@@ -829,7 +977,7 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
                 "session_deviation": round(session_deviation, 1) if session_sample > 0 else None,
 
                 "improvement_score": round(calculate_improvement_score(
-                    overall_value, session_value, gto_value, session_sample, min_sample_f3bet
+                    overall_value, session_value, gto_value, session_sample, min_sample_f3bet, leak_severity
                 ), 1) if session_sample > 0 and is_leak else None,
                 "improvement_status": get_improvement_status(
                     overall_value, session_value, gto_value, session_sample, min_sample_f3bet
@@ -838,8 +986,10 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
                 "overcorrected": get_improvement_status(
                     overall_value, session_value, gto_value, session_sample, min_sample_f3bet
                 ) == "overcorrected" if session_sample > 0 and is_leak else False,
-                "confidence_level": get_confidence_level(session_sample, min_sample_f3bet)
-            })
+                "confidence_level": get_confidence_level(session_sample, 'facing_3bet')
+            }
+            scenario["priority_score"] = calculate_priority_score(scenario)
+            scenarios.append(scenario)
 
     # ============================================
     # CALCULATE SUMMARY
@@ -852,7 +1002,7 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
     worse = len([s for s in leaks_with_session if s["improvement_status"] == "worse"])
     overcorrected = len([s for s in leaks_with_session if s["improvement_status"] == "overcorrected"])
 
-    # Calculate overall improvement score (average of leak improvement scores)
+    # Calculate overall improvement score (weighted by priority)
     leak_scores = [s["improvement_score"] for s in leaks_with_session if s["improvement_score"] is not None]
     overall_score = sum(leak_scores) / len(leak_scores) if leak_scores else 50.0
 
@@ -868,6 +1018,13 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
     else:
         grade = "F"
 
+    # Priority leaks: sorted by priority_score descending
+    priority_leaks = sorted(
+        [s for s in leaks_only if s.get("priority_score", 0) > 0],
+        key=lambda x: x.get("priority_score", 0),
+        reverse=True
+    )
+
     return {
         "session_id": session_id,
         "player_name": player_name,
@@ -875,6 +1032,7 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
         "confidence": confidence,
 
         "scenarios": scenarios,
+        "priority_leaks": priority_leaks,
 
         "summary": {
             "total_scenarios": len(scenarios),
@@ -1143,7 +1301,7 @@ def get_session_group_analysis(request: GroupAnalysisRequest, db: Session = Depe
                         for row in combined_opening_result}
 
     # Build opening scenarios
-    min_sample_opening = 15
+    min_sample_opening = SAMPLE_THRESHOLDS['opening']['min_display']
     for pos in ["UTG", "MP", "CO", "BTN", "SB"]:
         gto_value = gto_opening.get(pos, 0)
         overall_data = overall_opening.get(pos, {"sample": 0, "value": 0})
@@ -1158,8 +1316,12 @@ def get_session_group_analysis(request: GroupAnalysisRequest, db: Session = Depe
         combined_deviation = combined_value - gto_value
         is_leak = abs(overall_deviation) >= 5 and overall_sample >= 10
 
-        scenarios.append({
-            "scenario_id": f"opening_{pos}",
+        scenario_id = f"opening_{pos}"
+        leak_severity = get_leak_severity(overall_deviation) if is_leak else "none"
+        ev_weight = get_leak_weight(scenario_id)
+
+        scenario = {
+            "scenario_id": scenario_id,
             "category": "opening",
             "position": pos,
             "vs_position": None,
@@ -1170,13 +1332,14 @@ def get_session_group_analysis(request: GroupAnalysisRequest, db: Session = Depe
             "overall_deviation": round(overall_deviation, 1),
             "is_leak": is_leak,
             "leak_direction": "too_loose" if overall_deviation > 0 else "too_tight" if overall_deviation < 0 else None,
-            "leak_severity": get_leak_severity(overall_deviation) if is_leak else "none",
+            "leak_severity": leak_severity,
+            "ev_weight": ev_weight,
             "gto_value": round(gto_value, 1),
             "session_value": round(combined_value, 1) if combined_sample > 0 else None,
             "session_sample": combined_sample,
             "session_deviation": round(combined_deviation, 1) if combined_sample > 0 else None,
             "improvement_score": round(calculate_improvement_score(
-                overall_value, combined_value, gto_value, combined_sample, min_sample_opening
+                overall_value, combined_value, gto_value, combined_sample, min_sample_opening, leak_severity
             ), 1) if combined_sample > 0 and is_leak else None,
             "improvement_status": get_improvement_status(
                 overall_value, combined_value, gto_value, combined_sample, min_sample_opening
@@ -1185,8 +1348,10 @@ def get_session_group_analysis(request: GroupAnalysisRequest, db: Session = Depe
             "overcorrected": get_improvement_status(
                 overall_value, combined_value, gto_value, combined_sample, min_sample_opening
             ) == "overcorrected" if combined_sample > 0 and is_leak else False,
-            "confidence_level": get_confidence_level(combined_sample, min_sample_opening)
-        })
+            "confidence_level": get_confidence_level(combined_sample, 'opening')
+        }
+        scenario["priority_score"] = calculate_priority_score(scenario)
+        scenarios.append(scenario)
 
     # Defense scenarios
     overall_defense_result = db.execute(text("""
@@ -1228,7 +1393,7 @@ def get_session_group_analysis(request: GroupAnalysisRequest, db: Session = Depe
                 "call": (row[3] or 0) / total * 100, "3bet": (row[4] or 0) / total * 100
             }
 
-    min_sample_defense = 10
+    min_sample_defense = SAMPLE_THRESHOLDS['defense']['min_display']
     for pos in ["BB", "SB", "BTN", "CO", "MP"]:
         gto_actions = gto_defense.get(pos, {})
         overall_data = overall_defense.get(pos, {})
@@ -1249,8 +1414,12 @@ def get_session_group_analysis(request: GroupAnalysisRequest, db: Session = Depe
             combined_deviation = combined_value - gto_value
             is_leak = abs(overall_deviation) >= 5 and overall_sample >= 5
 
-            scenarios.append({
-                "scenario_id": f"defense_{pos}_{action}",
+            scenario_id = f"defense_{pos}_{action}"
+            leak_severity = get_leak_severity(overall_deviation) if is_leak else "none"
+            ev_weight = get_leak_weight(scenario_id)
+
+            scenario = {
+                "scenario_id": scenario_id,
                 "category": "defense",
                 "position": pos,
                 "vs_position": None,
@@ -1261,13 +1430,14 @@ def get_session_group_analysis(request: GroupAnalysisRequest, db: Session = Depe
                 "overall_deviation": round(overall_deviation, 1),
                 "is_leak": is_leak,
                 "leak_direction": "too_high" if overall_deviation > 0 else "too_low" if overall_deviation < 0 else None,
-                "leak_severity": get_leak_severity(overall_deviation) if is_leak else "none",
+                "leak_severity": leak_severity,
+                "ev_weight": ev_weight,
                 "gto_value": round(gto_value, 1),
                 "session_value": round(combined_value, 1) if combined_sample > 0 else None,
                 "session_sample": combined_sample,
                 "session_deviation": round(combined_deviation, 1) if combined_sample > 0 else None,
                 "improvement_score": round(calculate_improvement_score(
-                    overall_value, combined_value, gto_value, combined_sample, min_sample_defense
+                    overall_value, combined_value, gto_value, combined_sample, min_sample_defense, leak_severity
                 ), 1) if combined_sample > 0 and is_leak else None,
                 "improvement_status": get_improvement_status(
                     overall_value, combined_value, gto_value, combined_sample, min_sample_defense
@@ -1276,8 +1446,10 @@ def get_session_group_analysis(request: GroupAnalysisRequest, db: Session = Depe
                 "overcorrected": get_improvement_status(
                     overall_value, combined_value, gto_value, combined_sample, min_sample_defense
                 ) == "overcorrected" if combined_sample > 0 and is_leak else False,
-                "confidence_level": get_confidence_level(combined_sample, min_sample_defense)
-            })
+                "confidence_level": get_confidence_level(combined_sample, 'defense')
+            }
+            scenario["priority_score"] = calculate_priority_score(scenario)
+            scenarios.append(scenario)
 
     # Facing 3-bet scenarios
     overall_f3bet_result = db.execute(text("""
@@ -1319,7 +1491,7 @@ def get_session_group_analysis(request: GroupAnalysisRequest, db: Session = Depe
                 "call": (row[3] or 0) / total * 100, "4bet": (row[4] or 0) / total * 100
             }
 
-    min_sample_f3bet = 8
+    min_sample_f3bet = SAMPLE_THRESHOLDS['facing_3bet']['min_display']
     for pos in ["UTG", "MP", "CO", "BTN", "SB"]:
         gto_actions = gto_f3bet.get(pos, {})
         overall_data = overall_f3bet.get(pos, {})
@@ -1338,8 +1510,12 @@ def get_session_group_analysis(request: GroupAnalysisRequest, db: Session = Depe
             combined_deviation = combined_value - gto_value
             is_leak = abs(overall_deviation) >= 5 and overall_sample >= 5
 
-            scenarios.append({
-                "scenario_id": f"facing_3bet_{pos}_{action}",
+            scenario_id = f"facing_3bet_{pos}_{action}"
+            leak_severity = get_leak_severity(overall_deviation) if is_leak else "none"
+            ev_weight = get_leak_weight(scenario_id)
+
+            scenario = {
+                "scenario_id": scenario_id,
                 "category": "facing_3bet",
                 "position": pos,
                 "vs_position": None,
@@ -1350,13 +1526,14 @@ def get_session_group_analysis(request: GroupAnalysisRequest, db: Session = Depe
                 "overall_deviation": round(overall_deviation, 1),
                 "is_leak": is_leak,
                 "leak_direction": "too_high" if overall_deviation > 0 else "too_low" if overall_deviation < 0 else None,
-                "leak_severity": get_leak_severity(overall_deviation) if is_leak else "none",
+                "leak_severity": leak_severity,
+                "ev_weight": ev_weight,
                 "gto_value": round(gto_value, 1),
                 "session_value": round(combined_value, 1) if combined_sample > 0 else None,
                 "session_sample": combined_sample,
                 "session_deviation": round(combined_deviation, 1) if combined_sample > 0 else None,
                 "improvement_score": round(calculate_improvement_score(
-                    overall_value, combined_value, gto_value, combined_sample, min_sample_f3bet
+                    overall_value, combined_value, gto_value, combined_sample, min_sample_f3bet, leak_severity
                 ), 1) if combined_sample > 0 and is_leak else None,
                 "improvement_status": get_improvement_status(
                     overall_value, combined_value, gto_value, combined_sample, min_sample_f3bet
@@ -1365,8 +1542,10 @@ def get_session_group_analysis(request: GroupAnalysisRequest, db: Session = Depe
                 "overcorrected": get_improvement_status(
                     overall_value, combined_value, gto_value, combined_sample, min_sample_f3bet
                 ) == "overcorrected" if combined_sample > 0 and is_leak else False,
-                "confidence_level": get_confidence_level(combined_sample, min_sample_f3bet)
-            })
+                "confidence_level": get_confidence_level(combined_sample, 'facing_3bet')
+            }
+            scenario["priority_score"] = calculate_priority_score(scenario)
+            scenarios.append(scenario)
 
     # ============================================
     # CALCULATE SUMMARY
@@ -1393,6 +1572,13 @@ def get_session_group_analysis(request: GroupAnalysisRequest, db: Session = Depe
     else:
         grade = "F"
 
+    # Priority leaks: sorted by priority_score descending
+    priority_leaks = sorted(
+        [s for s in leaks_only if s.get("priority_score", 0) > 0],
+        key=lambda x: x.get("priority_score", 0),
+        reverse=True
+    )
+
     return {
         "session_ids": session_ids,
         "player_name": player_name,
@@ -1404,6 +1590,7 @@ def get_session_group_analysis(request: GroupAnalysisRequest, db: Session = Depe
 
         "aggregated": {
             "scenarios": scenarios,
+            "priority_leaks": priority_leaks,
             "summary": {
                 "total_scenarios": len(scenarios),
                 "scenarios_with_leaks": len(leaks_only),

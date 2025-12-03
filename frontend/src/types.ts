@@ -671,6 +671,7 @@ export interface ScenarioComparison {
   is_leak: boolean;
   leak_direction: LeakDirection;
   leak_severity: LeakSeverity;
+  ev_weight?: number;
 
   // GTO baseline
   gto_value: number;
@@ -686,6 +687,7 @@ export interface ScenarioComparison {
   within_gto_zone: boolean | null;
   overcorrected: boolean;
   confidence_level: ConfidenceLevel;
+  priority_score?: number;
 }
 
 export interface SessionLeakComparisonSummary {
@@ -705,6 +707,7 @@ export interface SessionLeakComparisonResponse {
   session_hands: number;
   confidence: 'low' | 'moderate' | 'high';
   scenarios: ScenarioComparison[];
+  priority_leaks: ScenarioComparison[];
   summary: SessionLeakComparisonSummary;
 }
 
@@ -747,6 +750,7 @@ export interface SessionGroupAnalysisResponse {
 
   aggregated: {
     scenarios: ScenarioComparison[];
+    priority_leaks: ScenarioComparison[];
     summary: SessionLeakComparisonSummary;
   };
 
