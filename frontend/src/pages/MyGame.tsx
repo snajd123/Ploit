@@ -10,7 +10,7 @@ import { GTOCategoryDetailView } from '../components/gto';
 import LeakAnalysisView from '../components/LeakAnalysisView';
 import ScenarioHandsModal, { type ScenarioSelection } from '../components/ScenarioHandsModal';
 import { mapPriorityLeaksToGTOLeaks } from '../utils/gtoUtils';
-import type { MyGameOverview, HeroSessionResponse, GTOAnalysisResponse } from '../types';
+import type { MyGameOverview, HeroSessionResponse, GTOAnalysisResponse, LeakAnalysisResponse } from '../types';
 
 // Tab configuration
 type TabId = 'overview' | 'gto' | 'sessions';
@@ -69,6 +69,13 @@ const MyGame = () => {
   const { data: gtoData, isLoading: gtoLoading } = useQuery<GTOAnalysisResponse>({
     queryKey: ['my-game-gto-analysis'],
     queryFn: () => api.getMyGameGTOAnalysis(),
+    enabled: !!(overview && overview.hero_nicknames.length > 0 && activeTab === 'gto'),
+  });
+
+  // Fetch aggregated stat-based leak analysis across all hero nicknames
+  const { data: statLeaksData } = useQuery<LeakAnalysisResponse>({
+    queryKey: ['my-game-leaks'],
+    queryFn: () => api.getMyGameLeaks(),
     enabled: !!(overview && overview.hero_nicknames.length > 0 && activeTab === 'gto'),
   });
 
@@ -419,7 +426,7 @@ const MyGame = () => {
               {gtoData.priority_leaks && gtoData.priority_leaks.length > 0 && (
                 <LeakAnalysisView
                   gtoLeaks={mapPriorityLeaksToGTOLeaks(gtoData.priority_leaks)}
-                  statLeaks={[]}
+                  statLeaks={statLeaksData?.leaks || []}
                   totalHands={gtoData.adherence?.total_hands || overview?.total_hands || 0}
                   playerName="Hero"
                   priorityLeaks={gtoData.priority_leaks}

@@ -123,6 +123,12 @@ class ApiClient {
     return response.data;
   }
 
+  // Get aggregated leak analysis for all hero nicknames (My Game)
+  async getMyGameLeaks(): Promise<LeakAnalysisResponse> {
+    const response = await this.client.get<LeakAnalysisResponse>('/api/my-game/leaks');
+    return response.data;
+  }
+
   // Get AI-powered preflop leak analysis
   async getAILeakAnalysis(playerName: string): Promise<AILeakAnalysisResponse> {
     const response = await this.client.post<AILeakAnalysisResponse>(

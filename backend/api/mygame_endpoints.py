@@ -1235,3 +1235,145 @@ def get_mygame_scenario_hands(
         },
         'hands': hands
     }
+
+
+@router.get("/leaks")
+def get_mygame_leaks(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """
+    Get aggregated leak analysis for all hero nicknames.
+
+    Combines stats from all configured hero nicknames and runs leak analysis.
+    Returns same format as /api/players/{name}/leaks for consistency.
+    """
+    from ..services.stats_calculator import StatsCalculator
+    from ..models.database_models import PlayerStats
+
+    hero_nicknames = list(get_hero_nicknames(db))
+
+    if not hero_nicknames:
+        return {
+            "player_name": "Hero",
+            "total_hands": 0,
+            "player_type": None,
+            "core_metrics": {},
+            "leaks": [],
+            "leak_summary": {
+                "total_leaks": 0,
+                "critical_leaks": 0,
+                "major_leaks": 0,
+                "total_ev_opportunity": 0,
+                "reliability": "insufficient_data"
+            }
+        }
+
+    # Query player_stats for all hero nicknames
+    hero_stats_list = db.query(PlayerStats).filter(
+        PlayerStats.player_name.in_(hero_nicknames)
+    ).all()
+
+    if not hero_stats_list:
+        return {
+            "player_name": "Hero",
+            "total_hands": 0,
+            "player_type": None,
+            "core_metrics": {},
+            "leaks": [],
+            "leak_summary": {
+                "total_leaks": 0,
+                "critical_leaks": 0,
+                "major_leaks": 0,
+                "total_ev_opportunity": 0,
+                "reliability": "insufficient_data"
+            }
+        }
+
+    # Aggregate stats across all heroes (weighted by total_hands)
+    total_hands = sum(ps.total_hands or 0 for ps in hero_stats_list)
+
+    if total_hands == 0:
+        return {
+            "player_name": "Hero",
+            "total_hands": 0,
+            "player_type": None,
+            "core_metrics": {},
+            "leaks": [],
+            "leak_summary": {
+                "total_leaks": 0,
+                "critical_leaks": 0,
+                "major_leaks": 0,
+                "total_ev_opportunity": 0,
+                "reliability": "insufficient_data"
+            }
+        }
+
+    def weighted_avg(attr_name):
+        """Calculate weighted average of an attribute across all hero stats."""
+        total = 0.0
+        total_weight = 0
+        for ps in hero_stats_list:
+            val = getattr(ps, attr_name, None)
+            hands = ps.total_hands or 0
+            if val is not None and hands > 0:
+                total += float(val) * hands
+                total_weight += hands
+        return total / total_weight if total_weight > 0 else None
+
+    # Build aggregated stats dictionary matching player_stats structure
+    aggregated_stats = {
+        'player_name': 'Hero',
+        'total_hands': total_hands,
+        'vpip_pct': weighted_avg('vpip_pct'),
+        'pfr_pct': weighted_avg('pfr_pct'),
+        'three_bet_pct': weighted_avg('three_bet_pct'),
+        'fold_to_three_bet_pct': weighted_avg('fold_to_three_bet_pct'),
+        'four_bet_pct': weighted_avg('four_bet_pct'),
+        'cold_call_pct': weighted_avg('cold_call_pct'),
+        'limp_pct': weighted_avg('limp_pct'),
+        'squeeze_pct': weighted_avg('squeeze_pct'),
+        'steal_pct': weighted_avg('steal_pct'),
+        'bb_fold_to_steal_pct': weighted_avg('bb_fold_to_steal_pct'),
+        'sb_fold_to_steal_pct': weighted_avg('sb_fold_to_steal_pct'),
+        'bb_three_bet_vs_steal_pct': weighted_avg('bb_three_bet_vs_steal_pct'),
+        'sb_three_bet_vs_steal_pct': weighted_avg('sb_three_bet_vs_steal_pct'),
+        # Positional VPIP
+        'vpip_utg': weighted_avg('vpip_utg'),
+        'vpip_hj': weighted_avg('vpip_hj'),
+        'vpip_mp': weighted_avg('vpip_mp'),
+        'vpip_co': weighted_avg('vpip_co'),
+        'vpip_btn': weighted_avg('vpip_btn'),
+        'vpip_sb': weighted_avg('vpip_sb'),
+        'vpip_bb': weighted_avg('vpip_bb'),
+        # Positional PFR
+        'pfr_utg': weighted_avg('pfr_utg'),
+        'pfr_hj': weighted_avg('pfr_hj'),
+        'pfr_mp': weighted_avg('pfr_mp'),
+        'pfr_co': weighted_avg('pfr_co'),
+        'pfr_btn': weighted_avg('pfr_btn'),
+        'pfr_sb': weighted_avg('pfr_sb'),
+        'pfr_bb': weighted_avg('pfr_bb'),
+    }
+
+    # Create StatsCalculator and get leak analysis
+    calculator = StatsCalculator(aggregated_stats)
+    leak_analysis = calculator.get_leak_analysis()
+    core_metrics = calculator.get_core_metrics()
+    player_type_info = calculator.get_player_type_details()
+
+    # Extract the leaks list from the analysis result
+    leaks_list = leak_analysis.get("leaks", [])
+
+    return {
+        "player_name": "Hero",
+        "hero_nicknames": hero_nicknames,
+        "total_hands": total_hands,
+        "player_type": player_type_info,
+        "core_metrics": core_metrics,
+        "leaks": leaks_list,
+        "leak_summary": {
+            "total_leaks": leak_analysis.get("total_leaks", 0),
+            "critical_leaks": leak_analysis.get("critical_leaks", 0),
+            "major_leaks": leak_analysis.get("major_leaks", 0),
+            "total_ev_opportunity": leak_analysis.get("total_ev_opportunity_bb_100", 0),
+            "reliability": leak_analysis.get("reliability", "low")
+        }
+    }
