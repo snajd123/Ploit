@@ -531,6 +531,8 @@ class FlagCalculator:
 
         Sets: won_hand, profit_loss
         """
+        import re
+
         # Sum all amounts this player put in
         player_actions = [a for a in self.hand.actions if a.player_name == player_name]
 
@@ -539,9 +541,19 @@ class FlagCalculator:
             if action.amount > Decimal("0"):
                 total_invested += action.amount
 
+        # Check for uncalled bet returned (e.g., "Uncalled bet (€10.12) returned to snajd")
+        # This happens when everyone folds to a bet - the unmatched portion is returned
+        escaped_name = re.escape(player_name)
+        uncalled_pattern = rf"Uncalled bet \([$€£]?([\d.]+)\) returned to {escaped_name}"
+        uncalled_match = re.search(uncalled_pattern, self.hand.raw_text)
+
+        if uncalled_match:
+            returned_amount = Decimal(uncalled_match.group(1))
+            total_invested -= returned_amount
+
         # Check if player won (collected from pot)
-        import re
-        collect_pattern = rf"{re.escape(player_name)} collected \$?([\d.]+)"
+        # Handle multiple currency symbols: $, €, £, etc.
+        collect_pattern = rf"{escaped_name} collected [$€£]?([\d.]+)"
         collect_match = re.search(collect_pattern, self.hand.raw_text)
 
         if collect_match:
