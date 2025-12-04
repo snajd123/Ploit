@@ -633,7 +633,7 @@ export interface GTOPositionalRange {
   position: string;
   vpip_pct: number;
   three_bet_pct?: number;
-  fold_to_3bet_pct?: number;
+  fold_to_three_bet_pct?: number;
 }
 
 export interface GTOOptimalRangesResponse {
@@ -753,7 +753,7 @@ export interface SessionTrendStats {
   vpip_pct: number;
   pfr_pct: number;
   three_bet_pct: number;
-  fold_to_3bet_pct: number;
+  fold_to_three_bet_pct: number;
   wtsd_pct: number;
   won_at_sd_pct: number;
 }
@@ -930,7 +930,7 @@ export interface HeroStatsResponse {
   vpip_pct: number;
   pfr_pct: number;
   three_bet_pct: number;
-  fold_to_3bet_pct: number | null;
+  fold_to_three_bet_pct: number | null;
   player_type: string | null;
   first_session: string | null;
   last_session: string | null;
@@ -964,7 +964,7 @@ export interface PoolPlayer {
   vpip_pct: number;
   pfr_pct: number;
   three_bet_pct: number;
-  fold_to_3bet_pct: number | null;
+  fold_to_three_bet_pct: number | null;
   player_type: string | null;
 }
 
@@ -977,4 +977,60 @@ export interface PoolDetail {
   total_hands: number;
   avg_stats: Record<string, number>;
   players: PoolPlayer[];
+}
+
+// Strategy Types
+export interface OpponentSummary {
+  player_name: string;
+  player_type: string | null;
+  total_hands: number;
+  exploitability_index: number | null;
+  top_exploits: string[];
+  key_stats: Record<string, string>;
+}
+
+export interface PreGameStrategyResponse {
+  session_summary: string;
+  table_dynamics: string;
+  overall_strategy: string;
+  opponent_summaries: OpponentSummary[];
+  focus_areas: string[];
+  quick_tips: string[];
+}
+
+export interface QuickLookupExploit {
+  stat: string;
+  exploit: string;
+  deviation: string;
+  severity: 'critical' | 'major' | 'moderate' | 'minor';
+  ev_loss: string | null;
+  is_gto_based: boolean;
+}
+
+export interface QuickLookupResponse {
+  player_name: string;
+  player_type: string | null;
+  total_hands: number;
+  exploitability_index: number | null;
+  strategy_summary: string;
+  key_stats: Record<string, string>;
+  top_exploits: QuickLookupExploit[];
+  gto_exploit_count: number;
+  traditional_exploit_count: number;
+  total_ev: number;
+}
+
+// Session Detection Response
+export interface DetectedSession {
+  session_id: number;
+  start_time: string;
+  end_time: string;
+  total_hands: number;
+  profit_loss_bb: number;
+}
+
+export interface DetectAllSessionsResponse {
+  players_processed: number;
+  total_sessions_created: number;
+  sessions_by_player: Record<string, DetectedSession[]>;
 }

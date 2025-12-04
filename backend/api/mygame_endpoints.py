@@ -42,7 +42,7 @@ class HeroStatsResponse(BaseModel):
     vpip_pct: float
     pfr_pct: float
     three_bet_pct: float
-    fold_to_3bet_pct: Optional[float]
+    fold_to_three_bet_pct: Optional[float]
     player_type: Optional[str]
     first_session: Optional[datetime]
     last_session: Optional[datetime]
@@ -123,7 +123,7 @@ def get_mygame_overview(db: Session = Depends(get_db)) -> MyGameOverview:
             vpip_pct=float(row.vpip_pct or 0),
             pfr_pct=float(row.pfr_pct or 0),
             three_bet_pct=float(row.three_bet_pct or 0),
-            fold_to_3bet_pct=float(row.fold_to_three_bet_pct) if row.fold_to_three_bet_pct else None,
+            fold_to_three_bet_pct=float(row.fold_to_three_bet_pct) if row.fold_to_three_bet_pct else None,
             player_type=row.player_type,
             first_session=row.first_session,
             last_session=row.last_session

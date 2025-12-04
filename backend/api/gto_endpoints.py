@@ -181,7 +181,7 @@ async def list_scenarios(
 
     Returns list of scenarios with metadata.
     """
-    from backend.models.gto_models import GTOScenario
+    from backend.models.database_models import GTOScenario
 
     query = gto_service.db.query(GTOScenario)
 
@@ -219,7 +219,7 @@ async def get_scenario_range_matrix(
             ...
         }
     """
-    from backend.models.gto_models import GTOScenario, GTOFrequency
+    from backend.models.database_models import GTOScenario, GTOFrequency
     from sqlalchemy import text
     import re
 
@@ -333,7 +333,7 @@ async def health_check(gto_service: GTOService = Depends(get_gto_service)):
     - Number of scenarios loaded
     - System status
     """
-    from backend.models.gto_models import GTOScenario, GTOFrequency
+    from backend.models.database_models import GTOScenario, GTOFrequency
 
     try:
         scenario_count = gto_service.db.query(GTOScenario).count()
@@ -398,7 +398,7 @@ async def get_optimal_ranges(
 
     Example: GET /api/gto/optimal-ranges
     """
-    from backend.models.gto_models import GTOScenario, GTOFrequency
+    from backend.models.database_models import GTOScenario, GTOFrequency
 
     try:
         overall = {

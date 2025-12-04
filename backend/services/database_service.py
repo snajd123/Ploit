@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy import func, text
 from typing import List, Dict, Optional, Any
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 import logging
 
 from backend.models.database_models import (
@@ -507,7 +507,7 @@ class DatabaseService:
                     if len(parts) == 2:
                         try:
                             big_blind = Decimal(parts[1].strip())
-                        except:
+                        except (ValueError, InvalidOperation):
                             pass
                 elif 'NL' in most_common_stake.upper():
                     # Format: "NL100" means $100 buy-in, typically 1/2 game (BB=$2)
@@ -515,7 +515,7 @@ class DatabaseService:
                     try:
                         buyin = Decimal(most_common_stake.upper().replace('NL', '').replace('$', ''))
                         big_blind = buyin / 50  # Standard 100bb buy-in
-                    except:
+                    except (ValueError, InvalidOperation):
                         pass
 
                 if big_blind and big_blind > 0:

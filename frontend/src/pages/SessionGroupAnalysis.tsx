@@ -721,7 +721,7 @@ const SessionGroupAnalysis: React.FC = () => {
               <StatsTrendChart trends={session_trends} statKey="vpip_pct" label="VPIP%" color="#3b82f6" />
               <StatsTrendChart trends={session_trends} statKey="pfr_pct" label="PFR%" color="#10b981" />
               <StatsTrendChart trends={session_trends} statKey="three_bet_pct" label="3-Bet%" color="#f59e0b" />
-              <StatsTrendChart trends={session_trends} statKey="fold_to_3bet_pct" label="Fold to 3-Bet%" color="#ef4444" />
+              <StatsTrendChart trends={session_trends} statKey="fold_to_three_bet_pct" label="Fold to 3-Bet%" color="#ef4444" />
             </div>
           </div>
         </>
@@ -847,7 +847,7 @@ const SessionGroupAnalysis: React.FC = () => {
               <StatsTrendChart trends={session_trends} statKey="vpip_pct" label="VPIP%" color="#3b82f6" />
               <StatsTrendChart trends={session_trends} statKey="pfr_pct" label="PFR%" color="#10b981" />
               <StatsTrendChart trends={session_trends} statKey="three_bet_pct" label="3-Bet%" color="#f59e0b" />
-              <StatsTrendChart trends={session_trends} statKey="fold_to_3bet_pct" label="Fold to 3-Bet%" color="#ef4444" />
+              <StatsTrendChart trends={session_trends} statKey="fold_to_three_bet_pct" label="Fold to 3-Bet%" color="#ef4444" />
             </div>
           </div>
 
@@ -1012,7 +1012,7 @@ const SessionGroupAnalysis: React.FC = () => {
                       <td className="px-4 py-3 text-sm text-gray-600 text-right">{trend.stats.vpip_pct.toFixed(1)}%</td>
                       <td className="px-4 py-3 text-sm text-gray-600 text-right">{trend.stats.pfr_pct.toFixed(1)}%</td>
                       <td className="px-4 py-3 text-sm text-gray-600 text-right">{trend.stats.three_bet_pct.toFixed(1)}%</td>
-                      <td className="px-4 py-3 text-sm text-gray-600 text-right">{trend.stats.fold_to_3bet_pct.toFixed(1)}%</td>
+                      <td className="px-4 py-3 text-sm text-gray-600 text-right">{trend.stats.fold_to_three_bet_pct.toFixed(1)}%</td>
                     </tr>
                   ))}
                 </tbody>

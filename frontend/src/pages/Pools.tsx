@@ -247,8 +247,8 @@ const Pools = () => {
                               {player.three_bet_pct.toFixed(1)}%
                             </td>
                             <td className="py-3 text-right">
-                              {player.fold_to_3bet_pct !== null
-                                ? `${player.fold_to_3bet_pct.toFixed(1)}%`
+                              {player.fold_to_three_bet_pct !== null
+                                ? `${player.fold_to_three_bet_pct.toFixed(1)}%`
                                 : 'N/A'}
                             </td>
                             <td className="py-3 text-center">

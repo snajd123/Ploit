@@ -38,6 +38,9 @@ import type {
   HeroSessionResponse,
   PoolSummary,
   PoolDetail,
+  PreGameStrategyResponse,
+  QuickLookupResponse,
+  DetectAllSessionsResponse,
 } from '../types';
 
 class ApiClient {
@@ -250,14 +253,14 @@ class ApiClient {
     hero_name?: string;
     stakes?: string;
     game_type?: string;
-  }): Promise<any> {
-    const response = await this.client.post('/api/strategy/pre-game', request);
+  }): Promise<PreGameStrategyResponse> {
+    const response = await this.client.post<PreGameStrategyResponse>('/api/strategy/pre-game', request);
     return response.data;
   }
 
   // Quick opponent lookup
-  async quickLookup(playerName: string): Promise<any> {
-    const response = await this.client.get(`/api/strategy/quick-lookup/${encodeURIComponent(playerName)}`);
+  async quickLookup(playerName: string): Promise<QuickLookupResponse> {
+    const response = await this.client.get<QuickLookupResponse>(`/api/strategy/quick-lookup/${encodeURIComponent(playerName)}`);
     return response.data;
   }
 
@@ -281,12 +284,8 @@ class ApiClient {
   }
 
   // Detect all sessions from uploaded hands
-  async detectAllSessions(sessionGapMinutes: number = 30): Promise<{
-    players_processed: number;
-    total_sessions_created: number;
-    sessions_by_player: Record<string, any[]>;
-  }> {
-    const response = await this.client.post('/api/sessions/detect-all', null, {
+  async detectAllSessions(sessionGapMinutes: number = 30): Promise<DetectAllSessionsResponse> {
+    const response = await this.client.post<DetectAllSessionsResponse>('/api/sessions/detect-all', null, {
       params: { session_gap_minutes: sessionGapMinutes }
     });
     return response.data;

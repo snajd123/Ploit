@@ -154,6 +154,21 @@ class GTOScenario(Base):
     def __repr__(self) -> str:
         return f"<GTOScenario(id={self.scenario_id}, name={self.scenario_name}, category={self.category})>"
 
+    def to_dict(self) -> dict:
+        """Convert to dictionary for API responses."""
+        return {
+            'scenario_id': self.scenario_id,
+            'scenario_name': self.scenario_name,
+            'street': self.street,
+            'category': self.category,
+            'position': self.position,
+            'action': self.action,
+            'opponent_position': self.opponent_position,
+            'data_source': self.data_source,
+            'description': self.description,
+            'gto_aggregate_freq': float(self.gto_aggregate_freq) if self.gto_aggregate_freq else None
+        }
+
 
 class GTOFrequency(Base):
     """
@@ -177,6 +192,17 @@ class GTOFrequency(Base):
 
     def __repr__(self) -> str:
         return f"<GTOFrequency(scenario={self.scenario_id}, hand={self.hand}, freq={self.frequency})>"
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary for API responses."""
+        return {
+            'frequency_id': self.frequency_id,
+            'scenario_id': self.scenario_id,
+            'hand': self.hand,
+            'position': self.position,
+            'frequency': float(self.frequency) if self.frequency else 0.0,
+            'percentage': float(self.frequency * 100) if self.frequency else 0.0
+        }
 
 
 class PlayerStats(Base):

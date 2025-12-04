@@ -38,7 +38,7 @@ class PoolPlayer(BaseModel):
     vpip_pct: float
     pfr_pct: float
     three_bet_pct: float
-    fold_to_3bet_pct: Optional[float]
+    fold_to_three_bet_pct: Optional[float]
     player_type: Optional[str]
 
 
@@ -199,7 +199,7 @@ def get_pool_detail(
             vpip_pct=round(vpip, 1),
             pfr_pct=round(pfr, 1),
             three_bet_pct=round(three_bet, 1),
-            fold_to_3bet_pct=round(float(row.fold_to_three_bet_pct), 1) if row.fold_to_three_bet_pct else None,
+            fold_to_three_bet_pct=round(float(row.fold_to_three_bet_pct), 1) if row.fold_to_three_bet_pct else None,
             player_type=row.player_type
         ))
 

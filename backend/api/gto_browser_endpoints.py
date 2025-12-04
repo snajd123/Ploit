@@ -9,7 +9,7 @@ from typing import List, Dict, Optional, Any
 from pydantic import BaseModel
 
 from ..database import get_db
-from ..models.gto_models import GTOScenario, GTOFrequency
+from ..models.database_models import GTOScenario, GTOFrequency
 
 router = APIRouter(prefix="/api/gto", tags=["gto_browser"])
 

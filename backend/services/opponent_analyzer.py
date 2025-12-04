@@ -295,7 +295,7 @@ class OpponentAnalyzer:
         for analysis in opponent_analyses:
             vpip = analysis.get('vpip_pct', 0) or 0
             three_bet = analysis.get('three_bet_pct', 0) or 0
-            fold_to_3bet = analysis.get('fold_to_three_bet_pct', 0) or 0
+            fold_to_three_bet = analysis.get('fold_to_three_bet_pct', 0) or 0
             cbet = analysis.get('cbet_flop_pct', 0) or 0
 
             self.db.execute(insert_query, {
@@ -305,12 +305,12 @@ class OpponentAnalyzer:
                 "vpip_pct": vpip,
                 "pfr_pct": analysis.get('pfr_pct', 0) or 0,
                 "three_bet_pct": three_bet,
-                "fold_to_three_bet_pct": fold_to_3bet,
+                "fold_to_three_bet_pct": fold_to_three_bet,
                 "cbet_flop_pct": cbet,
                 "fold_to_cbet_flop_pct": analysis.get('fold_to_cbet_flop_pct', 0) or 0,
                 "vpip_vs_gto": vpip - self.GTO_BASELINES['vpip'],
                 "three_bet_vs_gto": three_bet - self.GTO_BASELINES['three_bet'],
-                "fold_to_3bet_vs_gto": fold_to_3bet - self.GTO_BASELINES['fold_to_three_bet'],
+                "fold_to_3bet_vs_gto": fold_to_three_bet - self.GTO_BASELINES['fold_to_three_bet'],
                 "cbet_vs_gto": cbet - self.GTO_BASELINES['cbet_flop'],
                 "tendency_summary": json.dumps(analysis.get('tendencies', {})),
                 "exploits": json.dumps(analysis.get('exploits', []))
