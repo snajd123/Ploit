@@ -747,10 +747,10 @@ def get_mygame_gto_analysis(db: Session = Depends(get_db)):
     all_deviations = []
 
     for r in opening_ranges:
-        all_deviations.append(abs(r['open_diff']))
+        all_deviations.append(abs(r['frequency_diff']))
     for r in defense_vs_open:
         all_deviations.append(abs(r['call_diff']))
-        all_deviations.append(abs(r['raise_diff']))
+        all_deviations.append(abs(r['3bet_diff']))
     for r in facing_3bet:
         all_deviations.append(abs(r['fold_diff']))
         all_deviations.append(abs(r['call_diff']))
