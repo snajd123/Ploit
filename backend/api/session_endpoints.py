@@ -448,25 +448,33 @@ def get_improvement_status(
     session_sample: int,
     min_sample: int
 ) -> str:
-    """Determine improvement status: improved, same, worse, or overcorrected"""
-    # Check for overcorrection first
-    overall_side = "high" if overall_value > gto_value else "low"
-    session_side = "high" if session_value > gto_value else "low"
+    """
+    Determine improvement status: improved, same, worse, or overcorrected.
 
-    if overall_side != session_side and abs(session_value - gto_value) > 3:
-        return "overcorrected"
-
-    # Insufficient sample
-    if session_sample < min_sample:
+    Note: Sample size affects confidence_level separately, not the status itself.
+    Even with low samples, we should show the trend direction.
+    """
+    # Need at least some data
+    if session_sample < 3:
         return "same"
 
-    # Check if improved or worse
     overall_distance = abs(overall_value - gto_value)
     session_distance = abs(session_value - gto_value)
 
-    if session_distance < overall_distance - 3:
+    # Check for overcorrection first (went from one side of GTO to the other)
+    overall_side = "high" if overall_value > gto_value else "low"
+    session_side = "high" if session_value > gto_value else "low"
+
+    if overall_side != session_side and session_distance > 3:
+        return "overcorrected"
+
+    # Use a 2% threshold for detecting improvement/worse
+    # This is more sensitive than before (was 3%)
+    threshold = 2.0
+
+    if session_distance < overall_distance - threshold:
         return "improved"
-    elif session_distance > overall_distance + 3:
+    elif session_distance > overall_distance + threshold:
         return "worse"
     else:
         return "same"
