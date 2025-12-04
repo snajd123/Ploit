@@ -13,6 +13,7 @@ from ..database import get_db
 from ..services.session_detector import SessionDetector
 from ..services.hero_gto_analyzer import HeroGTOAnalyzer
 from ..services.opponent_analyzer import OpponentAnalyzer
+from ..services.hero_detection import get_hero_nicknames
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 
@@ -494,6 +495,16 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
     player_name = session._mapping["player_name"]
     session_hands = session._mapping["total_hands"]
 
+    # Get ALL hero nicknames for "overall" stats
+    # This allows comparing session vs ALL hands across all hero accounts
+    hero_nicknames = get_hero_nicknames(db)
+    # Convert to list for SQL IN clause, preserving original case from database
+    hero_names_result = db.execute(text("SELECT nickname FROM hero_nicknames"))
+    hero_names_list = [row[0] for row in hero_names_result]
+    if not hero_names_list:
+        # Fallback to just this session's player_name
+        hero_names_list = [player_name]
+
     # Determine overall confidence
     if session_hands < 100:
         confidence = "low"
@@ -515,19 +526,19 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
     """))
     gto_opening = {row[0]: float(row[1]) if row[1] else 0 for row in gto_opening_result}
 
-    # Get overall player opening frequencies
+    # Get overall player opening frequencies (across ALL hero nicknames)
     overall_opening_result = db.execute(text("""
         SELECT
             position,
             COUNT(*) FILTER (WHERE faced_raise = false) as opportunities,
             COUNT(*) FILTER (WHERE pfr = true AND faced_raise = false) as opened
         FROM player_hand_summary
-        WHERE player_name = :player_name
+        WHERE player_name = ANY(:hero_names)
         AND position IS NOT NULL
         AND position NOT IN ('BB')
         GROUP BY position
         HAVING COUNT(*) FILTER (WHERE faced_raise = false) >= 10
-    """), {"player_name": player_name})
+    """), {"hero_names": hero_names_list})
     overall_opening = {row[0]: {
         "sample": row[1],
         "value": (row[2] / row[1] * 100) if row[1] > 0 else 0
@@ -626,7 +637,7 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
             gto_defense[pos] = {}
         gto_defense[pos][action] = freq
 
-    # Get overall defense frequencies
+    # Get overall defense frequencies (across ALL hero nicknames)
     overall_defense_result = db.execute(text("""
         SELECT
             position,
@@ -635,11 +646,11 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
             COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND vpip = true AND pfr = false) as called,
             COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND made_three_bet = true) as three_bets
         FROM player_hand_summary
-        WHERE player_name = :player_name
+        WHERE player_name = ANY(:hero_names)
         AND position IN ('BB', 'SB', 'BTN', 'CO', 'MP')
         GROUP BY position
         HAVING COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false) >= 5
-    """), {"player_name": player_name})
+    """), {"hero_names": hero_names_list})
 
     overall_defense = {}
     for row in overall_defense_result:
@@ -763,7 +774,7 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
             gto_f3bet[pos] = {}
         gto_f3bet[pos][action] = freq
 
-    # Get overall facing 3-bet frequencies
+    # Get overall facing 3-bet frequencies (across ALL hero nicknames)
     overall_f3bet_result = db.execute(text("""
         SELECT
             position,
@@ -772,11 +783,11 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
             COUNT(*) FILTER (WHERE called_three_bet = true AND pfr = true) as called,
             COUNT(*) FILTER (WHERE four_bet = true AND pfr = true) as four_bet
         FROM player_hand_summary
-        WHERE player_name = :player_name
+        WHERE player_name = ANY(:hero_names)
         AND position IS NOT NULL
         GROUP BY position
         HAVING COUNT(*) FILTER (WHERE faced_three_bet = true AND pfr = true) >= 5
-    """), {"player_name": player_name})
+    """), {"hero_names": hero_names_list})
 
     overall_f3bet = {}
     for row in overall_f3bet_result:
