@@ -1301,6 +1301,18 @@ def get_mygame_scenario_hands(
                     leak_action_gto_freq = hand_specific_gto.get(name, 0)
                     break
 
+            # If leak action not found directly, calculate it from remaining frequency
+            # e.g., if GTO says call 66% + 3bet 34% = 100%, then fold = 0%
+            if leak_action_gto_freq is None and leak_action == 'fold':
+                # For fold: fold% = 100 - (call% + raise%)
+                total_other = sum(hand_specific_gto.values())
+                leak_action_gto_freq = max(0, 100 - total_other)
+            elif leak_action_gto_freq is None and leak_action == 'call':
+                # For call: calculate remaining after fold + raise
+                fold_freq = hand_specific_gto.get('fold', hand_specific_gto.get('Fold', 0))
+                raise_freq = hand_specific_gto.get('3bet', hand_specific_gto.get('raise', hand_specific_gto.get('Raise', 0)))
+                leak_action_gto_freq = max(0, 100 - fold_freq - raise_freq)
+
         if hand_specific_gto:
             action_gto_freq = hand_specific_gto.get(action, 0)
             if action_gto_freq >= 50:
