@@ -259,12 +259,10 @@ def get_mygame_gto_analysis(db: Session = Depends(get_db)):
         severity = 'minor' if abs(diff) < 5 else 'moderate' if abs(diff) < 15 else 'major'
         opening_ranges.append({
             'position': pos,
-            'total_hands': row['rfi_opportunities'],  # Match TypeScript types
-            'opportunities': row['rfi_opportunities'],  # Alias for backward compatibility
+            'total_hands': row['rfi_opportunities'],
             'player_frequency': player_freq,
             'gto_frequency': round(gto_freq, 1),
-            'frequency_diff': round(diff, 1),  # Match TypeScript types
-            'open_diff': round(diff, 1),  # Alias for backward compatibility
+            'frequency_diff': round(diff, 1),
             'leak_severity': severity,
             'leak_type': 'Too Loose' if diff > 5 else 'Too Tight' if diff < -5 else None
         })
@@ -323,8 +321,7 @@ def get_mygame_gto_analysis(db: Session = Depends(get_db)):
 
         defense_vs_open.append({
             'position': pos,
-            'sample_size': row['faced_open'],  # Match TypeScript types
-            'total_opportunities': row['faced_open'],  # Alias for backward compatibility
+            'sample_size': row['faced_open'],
             # Action-specific counts for accurate hand counts in priority leaks
             'fold_count': row['folded'],
             'call_count': row['called'],
@@ -337,8 +334,7 @@ def get_mygame_gto_analysis(db: Session = Depends(get_db)):
             'gto_3bet': round(gto_3bet, 1),
             'fold_diff': round(fold_freq - gto_fold, 1),
             'call_diff': round(call_freq - gto_call, 1),
-            '3bet_diff': round(threebet_freq - gto_3bet, 1),  # Match TypeScript types
-            'raise_diff': round(threebet_freq - gto_3bet, 1),  # Alias for backward compatibility
+            '3bet_diff': round(threebet_freq - gto_3bet, 1),
         })
 
     # ============================================
@@ -395,8 +391,7 @@ def get_mygame_gto_analysis(db: Session = Depends(get_db)):
 
         facing_3bet.append({
             'position': pos,
-            'sample_size': row['faced_3bet'],  # Match TypeScript types
-            'times_opened': row['faced_3bet'],  # Alias for backward compatibility
+            'sample_size': row['faced_3bet'],
             # Action-specific counts for accurate hand counts in priority leaks
             'fold_count': row['folded'],
             'call_count': row['called'],
