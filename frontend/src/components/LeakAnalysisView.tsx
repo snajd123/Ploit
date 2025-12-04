@@ -112,6 +112,7 @@ const mapCategoryToScenario = (category: string): ScenarioSelection['scenario'] 
 };
 
 // Categorize a leak into a tendency bucket
+// Only categorize based on the actual action showing the leak, not implied behavior
 const categorizeLeak = (leak: GTOPositionalLeak): TendencyType | null => {
   const { action, deviation } = leak;
 
@@ -119,14 +120,14 @@ const categorizeLeak = (leak: GTOPositionalLeak): TendencyType | null => {
   // Negative deviation = player does LESS than GTO
 
   if (action === 'Fold') {
-    // Over-folding = folding too much = too tight
-    // Under-folding = not folding enough = defending too much = too loose
-    return deviation > 0 ? 'fold_too_much' : 'call_too_much';
+    // Only show fold actions in "Folding Too Much" when over-folding
+    // Under-folding is ambiguous (could be calling or raising more)
+    return deviation > 0 ? 'fold_too_much' : null;
   }
   if (action === 'Call') {
-    // Over-calling = calling too much
-    // Under-calling = not calling enough = might be folding or raising instead
-    return deviation > 0 ? 'call_too_much' : 'fold_too_much';
+    // Only show call actions in "Calling Too Much" when over-calling
+    // Under-calling is ambiguous (could be folding or raising more)
+    return deviation > 0 ? 'call_too_much' : null;
   }
   if (action === 'RFI' || action === 'Open' || action === '3-Bet' || action === '4-Bet' || action === '5-Bet') {
     if (deviation > 0) return 'too_aggressive'; // Over-raising
