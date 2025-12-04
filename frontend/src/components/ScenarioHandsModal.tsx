@@ -13,6 +13,7 @@ export interface ScenarioSelection {
   position: string;
   vsPosition?: string;
   action?: string;  // Specific action for the leak (e.g., 'call', 'fold', 'raise')
+  deviation?: number;  // Deviation from GTO - used to show mistakes (negative = under-doing, positive = over-doing)
 }
 
 interface ScenarioHandsModalProps {
