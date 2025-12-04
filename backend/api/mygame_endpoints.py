@@ -1144,6 +1144,34 @@ def get_mygame_scenario_hands(
 
         return hand_combo, tier, cat
 
+    # Helper to convert GTO database combo (e.g., "Ad3h") to hand type (e.g., "A3o")
+    def combo_to_hand_type(combo: str) -> Optional[str]:
+        """Convert full combo like 'Ad3h' or '3dAh' to hand type like 'A3o'."""
+        if not combo or len(combo) != 4:
+            return None
+
+        ranks = '23456789TJQKA'
+        # GTO combos are stored as 4 chars: rank1+suit1+rank2+suit2
+        rank1 = combo[0].upper()
+        suit1 = combo[1].lower()
+        rank2 = combo[2].upper()
+        suit2 = combo[3].lower()
+
+        if rank1 not in ranks or rank2 not in ranks:
+            return None
+
+        r1_idx = ranks.index(rank1)
+        r2_idx = ranks.index(rank2)
+
+        # Normalize so higher rank comes first
+        if r1_idx < r2_idx:
+            rank1, rank2 = rank2, rank1
+            suit1, suit2 = suit2, suit1
+
+        suited = suit1 == suit2
+        suited_str = 's' if suited else 'o' if rank1 != rank2 else ''
+        return f"{rank1}{rank2}{suited_str}"
+
     # Get per-hand GTO frequencies for actions
     # Use the correct tables: gto_scenarios + gto_frequencies
     hand_gto_query = text("""
@@ -1161,14 +1189,39 @@ def get_mygame_scenario_hands(
             "position": position,
             "vs_position": vs_position
         })
-        hand_gto_freqs = {}
+        # Aggregate by hand type (e.g., "A3o") instead of full combo (e.g., "Ad3h")
+        # Track sums and counts for averaging
+        hand_type_sums = {}  # {hand_type: {action: total_freq}}
+        hand_type_counts = {}  # {hand_type: {action: count}}
+
         for row in hand_gto_result:
             combo = row[0]
             action = row[1]
             freq = float(row[2]) if row[2] else 0
-            if combo not in hand_gto_freqs:
-                hand_gto_freqs[combo] = {}
-            hand_gto_freqs[combo][action] = freq
+
+            # Convert full combo to hand type
+            hand_type = combo_to_hand_type(combo)
+            if not hand_type:
+                continue
+
+            if hand_type not in hand_type_sums:
+                hand_type_sums[hand_type] = {}
+                hand_type_counts[hand_type] = {}
+
+            if action not in hand_type_sums[hand_type]:
+                hand_type_sums[hand_type][action] = 0
+                hand_type_counts[hand_type][action] = 0
+
+            hand_type_sums[hand_type][action] += freq
+            hand_type_counts[hand_type][action] += 1
+
+        # Calculate averages to get final hand_gto_freqs keyed by hand type
+        hand_gto_freqs = {}
+        for hand_type, action_sums in hand_type_sums.items():
+            hand_gto_freqs[hand_type] = {}
+            for action, total in action_sums.items():
+                count = hand_type_counts[hand_type][action]
+                hand_gto_freqs[hand_type][action] = total / count if count > 0 else 0
     except Exception as e:
         # GTO data may not be available - proceed without it
         hand_gto_freqs = {}
