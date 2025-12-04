@@ -1092,9 +1092,13 @@ def get_mygame_scenario_hands(
     # When deviation is provided, we want to show MISTAKES:
     # - deviation < 0 (under-doing action): Show hands where player DIDN'T do the action (but should have)
     # - deviation > 0 (over-doing action): Show hands where player DID the action (but shouldn't have)
+    # NOTE: The action-based filter is a first pass. When deviation is provided, we'll also
+    # filter at the combo level later to show only actual GTO mistakes.
+    leak_action = None  # Store for combo-level filtering
     if action:
         # Normalize action names (e.g., 'raise' -> '3bet' for defense)
         action_lower = action.lower()
+        leak_action = action_lower  # Store for later GTO lookup
         # Map common names to what's stored in results
         action_map = {
             'raise': ['raise', '3bet', '4bet', '5bet'],
@@ -1278,6 +1282,25 @@ def get_mygame_scenario_hands(
             if not hand_specific_gto and scenario == 'opening':
                 hand_specific_gto = hand_gto_lookup.get((hand_combo, None))
 
+        # For combo-level filtering when showing leak mistakes:
+        # Check if GTO wanted the leak action, not just the action taken
+        leak_action_gto_freq = None
+        if deviation is not None and leak_action and hand_specific_gto:
+            # Map leak_action to GTO action name (handle variations)
+            gto_action_names = {
+                'fold': ['fold', 'Fold'],
+                'call': ['call', 'Call'],
+                'raise': ['raise', 'Raise', '3bet', '3-bet', '3Bet'],
+                '3bet': ['3bet', '3-bet', '3Bet', 'raise', 'Raise'],
+                '4bet': ['4bet', '4-bet', '4Bet'],
+                'open': ['open', 'Open', 'raise', 'Raise'],
+            }
+            possible_names = gto_action_names.get(leak_action, [leak_action])
+            for name in possible_names:
+                if name in hand_specific_gto:
+                    leak_action_gto_freq = hand_specific_gto.get(name, 0)
+                    break
+
         if hand_specific_gto:
             action_gto_freq = hand_specific_gto.get(action, 0)
             if action_gto_freq >= 50:
@@ -1308,6 +1331,20 @@ def get_mygame_scenario_hands(
                 deviation_type = 'mistake'
                 summary_mistakes += 1
 
+        # Combo-level filtering for leak mistakes
+        # Skip hands where GTO doesn't support the leak action being a mistake
+        if deviation is not None and leak_action_gto_freq is not None:
+            if deviation < 0:
+                # Under-doing: Show hands where GTO wanted the leak action (>= 50%)
+                # e.g., Under-folding: only show hands where GTO says fold >= 50%
+                if leak_action_gto_freq < 50:
+                    continue  # Skip - GTO didn't want this action, so not a mistake
+            else:
+                # Over-doing: Show hands where GTO didn't want the leak action (< 50%)
+                # e.g., Over-folding: only show hands where GTO says fold < 50%
+                if leak_action_gto_freq >= 50:
+                    continue  # Skip - GTO wanted this action, so not a mistake
+
         hands.append({
             'hand_id': row.hand_id,
             'player_name': row.player_name,
@@ -1320,11 +1357,16 @@ def get_mygame_scenario_hands(
             'player_action': action,
             'vs_position': row.vs_pos if hasattr(row, 'vs_pos') else None,
             'action_gto_freq': action_gto_freq,
+            'leak_action_gto_freq': leak_action_gto_freq,  # Include for transparency
             'deviation_type': deviation_type,
             'deviation_description': deviation_description,
             'deviation_severity': deviation_severity
         })
 
+    # Recalculate summary from actual hands returned (since we may have skipped some)
+    summary_correct = sum(1 for h in hands if h['deviation_type'] == 'correct')
+    summary_suboptimal = sum(1 for h in hands if h['deviation_type'] == 'suboptimal')
+    summary_mistakes = sum(1 for h in hands if h['deviation_type'] == 'mistake')
     total_assessed = summary_correct + summary_suboptimal + summary_mistakes
 
     return {
@@ -1333,7 +1375,7 @@ def get_mygame_scenario_hands(
         'vs_position': vs_position,
         'hero_nicknames': hero_nicknames,
         'total_hands': len(hands),
-        'hands_with_hole_cards': hands_with_hole_cards,
+        'hands_with_hole_cards': sum(1 for h in hands if h.get('hole_cards')),
         'gto_frequencies': gto_freqs,
         'summary': {
             'correct': summary_correct,
