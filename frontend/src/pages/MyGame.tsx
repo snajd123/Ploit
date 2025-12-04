@@ -182,9 +182,10 @@ const MyGame = () => {
 
     switch (category) {
       case 'opening':
+        // Uses TypeScript field names: frequency_diff, total_hands
         data.opening_ranges?.forEach(row => {
           processRow(row, 'frequency_diff', 'total_hands', true);
-          addPositionStat(row.position, row.frequency_diff);
+          addPositionStat(row.position, row.frequency_diff || 0);
         });
         // Calculate tendency for opening
         if (data.opening_ranges?.length) {
@@ -194,6 +195,7 @@ const MyGame = () => {
         break;
 
       case 'defense':
+        // Uses TypeScript field names: sample_size, fold_diff, call_diff, 3bet_diff
         let totalPlayerFold = 0, totalGtoFold = 0, totalPlayer3bet = 0, totalGto3bet = 0, defenseCount = 0;
         data.defense_vs_open?.forEach(row => {
           processRow({ ...row }, 'fold_diff', 'sample_size', false);
@@ -216,6 +218,7 @@ const MyGame = () => {
         break;
 
       case 'facing_3bet':
+        // Uses TypeScript field names: sample_size, fold_diff, call_diff, 4bet_diff
         let f3PlayerFold = 0, f3GtoFold = 0, f3Player4bet = 0, f3Gto4bet = 0, f3Count = 0;
         data.facing_3bet?.forEach(row => {
           processRow(row, 'fold_diff', 'sample_size', false);
