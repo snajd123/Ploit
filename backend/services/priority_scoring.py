@@ -9,14 +9,15 @@ import math
 from typing import Dict, Any, List
 
 # Sample thresholds by scenario type (per poker professor recommendations)
-# Updated for statistical significance - original values were too aggressive
-# With 20 samples, cannot reliably distinguish 20% RFI from 30% RFI
-# Aligned with PlayerProfile.tsx SAMPLE_THRESHOLDS
+# Updated for statistical significance based on Wilson score confidence intervals:
+# - At 50 samples with 25% frequency, 95% CI spans 13%-37% (too wide)
+# - At 100 samples, CI narrows to ~17% width, making 8% deviations meaningful
+# - Higher thresholds reduce false positives from random variance
 SAMPLE_THRESHOLDS = {
-    'opening': {'min_display': 50, 'confident': 100, 'very_confident': 200},
-    'defense': {'min_display': 50, 'confident': 100, 'very_confident': 200},
-    'facing_3bet': {'min_display': 40, 'confident': 80, 'very_confident': 150},
-    'facing_4bet': {'min_display': 50, 'confident': 100, 'very_confident': 200},
+    'opening': {'min_display': 100, 'confident': 250, 'very_confident': 500},
+    'defense': {'min_display': 100, 'confident': 250, 'very_confident': 500},
+    'facing_3bet': {'min_display': 75, 'confident': 150, 'very_confident': 300},
+    'facing_4bet': {'min_display': 30, 'confident': 75, 'very_confident': 150},
 }
 
 # Leak weights by position and scenario (based on EV impact)
