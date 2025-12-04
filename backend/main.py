@@ -319,6 +319,211 @@ async def upload_hand_history(
         )
 
 
+# Email import webhook for SendGrid Inbound Parse
+from fastapi import Form
+
+@app.post(
+    "/api/import/email",
+    response_model=UploadResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Upload"],
+    summary="Import hand history from email (SendGrid webhook)",
+    description="Webhook endpoint for SendGrid Inbound Parse to import hand histories from forwarded emails"
+)
+async def import_from_email(
+    text: str = Form(default="", description="Plain text body of the email"),
+    html: str = Form(default="", description="HTML body of the email"),
+    subject: str = Form(default="", description="Email subject"),
+    sender: str = Form(default="", alias="from", description="Sender email address"),
+    to: str = Form(default="", description="Recipient email address"),
+    db: Session = Depends(get_db)
+):
+    """
+    Import hand history from an email forwarded via SendGrid Inbound Parse.
+
+    This endpoint receives POST data from SendGrid when an email is sent to
+    the configured import address (e.g., import@yourdomain.com).
+
+    The email body (text or html) is parsed for PokerStars hand history format.
+    """
+    start_time = time.time()
+
+    try:
+        # Use text body preferably, fall back to html
+        content = text if text.strip() else html
+
+        if not content.strip():
+            logger.warning(f"Empty email received from {sender}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email body is empty"
+            )
+
+        logger.info(f"Processing email import from {sender}, subject: {subject[:50]}")
+
+        # Parse hand histories from email content
+        parser = PokerStarsParser()
+        parse_result = parser.parse_text(content)
+
+        if parse_result.total_hands == 0:
+            logger.warning(f"No hands found in email from {sender}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No valid hand histories found in email"
+            )
+
+        # Insert hands into database
+        logger.info(f"Inserting {len(parse_result.hands)} hands from email")
+        service = DatabaseService(db)
+        insert_result = service.insert_hand_batch(parse_result.hands)
+
+        # Update player statistics
+        affected_players = set()
+        for hand in parse_result.hands:
+            affected_players.update(hand.player_flags.keys())
+
+        logger.info(f"Updating stats for {len(affected_players)} players")
+        for player in affected_players:
+            service.update_player_stats(player)
+
+        # Determine stake level
+        stake_level = parse_result.hands[0].stake_level if parse_result.hands else None
+
+        # Calculate processing time
+        processing_time = time.time() - start_time
+
+        # Create upload session
+        session_id = service.create_upload_session(
+            filename=f"email_import_{subject[:30]}",
+            hands_parsed=insert_result['hands_inserted'],
+            hands_failed=insert_result['hands_failed'],
+            players_updated=len(affected_players),
+            stake_level=stake_level,
+            processing_time=int(processing_time)
+        )
+
+        logger.info(f"Email import complete: session_id={session_id}, hands={insert_result['hands_inserted']}")
+
+        return UploadResponse(
+            session_id=session_id,
+            hands_parsed=insert_result['hands_inserted'],
+            hands_failed=insert_result['hands_failed'],
+            players_updated=len(affected_players),
+            stake_level=stake_level,
+            processing_time=round(processing_time, 2),
+            message=f"Successfully imported {insert_result['hands_inserted']} hands from email"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error processing email import: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error processing email: {str(e)}"
+        )
+
+
+# Also add a simple text paste endpoint for manual imports
+class TextImportRequest(BaseModel):
+    """Request model for text paste import"""
+    content: str
+    source: str = "paste"  # Optional description of source
+
+
+@app.post(
+    "/api/import/text",
+    response_model=UploadResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Upload"],
+    summary="Import hand history from pasted text",
+    description="Import hand histories by pasting raw text content"
+)
+async def import_from_text(
+    request: TextImportRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Import hand history from pasted text content.
+
+    Use this endpoint when you have hand history text (e.g., copied from email)
+    and want to import it directly without creating a file.
+    """
+    start_time = time.time()
+
+    try:
+        content = request.content
+
+        if not content.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Content is empty"
+            )
+
+        logger.info(f"Processing text import, source: {request.source}")
+
+        # Parse hand histories
+        parser = PokerStarsParser()
+        parse_result = parser.parse_text(content)
+
+        if parse_result.total_hands == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No valid hand histories found in text"
+            )
+
+        # Insert hands into database
+        logger.info(f"Inserting {len(parse_result.hands)} hands from text import")
+        service = DatabaseService(db)
+        insert_result = service.insert_hand_batch(parse_result.hands)
+
+        # Update player statistics
+        affected_players = set()
+        for hand in parse_result.hands:
+            affected_players.update(hand.player_flags.keys())
+
+        logger.info(f"Updating stats for {len(affected_players)} players")
+        for player in affected_players:
+            service.update_player_stats(player)
+
+        # Determine stake level
+        stake_level = parse_result.hands[0].stake_level if parse_result.hands else None
+
+        # Calculate processing time
+        processing_time = time.time() - start_time
+
+        # Create upload session
+        session_id = service.create_upload_session(
+            filename=f"text_import_{request.source}",
+            hands_parsed=insert_result['hands_inserted'],
+            hands_failed=insert_result['hands_failed'],
+            players_updated=len(affected_players),
+            stake_level=stake_level,
+            processing_time=int(processing_time)
+        )
+
+        logger.info(f"Text import complete: session_id={session_id}, hands={insert_result['hands_inserted']}")
+
+        return UploadResponse(
+            session_id=session_id,
+            hands_parsed=insert_result['hands_inserted'],
+            hands_failed=insert_result['hands_failed'],
+            players_updated=len(affected_players),
+            stake_level=stake_level,
+            processing_time=round(processing_time, 2),
+            message=f"Successfully imported {insert_result['hands_inserted']} hands"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error processing text import: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error processing text: {str(e)}"
+        )
+
+
 @app.post(
     "/api/upload/batch",
     response_model=UploadResponse,

@@ -71,11 +71,43 @@ class PokerStarsParser:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
 
-            # Split file into individual hands
+            # Use parse_text for actual parsing
+            return self.parse_text(content)
+
+        except FileNotFoundError:
+            error_msg = f"File not found: {file_path}"
+            logger.error(error_msg)
+            result.add_error(error_msg)
+        except Exception as e:
+            error_msg = f"Error reading file {file_path}: {str(e)}"
+            logger.error(error_msg)
+            result.add_error(error_msg)
+
+        return result
+
+    def parse_text(self, content: str) -> ParseResult:
+        """
+        Parse hand history from raw text content.
+
+        Args:
+            content: Raw hand history text (can contain multiple hands)
+
+        Returns:
+            ParseResult with list of parsed hands and any errors
+
+        Example:
+            parser = PokerStarsParser()
+            result = parser.parse_text(email_body)
+            print(f"Parsed {result.successful} hands")
+        """
+        result = ParseResult()
+
+        try:
+            # Split content into individual hands
             hand_texts = self._split_hands(content)
             result.total_hands = len(hand_texts)
 
-            logger.info(f"Found {len(hand_texts)} hands in {file_path}")
+            logger.info(f"Found {len(hand_texts)} hands in text content")
 
             for i, hand_text in enumerate(hand_texts):
                 try:
@@ -89,12 +121,8 @@ class PokerStarsParser:
 
             logger.info(f"Successfully parsed {result.successful}/{result.total_hands} hands")
 
-        except FileNotFoundError:
-            error_msg = f"File not found: {file_path}"
-            logger.error(error_msg)
-            result.add_error(error_msg)
         except Exception as e:
-            error_msg = f"Error reading file {file_path}: {str(e)}"
+            error_msg = f"Error parsing text content: {str(e)}"
             logger.error(error_msg)
             result.add_error(error_msg)
 
