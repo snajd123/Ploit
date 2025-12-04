@@ -129,61 +129,57 @@ const ScenarioCard: React.FC<{ scenario: ScenarioComparison }> = ({ scenario }) 
   const hasSessionData = scenario.session_sample > 0;
 
   return (
-    <div className={`p-3 rounded-lg border ${scenario.is_leak ? 'border-gray-300 bg-white' : 'border-gray-200 bg-gray-50'}`}>
+    <div className={`p-3 rounded-lg border ${scenario.is_leak ? 'border-red-200 bg-red-50' : 'border-green-200 bg-green-50'}`}>
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <span className="font-medium text-gray-900 text-sm">{scenario.display_name}</span>
-          {scenario.is_leak && <SeverityBadge severity={scenario.leak_severity} />}
+          {scenario.is_leak ? (
+            <SeverityBadge severity={scenario.leak_severity} />
+          ) : (
+            <span className="px-2 py-0.5 text-xs font-medium rounded bg-green-100 text-green-700">OK</span>
+          )}
         </div>
         {scenario.is_leak && hasSessionData && (
           <StatusBadge status={scenario.improvement_status} />
         )}
       </div>
 
-      {scenario.is_leak ? (
-        <>
-          <SpectrumBar
-            gtoValue={scenario.gto_value}
-            overallValue={scenario.overall_value}
-            sessionValue={scenario.session_value}
-            leakDirection={scenario.leak_direction}
-          />
+      {/* Always show the spectrum bar */}
+      <SpectrumBar
+        gtoValue={scenario.gto_value}
+        overallValue={scenario.overall_value}
+        sessionValue={scenario.session_value}
+        leakDirection={scenario.leak_direction}
+      />
 
-          <div className="mt-3 flex items-center justify-between text-xs">
-            <div className="flex items-center gap-3">
-              <span className="text-gray-500">
-                <span className="inline-block w-2 h-2 rounded-full border border-gray-500 mr-1" />
-                Overall: <span className="font-medium text-gray-700">{scenario.overall_value.toFixed(1)}%</span>
-              </span>
-              {hasSessionData && (
-                <span className="text-gray-500">
-                  <span className="inline-block w-2 h-2 rounded-full bg-blue-600 mr-1" />
-                  Session: <span className="font-medium text-blue-700">{scenario.session_value?.toFixed(1)}%</span>
-                </span>
-              )}
-              <span className="text-gray-500">
-                GTO: <span className="font-medium text-green-700">{scenario.gto_value.toFixed(1)}%</span>
-              </span>
-            </div>
-            <span className={`${scenario.confidence_level === 'insufficient' ? 'text-orange-500' : 'text-gray-400'}`}>
-              {scenario.session_sample} obs ({scenario.confidence_level})
+      <div className="mt-3 flex items-center justify-between text-xs">
+        <div className="flex items-center gap-3">
+          <span className="text-gray-500">
+            <span className="inline-block w-2 h-2 rounded-full border border-gray-500 mr-1" />
+            Overall: <span className="font-medium text-gray-700">{scenario.overall_value.toFixed(1)}%</span>
+          </span>
+          {hasSessionData && (
+            <span className="text-gray-500">
+              <span className="inline-block w-2 h-2 rounded-full bg-blue-600 mr-1" />
+              Session: <span className="font-medium text-blue-700">{scenario.session_value?.toFixed(1)}%</span>
             </span>
-          </div>
-
-          {scenario.overcorrected && (
-            <div className="mt-2 text-xs text-orange-600 bg-orange-50 p-2 rounded flex items-start gap-1">
-              <AlertTriangle size={12} className="mt-0.5 flex-shrink-0" />
-              <span>
-                Went from {scenario.leak_direction === 'too_high' || scenario.leak_direction === 'too_loose' ? 'too high' : 'too low'}
-                {' '}({scenario.overall_value.toFixed(0)}%) to opposite side ({scenario.session_value?.toFixed(0)}%)
-              </span>
-            </div>
           )}
-        </>
-      ) : (
-        <div className="text-xs text-gray-500">
-          Within GTO range ({scenario.overall_value.toFixed(1)}% vs {scenario.gto_value.toFixed(1)}% GTO)
-          {hasSessionData && ` | Session: ${scenario.session_value?.toFixed(1)}%`}
+          <span className="text-gray-500">
+            GTO: <span className="font-medium text-green-700">{scenario.gto_value.toFixed(1)}%</span>
+          </span>
+        </div>
+        <span className={`${scenario.confidence_level === 'insufficient' ? 'text-orange-500' : 'text-gray-400'}`}>
+          {scenario.session_sample} obs ({scenario.confidence_level})
+        </span>
+      </div>
+
+      {scenario.is_leak && scenario.overcorrected && (
+        <div className="mt-2 text-xs text-orange-600 bg-orange-50 p-2 rounded flex items-start gap-1">
+          <AlertTriangle size={12} className="mt-0.5 flex-shrink-0" />
+          <span>
+            Went from {scenario.leak_direction === 'too_high' || scenario.leak_direction === 'too_loose' ? 'too high' : 'too low'}
+            {' '}({scenario.overall_value.toFixed(0)}%) to opposite side ({scenario.session_value?.toFixed(0)}%)
+          </span>
         </div>
       )}
     </div>
