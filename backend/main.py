@@ -3903,6 +3903,7 @@ async def clear_database(
             'opponent_session_stats', # FK to sessions
             'sessions',               # FK to player_stats
             'hand_actions',           # FK to raw_hands
+            'player_hand_summary',    # FK to raw_hands and sessions - CRITICAL for GTO analysis
             'player_preflop_actions',
             'player_scenario_stats',
             'raw_hands',
@@ -3983,6 +3984,7 @@ async def reset_preview(db: Session = Depends(get_db)):
         tables_to_delete = [
             ('raw_hands', 'Hand histories'),
             ('hand_actions', 'Hand actions'),
+            ('player_hand_summary', 'Player hand summaries'),  # Critical for GTO analysis
             ('hero_gto_mistakes', 'Hero GTO mistakes'),
             ('missed_exploits', 'Missed exploits'),
             ('sessions', 'Sessions'),
