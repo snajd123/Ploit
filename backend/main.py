@@ -1928,10 +1928,10 @@ async def get_player_gto_analysis(
             severity = 'minor' if abs(diff) < 5 else 'moderate' if abs(diff) < 15 else 'major'
             opening_ranges.append({
                 'position': pos,
-                'opportunities': row['rfi_opportunities'],
+                'total_hands': row['rfi_opportunities'],  # Standardized field name
                 'player_frequency': player_freq,
                 'gto_frequency': round(gto_freq, 1),
-                'open_diff': round(diff, 1),
+                'frequency_diff': round(diff, 1),  # Standardized field name
                 'leak_severity': severity,
                 'leak_type': 'Too Loose' if diff > 5 else 'Too Tight' if diff < -5 else None
             })
@@ -1994,7 +1994,11 @@ async def get_player_gto_analysis(
 
             defense_vs_open.append({
                 'position': pos,
-                'total_opportunities': row['faced_open'],
+                'sample_size': row['faced_open'],  # Standardized field name
+                # Action-specific counts for priority leak calculations
+                'fold_count': row['folded'],
+                'call_count': row['called'],
+                '3bet_count': row['three_bets'],
                 'player_fold': round(fold_freq, 1),
                 'player_call': round(call_freq, 1),
                 'player_3bet': round(threebet_freq, 1),
@@ -2003,7 +2007,7 @@ async def get_player_gto_analysis(
                 'gto_3bet': round(gto_3bet, 1),
                 'fold_diff': round(fold_freq - gto_fold, 1),
                 'call_diff': round(call_freq - gto_call, 1),
-                'raise_diff': round(threebet_freq - gto_3bet, 1),
+                '3bet_diff': round(threebet_freq - gto_3bet, 1),  # Standardized field name
             })
 
         # ============================================
@@ -2062,7 +2066,11 @@ async def get_player_gto_analysis(
 
             facing_3bet.append({
                 'position': pos,
-                'times_opened': row['faced_3bet'],
+                'sample_size': row['faced_3bet'],  # Standardized field name
+                # Action-specific counts for priority leak calculations
+                'fold_count': row['folded'],
+                'call_count': row['called'],
+                '4bet_count': row['four_bet'],
                 'player_fold': round(fold, 1),
                 'player_call': round(call, 1),
                 'player_4bet': round(four_bet, 1),
@@ -2428,10 +2436,10 @@ async def get_player_gto_analysis(
         all_deviations = []
 
         for r in opening_ranges:
-            all_deviations.append(abs(r['open_diff']))
+            all_deviations.append(abs(r['frequency_diff']))
         for r in defense_vs_open:
             all_deviations.append(abs(r['call_diff']))
-            all_deviations.append(abs(r['raise_diff']))
+            all_deviations.append(abs(r['3bet_diff']))
         for r in facing_3bet:
             all_deviations.append(abs(r['fold_diff']))
             all_deviations.append(abs(r['call_diff']))
