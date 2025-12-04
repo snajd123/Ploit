@@ -3893,8 +3893,6 @@ async def clear_database(
     try:
         from sqlalchemy import text
 
-        # Count records before deletion
-        counts_before = {}
         # Order matters - delete child tables before parent tables (foreign keys)
         tables_to_clear = [
             'hero_gto_mistakes',      # FK to raw_hands
@@ -3913,43 +3911,74 @@ async def clear_database(
             'claude_conversations',
         ]
 
-        for table in tables_to_clear:
+        # First, check which tables actually exist
+        existing_tables = []
+        try:
+            result = db.execute(text("""
+                SELECT table_name FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+            """))
+            existing_table_names = {row[0] for row in result.fetchall()}
+            existing_tables = [t for t in tables_to_clear if t in existing_table_names]
+        except Exception as e:
+            logger.warning(f"Could not query existing tables: {e}")
+            db.rollback()
+            existing_tables = tables_to_clear  # Assume all exist
+
+        # Count records before deletion (only for existing tables)
+        counts_before = {}
+        for table in existing_tables:
             try:
                 result = db.execute(text(f'SELECT COUNT(*) FROM {table}'))
                 counts_before[table] = result.scalar()
-            except:
+            except Exception as e:
+                logger.warning(f"Could not count {table}: {e}")
+                db.rollback()  # Critical: rollback failed transaction
                 counts_before[table] = 0
 
         # Get preserved counts
-        gto_scenarios = db.execute(text('SELECT COUNT(*) FROM gto_scenarios')).scalar()
-        gto_frequencies = db.execute(text('SELECT COUNT(*) FROM gto_frequencies')).scalar()
+        try:
+            gto_scenarios = db.execute(text('SELECT COUNT(*) FROM gto_scenarios')).scalar() or 0
+        except:
+            db.rollback()
+            gto_scenarios = 0
+
+        try:
+            gto_frequencies = db.execute(text('SELECT COUNT(*) FROM gto_frequencies')).scalar() or 0
+        except:
+            db.rollback()
+            gto_frequencies = 0
 
         logger.warning("Starting database reset operation (preserving GTO data)")
 
-        # Use TRUNCATE CASCADE to handle all foreign key dependencies automatically
-        # This is faster and handles circular/complex FK relationships
-        tables_str = ', '.join(tables_to_clear)
-        try:
-            db.execute(text(f'TRUNCATE TABLE {tables_str} CASCADE'))
-            db.commit()
-        except Exception as e:
-            db.rollback()
-            logger.error(f"TRUNCATE failed: {e}, trying individual deletes...")
-            # Fallback: delete with CASCADE on each table
-            for table in tables_to_clear:
+        # Clear tables one by one with proper error handling
+        cleared_tables = []
+        for table in existing_tables:
+            try:
+                db.execute(text(f'TRUNCATE TABLE {table} CASCADE'))
+                db.commit()
+                cleared_tables.append(table)
+                logger.info(f"Cleared table: {table}")
+            except Exception as e:
+                db.rollback()
+                # Try DELETE as fallback (slower but works with some restrictions)
                 try:
-                    db.execute(text(f'TRUNCATE TABLE {table} CASCADE'))
+                    db.execute(text(f'DELETE FROM {table}'))
+                    db.commit()
+                    cleared_tables.append(table)
+                    logger.info(f"Deleted from table: {table}")
                 except Exception as e2:
+                    db.rollback()
                     logger.warning(f"Could not clear {table}: {e2}")
-            db.commit()
 
         total_deleted = sum(counts_before.values())
-        logger.warning(f"Database reset complete: {total_deleted} total rows deleted, GTO data preserved")
+        logger.warning(f"Database reset complete: {total_deleted} total rows deleted from {len(cleared_tables)} tables, GTO data preserved")
 
         return {
             "message": "Database reset successfully (GTO data preserved)",
             "deleted": counts_before,
             "total_deleted": total_deleted,
+            "tables_cleared": cleared_tables,
             "preserved": {
                 "gto_scenarios": gto_scenarios,
                 "gto_frequencies": gto_frequencies
@@ -3959,6 +3988,8 @@ async def clear_database(
     except Exception as e:
         db.rollback()
         logger.error(f"Error resetting database: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error resetting database: {str(e)}"
@@ -4002,13 +4033,23 @@ async def reset_preview(db: Session = Depends(get_db)):
         for table, description in tables_to_delete:
             try:
                 count = db.execute(text(f'SELECT COUNT(*) FROM {table}')).scalar()
-                to_delete[table] = count
-            except:
+                to_delete[table] = count or 0
+            except Exception as e:
+                db.rollback()  # Critical: rollback failed transaction
                 to_delete[table] = 0
 
         # Tables to preserve
-        gto_scenarios = db.execute(text('SELECT COUNT(*) FROM gto_scenarios')).scalar()
-        gto_frequencies = db.execute(text('SELECT COUNT(*) FROM gto_frequencies')).scalar()
+        try:
+            gto_scenarios = db.execute(text('SELECT COUNT(*) FROM gto_scenarios')).scalar() or 0
+        except:
+            db.rollback()
+            gto_scenarios = 0
+
+        try:
+            gto_frequencies = db.execute(text('SELECT COUNT(*) FROM gto_frequencies')).scalar() or 0
+        except:
+            db.rollback()
+            gto_frequencies = 0
 
         return {
             "to_delete": to_delete,
@@ -4019,6 +4060,7 @@ async def reset_preview(db: Session = Depends(get_db)):
         }
 
     except Exception as e:
+        db.rollback()
         logger.error(f"Error getting reset preview: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
