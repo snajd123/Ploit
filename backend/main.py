@@ -320,22 +320,19 @@ async def upload_hand_history(
 
 
 # Email import webhook for SendGrid Inbound Parse
-from fastapi import Form
+from fastapi import Form, Request
+import email
+from email import policy
+from email.parser import BytesParser
 
 @app.post(
     "/api/import/email",
-    response_model=UploadResponse,
-    status_code=status.HTTP_201_CREATED,
     tags=["Upload"],
     summary="Import hand history from email (SendGrid webhook)",
     description="Webhook endpoint for SendGrid Inbound Parse to import hand histories from forwarded emails"
 )
 async def import_from_email(
-    text: str = Form(default="", description="Plain text body of the email"),
-    html: str = Form(default="", description="HTML body of the email"),
-    subject: str = Form(default="", description="Email subject"),
-    sender: str = Form(default="", alias="from", description="Sender email address"),
-    to: str = Form(default="", description="Recipient email address"),
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """
@@ -349,14 +346,63 @@ async def import_from_email(
     start_time = time.time()
 
     try:
-        # Use text body preferably, fall back to html
-        content = text if text.strip() else html
+        # Get form data from request
+        form_data = await request.form()
 
-        if not content.strip():
-            logger.warning(f"Empty email received from {sender}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email body is empty"
+        # Log all received fields for debugging
+        logger.info(f"Email webhook received fields: {list(form_data.keys())}")
+
+        # Extract fields - SendGrid uses these field names
+        text = form_data.get("text", "")
+        html = form_data.get("html", "")
+        subject = form_data.get("subject", "")
+        sender = form_data.get("from", "")
+        email_raw = form_data.get("email", "")  # Raw MIME message if enabled
+
+        logger.info(f"Email from: {sender}, subject: {subject}")
+        logger.info(f"Text length: {len(str(text))}, HTML length: {len(str(html))}, Raw length: {len(str(email_raw))}")
+
+        # Try to get content from various sources
+        content = ""
+
+        # Option 1: Plain text body
+        if text and str(text).strip():
+            content = str(text)
+            logger.info("Using plain text body")
+
+        # Option 2: HTML body
+        elif html and str(html).strip():
+            content = str(html)
+            logger.info("Using HTML body")
+
+        # Option 3: Parse raw MIME message
+        elif email_raw and str(email_raw).strip():
+            logger.info("Parsing raw MIME message")
+            try:
+                msg = email.message_from_string(str(email_raw), policy=policy.default)
+                # Get the body
+                if msg.is_multipart():
+                    for part in msg.walk():
+                        content_type = part.get_content_type()
+                        if content_type == "text/plain":
+                            content = part.get_content()
+                            break
+                else:
+                    content = msg.get_content()
+            except Exception as e:
+                logger.error(f"Error parsing MIME message: {e}")
+
+        # Option 4: Check for attachments
+        attachments = form_data.get("attachments", "")
+        if not content and attachments:
+            logger.info(f"Checking attachments: {attachments}")
+
+        if not content or not content.strip():
+            logger.warning(f"Empty email received from {sender}. Fields: {list(form_data.keys())}")
+            # Return 200 OK to prevent SendGrid retries, but log the issue
+            return JSONResponse(
+                status_code=200,
+                content={"detail": "Email body is empty", "received_fields": list(form_data.keys())}
             )
 
         logger.info(f"Processing email import from {sender}, subject: {subject[:50]}")
