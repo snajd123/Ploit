@@ -209,9 +209,10 @@ def build_priority_leaks_from_gto_analysis(gto_data: Dict[str, Any]) -> List[Dic
     # 2. Defense vs opens
     for r in gto_data.get('defense_vs_open', []):
         pos = r.get('position', '')
-        sample = r.get('total_opportunities', 0)
+        total_sample = r.get('total_opportunities', 0)
 
-        # Fold action
+        # Fold action - use action-specific count if available
+        fold_count = r.get('fold_count', total_sample)
         fold_dev = r.get('fold_diff', 0)
         fold_severity = get_leak_severity(fold_dev)
         fold_scenario = {
@@ -219,21 +220,23 @@ def build_priority_leaks_from_gto_analysis(gto_data: Dict[str, Any]) -> List[Dic
             'category': 'defense',
             'position': pos,
             'action': 'fold',
-            'display_name': f"{pos} Defense - Fold%",
+            'display_name': f"Fold in {pos}",
             'overall_value': r.get('player_fold', 0),
-            'overall_sample': sample,
+            'overall_sample': fold_count,  # Action-specific count
+            'total_opportunities': total_sample,  # Keep total for context
             'overall_deviation': fold_dev,
             'gto_value': r.get('gto_fold', 0),
             'is_leak': fold_severity != 'none',
             'leak_severity': fold_severity,
             'leak_direction': 'too_high' if fold_dev > 8 else 'too_low' if fold_dev < -8 else None,
-            'confidence_level': get_confidence_level(sample, 'defense'),
+            'confidence_level': get_confidence_level(total_sample, 'defense'),
             'ev_weight': get_leak_weight(f"defense_{pos}_fold"),
         }
         fold_scenario['priority_score'] = calculate_priority_score(fold_scenario)
         scenarios.append(fold_scenario)
 
-        # Call action
+        # Call action - use action-specific count if available
+        call_count = r.get('call_count', total_sample)
         call_dev = r.get('call_diff', 0)
         call_severity = get_leak_severity(call_dev)
         call_scenario = {
@@ -241,21 +244,23 @@ def build_priority_leaks_from_gto_analysis(gto_data: Dict[str, Any]) -> List[Dic
             'category': 'defense',
             'position': pos,
             'action': 'call',
-            'display_name': f"{pos} Defense - Call%",
+            'display_name': f"Call in {pos}",
             'overall_value': r.get('player_call', 0),
-            'overall_sample': sample,
+            'overall_sample': call_count,  # Action-specific count
+            'total_opportunities': total_sample,  # Keep total for context
             'overall_deviation': call_dev,
             'gto_value': r.get('gto_call', 0),
             'is_leak': call_severity != 'none',
             'leak_severity': call_severity,
             'leak_direction': 'too_high' if call_dev > 8 else 'too_low' if call_dev < -8 else None,
-            'confidence_level': get_confidence_level(sample, 'defense'),
+            'confidence_level': get_confidence_level(total_sample, 'defense'),
             'ev_weight': get_leak_weight(f"defense_{pos}_call"),
         }
         call_scenario['priority_score'] = calculate_priority_score(call_scenario)
         scenarios.append(call_scenario)
 
-        # 3-bet action
+        # 3-bet action - use action-specific count if available
+        threebet_count = r.get('3bet_count', total_sample)
         threebet_dev = r.get('raise_diff', 0)
         threebet_severity = get_leak_severity(threebet_dev)
         threebet_scenario = {
@@ -263,15 +268,16 @@ def build_priority_leaks_from_gto_analysis(gto_data: Dict[str, Any]) -> List[Dic
             'category': 'defense',
             'position': pos,
             'action': '3bet',
-            'display_name': f"{pos} Defense - 3-Bet%",
+            'display_name': f"3-Bet in {pos}",
             'overall_value': r.get('player_3bet', 0),
-            'overall_sample': sample,
+            'overall_sample': threebet_count,  # Action-specific count
+            'total_opportunities': total_sample,  # Keep total for context
             'overall_deviation': threebet_dev,
             'gto_value': r.get('gto_3bet', 0),
             'is_leak': threebet_severity != 'none',
             'leak_severity': threebet_severity,
             'leak_direction': 'too_high' if threebet_dev > 8 else 'too_low' if threebet_dev < -8 else None,
-            'confidence_level': get_confidence_level(sample, 'defense'),
+            'confidence_level': get_confidence_level(total_sample, 'defense'),
             'ev_weight': get_leak_weight(f"defense_{pos}_3bet"),
         }
         threebet_scenario['priority_score'] = calculate_priority_score(threebet_scenario)
@@ -280,9 +286,10 @@ def build_priority_leaks_from_gto_analysis(gto_data: Dict[str, Any]) -> List[Dic
     # 3. Facing 3-bet
     for r in gto_data.get('facing_3bet', []):
         pos = r.get('position', '')
-        sample = r.get('times_opened', 0)
+        total_sample = r.get('times_opened', 0)
 
-        # Fold action
+        # Fold action - use action-specific count if available
+        fold_count = r.get('fold_count', total_sample)
         fold_dev = r.get('fold_diff', 0)
         fold_severity = get_leak_severity(fold_dev)
         fold_scenario = {
@@ -290,21 +297,23 @@ def build_priority_leaks_from_gto_analysis(gto_data: Dict[str, Any]) -> List[Dic
             'category': 'facing_3bet',
             'position': pos,
             'action': 'fold',
-            'display_name': f"{pos} vs 3-Bet - Fold%",
+            'display_name': f"Fold to 3-Bet in {pos}",
             'overall_value': r.get('player_fold', 0),
-            'overall_sample': sample,
+            'overall_sample': fold_count,  # Action-specific count
+            'total_opportunities': total_sample,
             'overall_deviation': fold_dev,
             'gto_value': r.get('gto_fold', 0),
             'is_leak': fold_severity != 'none',
             'leak_severity': fold_severity,
             'leak_direction': 'too_high' if fold_dev > 8 else 'too_low' if fold_dev < -8 else None,
-            'confidence_level': get_confidence_level(sample, 'facing_3bet'),
+            'confidence_level': get_confidence_level(total_sample, 'facing_3bet'),
             'ev_weight': get_leak_weight(f"facing_3bet_{pos}_fold"),
         }
         fold_scenario['priority_score'] = calculate_priority_score(fold_scenario)
         scenarios.append(fold_scenario)
 
-        # Call action
+        # Call action - use action-specific count if available
+        call_count = r.get('call_count', total_sample)
         call_dev = r.get('call_diff', 0)
         call_severity = get_leak_severity(call_dev)
         call_scenario = {
@@ -312,21 +321,23 @@ def build_priority_leaks_from_gto_analysis(gto_data: Dict[str, Any]) -> List[Dic
             'category': 'facing_3bet',
             'position': pos,
             'action': 'call',
-            'display_name': f"{pos} vs 3-Bet - Call%",
+            'display_name': f"Call 3-Bet in {pos}",
             'overall_value': r.get('player_call', 0),
-            'overall_sample': sample,
+            'overall_sample': call_count,  # Action-specific count
+            'total_opportunities': total_sample,
             'overall_deviation': call_dev,
             'gto_value': r.get('gto_call', 0),
             'is_leak': call_severity != 'none',
             'leak_severity': call_severity,
             'leak_direction': 'too_high' if call_dev > 8 else 'too_low' if call_dev < -8 else None,
-            'confidence_level': get_confidence_level(sample, 'facing_3bet'),
+            'confidence_level': get_confidence_level(total_sample, 'facing_3bet'),
             'ev_weight': get_leak_weight(f"facing_3bet_{pos}_call"),
         }
         call_scenario['priority_score'] = calculate_priority_score(call_scenario)
         scenarios.append(call_scenario)
 
-        # 4-bet action
+        # 4-bet action - use action-specific count if available
+        fourbet_count = r.get('4bet_count', total_sample)
         fourbet_dev = r.get('4bet_diff', 0)
         fourbet_severity = get_leak_severity(fourbet_dev)
         fourbet_scenario = {
@@ -334,15 +345,16 @@ def build_priority_leaks_from_gto_analysis(gto_data: Dict[str, Any]) -> List[Dic
             'category': 'facing_3bet',
             'position': pos,
             'action': '4bet',
-            'display_name': f"{pos} vs 3-Bet - 4-Bet%",
+            'display_name': f"4-Bet in {pos}",
             'overall_value': r.get('player_4bet', 0),
-            'overall_sample': sample,
+            'overall_sample': fourbet_count,  # Action-specific count
+            'total_opportunities': total_sample,
             'overall_deviation': fourbet_dev,
             'gto_value': r.get('gto_4bet', 0),
             'is_leak': fourbet_severity != 'none',
             'leak_severity': fourbet_severity,
             'leak_direction': 'too_high' if fourbet_dev > 8 else 'too_low' if fourbet_dev < -8 else None,
-            'confidence_level': get_confidence_level(sample, 'facing_3bet'),
+            'confidence_level': get_confidence_level(total_sample, 'facing_3bet'),
             'ev_weight': get_leak_weight(f"facing_3bet_{pos}_4bet"),
         }
         fourbet_scenario['priority_score'] = calculate_priority_score(fourbet_scenario)

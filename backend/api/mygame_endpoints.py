@@ -322,6 +322,10 @@ def get_mygame_gto_analysis(db: Session = Depends(get_db)):
         defense_vs_open.append({
             'position': pos,
             'total_opportunities': row['faced_open'],  # Match frontend expectation
+            # Action-specific counts for accurate hand counts in priority leaks
+            'fold_count': row['folded'],
+            'call_count': row['called'],
+            '3bet_count': row['three_bets'],
             'player_fold': round(fold_freq, 1),
             'player_call': round(call_freq, 1),
             'player_3bet': round(threebet_freq, 1),
@@ -388,6 +392,10 @@ def get_mygame_gto_analysis(db: Session = Depends(get_db)):
         facing_3bet.append({
             'position': pos,
             'times_opened': row['faced_3bet'],  # Match frontend expectation
+            # Action-specific counts for accurate hand counts in priority leaks
+            'fold_count': row['folded'],
+            'call_count': row['called'],
+            '4bet_count': row['four_bet'],
             'player_fold': round(fold, 1),
             'player_call': round(call, 1),
             'player_4bet': round(four_bet, 1),
