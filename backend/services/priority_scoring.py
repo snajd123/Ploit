@@ -9,12 +9,14 @@ import math
 from typing import Dict, Any, List
 
 # Sample thresholds by scenario type (per poker professor recommendations)
+# Updated for statistical significance - original values were too aggressive
+# With 20 samples, cannot reliably distinguish 20% RFI from 30% RFI
 # Aligned with PlayerProfile.tsx SAMPLE_THRESHOLDS
 SAMPLE_THRESHOLDS = {
-    'opening': {'min_display': 20, 'confident': 50, 'very_confident': 100},
-    'defense': {'min_display': 25, 'confident': 60, 'very_confident': 120},
-    'facing_3bet': {'min_display': 20, 'confident': 50, 'very_confident': 100},
-    'facing_4bet': {'min_display': 25, 'confident': 60, 'very_confident': 120},
+    'opening': {'min_display': 50, 'confident': 100, 'very_confident': 200},
+    'defense': {'min_display': 50, 'confident': 100, 'very_confident': 200},
+    'facing_3bet': {'min_display': 40, 'confident': 80, 'very_confident': 150},
+    'facing_4bet': {'min_display': 50, 'confident': 100, 'very_confident': 200},
 }
 
 # Leak weights by position and scenario (based on EV impact)

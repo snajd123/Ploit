@@ -141,21 +141,23 @@ def calculate_stat_confidence(
 
 
 # Minimum sample sizes for reliable stats (based on achieving <15% CI width)
-# These are calculated to achieve "moderate" reliability at 50% frequency
+# Updated per poker theory analysis - original values were too aggressive
+# For 95% CI with +/-5% precision at 50% frequency, need ~385 observations
+# Rarer events (3bet ~7%, 4bet ~2.5%) need proportionally more total hands
 MINIMUM_SAMPLES = {
     # Preflop stats (high frequency)
-    "vpip": 50,
-    "pfr": 50,
-    "limp": 100,
+    "vpip": 100,      # Was 50 - need more for reliable assessment
+    "pfr": 100,       # Was 50 - need more for reliable assessment
+    "limp": 150,      # Was 100
 
-    # 3-bet stats (medium frequency)
-    "three_bet": 150,
-    "fold_to_three_bet": 80,
-    "four_bet": 200,
+    # 3-bet stats (medium frequency ~7%)
+    "three_bet": 300,          # Was 150 - 3bet is ~7% frequency, needs more hands
+    "fold_to_three_bet": 150,  # Was 80 - need more facing-3bet opportunities
+    "four_bet": 500,           # Was 200 - 4bet is ~2.5%, very rare action
 
     # Steal stats
-    "steal_attempt": 100,
-    "fold_to_steal": 80,
+    "steal_attempt": 150,   # Was 100
+    "fold_to_steal": 120,   # Was 80
 
     # Postflop stats (situation dependent)
     "cbet_flop": 100,
