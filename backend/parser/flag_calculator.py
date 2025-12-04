@@ -146,6 +146,10 @@ class FlagCalculator:
         faced_raise = any(a.facing_bet for a in voluntary_actions)
         flags.faced_raise = faced_raise
 
+        # Pot unopened: True if all players before hero folded (no limps, no raises)
+        # This is the correct condition for RFI (Raise First In) opportunities
+        flags.pot_unopened = self._is_pot_unopened_for_player(player_name)
+
         # Track who opened (first raiser position) for position-specific defense
         first_raiser_name, first_raiser_pos = self._identify_first_raiser()
         if faced_raise and first_raiser_pos:
@@ -616,3 +620,50 @@ class FlagCalculator:
                 players_before.add(action.player_name)
 
         return len(players_before)
+
+    def _is_pot_unopened_for_player(self, player_name: str) -> bool:
+        """
+        Check if the pot was unopened when action reached this player.
+
+        Pot is unopened if all players before this player either:
+        - Posted blinds (mandatory)
+        - Folded
+
+        Any limp or raise by a player before this player means pot is NOT unopened.
+
+        Returns:
+            True if pot was unopened (RFI opportunity), False otherwise
+        """
+        preflop_actions = [a for a in self.hand.actions if a.street == Street.PREFLOP]
+
+        # Find the index of this player's first voluntary action
+        player_first_action_idx = None
+        for i, action in enumerate(preflop_actions):
+            if action.player_name == player_name and action.action_type not in [
+                ActionType.POST_SB, ActionType.POST_BB, ActionType.POST_ANTE
+            ]:
+                player_first_action_idx = i
+                break
+
+        if player_first_action_idx is None:
+            # Player had no voluntary actions (maybe sat out or only posted blind)
+            return False
+
+        # Check all actions before this player's first voluntary action
+        for action in preflop_actions[:player_first_action_idx]:
+            # Skip blind posts and antes - these are mandatory
+            if action.action_type in [ActionType.POST_SB, ActionType.POST_BB, ActionType.POST_ANTE]:
+                continue
+
+            # Skip folds - these don't affect pot being "unopened"
+            if action.action_type == ActionType.FOLD:
+                continue
+
+            # Any call, bet, or raise means pot is not unopened
+            # A call without facing a bet is a limp
+            # A bet or raise is an open
+            if action.action_type in [ActionType.CALL, ActionType.BET, ActionType.RAISE]:
+                return False
+
+        # All previous players either posted blinds or folded
+        return True

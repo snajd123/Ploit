@@ -117,6 +117,7 @@ class PlayerHandSummaryFlags:
     pfr: bool = False
     limp: bool = False
     faced_raise: bool = False
+    pot_unopened: bool = False  # True if all players before hero folded (no limps, no raises)
     three_bet_opportunity: bool = False
     faced_three_bet: bool = False
     folded_to_three_bet: bool = False

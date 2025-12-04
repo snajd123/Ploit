@@ -14,8 +14,34 @@ from ..services.session_detector import SessionDetector
 from ..services.hero_gto_analyzer import HeroGTOAnalyzer
 from ..services.opponent_analyzer import OpponentAnalyzer
 from ..services.hero_detection import get_hero_nicknames
+import re
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
+
+
+def _extract_bb_from_stakes(stake_str: str) -> float:
+    """Extract big blind value from stake string.
+
+    Examples:
+        "NL10" -> 0.10
+        "NL100" -> 1.00
+        "$0.05/$0.10" -> 0.10
+        "0.02/0.05" -> 0.05
+    """
+    if not stake_str:
+        return 0.02  # Default
+
+    # Try NL format first (e.g., "NL10" -> 0.10, "NL100" -> 1.00)
+    nl_match = re.match(r'NL(\d+)', stake_str, re.IGNORECASE)
+    if nl_match:
+        return float(nl_match.group(1)) / 100
+
+    # Try slash format (e.g., "$0.05/$0.10" or "0.02/0.05")
+    slash_match = re.search(r'[\$]?([\d.]+)\s*/\s*[\$]?([\d.]+)', stake_str)
+    if slash_match:
+        return float(slash_match.group(2))
+
+    return 0.02  # Default
 
 
 class SessionResponse(BaseModel):
@@ -535,17 +561,18 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
     gto_opening = {row[0]: float(row[1]) if row[1] else 0 for row in gto_opening_result}
 
     # Get overall player opening frequencies (across ALL hero nicknames)
+    # pot_unopened = true means all players before hero folded (RFI opportunity)
     overall_opening_result = db.execute(text("""
         SELECT
             position,
-            COUNT(*) FILTER (WHERE faced_raise = false) as opportunities,
-            COUNT(*) FILTER (WHERE pfr = true AND faced_raise = false) as opened
+            COUNT(*) FILTER (WHERE pot_unopened = true) as opportunities,
+            COUNT(*) FILTER (WHERE pfr = true AND pot_unopened = true) as opened
         FROM player_hand_summary
         WHERE player_name = ANY(:hero_names)
         AND position IS NOT NULL
         AND position NOT IN ('BB')
         GROUP BY position
-        HAVING COUNT(*) FILTER (WHERE faced_raise = false) >= 10
+        HAVING COUNT(*) FILTER (WHERE pot_unopened = true) >= 10
     """), {"hero_names": hero_names_list})
     overall_opening = {row[0]: {
         "sample": row[1],
@@ -556,8 +583,8 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
     session_opening_result = db.execute(text("""
         SELECT
             position,
-            COUNT(*) FILTER (WHERE faced_raise = false) as opportunities,
-            COUNT(*) FILTER (WHERE pfr = true AND faced_raise = false) as opened
+            COUNT(*) FILTER (WHERE pot_unopened = true) as opportunities,
+            COUNT(*) FILTER (WHERE pfr = true AND pot_unopened = true) as opened
         FROM player_hand_summary
         WHERE player_name = :player_name
         AND session_id = :session_id
@@ -1046,12 +1073,12 @@ def get_session_scenario_values(db: Session, session_id: int, player_name: str) 
     """Get scenario values for a single session (for trend data)"""
     scenarios = {}
 
-    # Opening (RFI) by position
+    # Opening (RFI) by position - pot_unopened means true RFI opportunity
     opening_result = db.execute(text("""
         SELECT
             position,
-            COUNT(*) FILTER (WHERE faced_raise = false) as opportunities,
-            COUNT(*) FILTER (WHERE pfr = true AND faced_raise = false) as opened
+            COUNT(*) FILTER (WHERE pot_unopened = true) as opportunities,
+            COUNT(*) FILTER (WHERE pfr = true AND pot_unopened = true) as opened
         FROM player_hand_summary
         WHERE player_name = :player_name
         AND session_id = :session_id
@@ -1228,14 +1255,14 @@ def get_session_group_analysis(request: GroupAnalysisRequest, db: Session = Depe
             gto_f3bet[pos] = {}
         gto_f3bet[pos][action] = freq
 
-    # Get overall player frequencies (lifetime)
+    # Get overall player frequencies (lifetime) - pot_unopened = true for RFI
     overall_opening_result = db.execute(text("""
         SELECT position,
-            COUNT(*) FILTER (WHERE faced_raise = false) as opportunities,
-            COUNT(*) FILTER (WHERE pfr = true AND faced_raise = false) as opened
+            COUNT(*) FILTER (WHERE pot_unopened = true) as opportunities,
+            COUNT(*) FILTER (WHERE pfr = true AND pot_unopened = true) as opened
         FROM player_hand_summary
         WHERE player_name = :player_name AND position IS NOT NULL AND position NOT IN ('BB')
-        GROUP BY position HAVING COUNT(*) FILTER (WHERE faced_raise = false) >= 10
+        GROUP BY position HAVING COUNT(*) FILTER (WHERE pot_unopened = true) >= 10
     """), {"player_name": player_name})
     overall_opening = {row[0]: {"sample": row[1], "value": (row[2] / row[1] * 100) if row[1] > 0 else 0}
                        for row in overall_opening_result}
@@ -1243,8 +1270,8 @@ def get_session_group_analysis(request: GroupAnalysisRequest, db: Session = Depe
     # Get combined sessions frequencies (using IN clause)
     combined_opening_result = db.execute(text("""
         SELECT position,
-            COUNT(*) FILTER (WHERE faced_raise = false) as opportunities,
-            COUNT(*) FILTER (WHERE pfr = true AND faced_raise = false) as opened
+            COUNT(*) FILTER (WHERE pot_unopened = true) as opportunities,
+            COUNT(*) FILTER (WHERE pfr = true AND pot_unopened = true) as opened
         FROM player_hand_summary
         WHERE player_name = :player_name AND session_id = ANY(:session_ids)
         AND position IS NOT NULL AND position NOT IN ('BB')
@@ -1572,13 +1599,10 @@ def get_session_positional_pl(session_id: int, db: Session = Depends(get_db)):
     Returns bb won/lost by position with hand counts and bb/100 rates.
     Includes comparison to expected values (BTN should be most profitable).
     """
-    # Get session info including big blind size
+    # Get session info
     session_query = text("""
-        SELECT s.session_id, s.player_name, s.total_hands, s.table_stakes,
-               rh.big_blind
+        SELECT s.session_id, s.player_name, s.total_hands, s.table_stakes
         FROM sessions s
-        LEFT JOIN player_hand_summary phs ON phs.session_id = s.session_id
-        LEFT JOIN raw_hands rh ON rh.hand_id = phs.hand_id
         WHERE s.session_id = :session_id
         LIMIT 1
     """)
@@ -1589,7 +1613,9 @@ def get_session_positional_pl(session_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Session not found")
 
     player_name = session._mapping["player_name"]
-    big_blind = float(session._mapping["big_blind"] or 0.02)  # Default to 0.02
+    table_stakes = session._mapping.get("table_stakes", "")
+    # Extract big blind from table_stakes (e.g., "NL10" -> 0.10, "$0.05/$0.10" -> 0.10)
+    big_blind = _extract_bb_from_stakes(table_stakes)
 
     # Get positional P/L data
     pl_query = text("""
@@ -1993,10 +2019,8 @@ def get_aggregate_positional_pl(request: MultiSessionRequest, db: Session = Depe
 
     # Get session info
     session_query = text("""
-        SELECT s.player_name, rh.big_blind
+        SELECT s.player_name, s.table_stakes
         FROM sessions s
-        LEFT JOIN player_hand_summary phs ON phs.session_id = s.session_id
-        LEFT JOIN raw_hands rh ON rh.hand_id = phs.hand_id
         WHERE s.session_id = ANY(:session_ids)
         LIMIT 1
     """)
@@ -2007,7 +2031,8 @@ def get_aggregate_positional_pl(request: MultiSessionRequest, db: Session = Depe
         raise HTTPException(status_code=404, detail="No sessions found")
 
     player_name = session._mapping["player_name"]
-    big_blind = float(session._mapping["big_blind"] or 0.02)
+    table_stakes = session._mapping.get("table_stakes", "")
+    big_blind = _extract_bb_from_stakes(table_stakes)
 
     # Get aggregated positional P/L
     pl_query = text("""

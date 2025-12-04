@@ -2139,20 +2139,23 @@ async def get_player_gto_analysis(
         # ============================================
         # 1. OPENING RANGES (RFI - Raise First In)
         # ============================================
+        # RFI (Raise First In) calculation
+        # pot_unopened = true means all players before hero folded (no limps, no raises)
+        # This is the correct condition for RFI opportunities
         opening_query = text("""
             SELECT
                 position,
                 COUNT(*) as total_hands,
-                COUNT(*) FILTER (WHERE faced_raise = false) as rfi_opportunities,
-                COUNT(*) FILTER (WHERE pfr = true AND faced_raise = false) as opened,
-                ROUND(100.0 * COUNT(*) FILTER (WHERE pfr = true AND faced_raise = false) /
-                    NULLIF(COUNT(*) FILTER (WHERE faced_raise = false), 0), 1) as player_open_pct
+                COUNT(*) FILTER (WHERE pot_unopened = true) as rfi_opportunities,
+                COUNT(*) FILTER (WHERE pfr = true AND pot_unopened = true) as opened,
+                ROUND(100.0 * COUNT(*) FILTER (WHERE pfr = true AND pot_unopened = true) /
+                    NULLIF(COUNT(*) FILTER (WHERE pot_unopened = true), 0), 1) as player_open_pct
             FROM player_hand_summary
             WHERE player_name = :player_name
             AND position IS NOT NULL
             AND position NOT IN ('BB')
             GROUP BY position
-            HAVING COUNT(*) FILTER (WHERE faced_raise = false) >= 10
+            HAVING COUNT(*) FILTER (WHERE pot_unopened = true) >= 10
             ORDER BY CASE position
                 WHEN 'UTG' THEN 1 WHEN 'MP' THEN 2 WHEN 'HJ' THEN 3
                 WHEN 'CO' THEN 4 WHEN 'BTN' THEN 5 WHEN 'SB' THEN 6

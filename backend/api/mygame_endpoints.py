@@ -220,20 +220,23 @@ def get_mygame_gto_analysis(db: Session = Depends(get_db)):
     # ============================================
     # 1. OPENING RANGES (RFI - Raise First In)
     # ============================================
+    # RFI (Raise First In) calculation
+    # pot_unopened = true means all players before hero folded (no limps, no raises)
+    # This is the correct condition for RFI opportunities
     opening_query = text("""
         SELECT
             position,
             COUNT(*) as total_hands,
-            COUNT(*) FILTER (WHERE faced_raise = false) as rfi_opportunities,
-            COUNT(*) FILTER (WHERE pfr = true AND faced_raise = false) as opened,
-            ROUND(100.0 * COUNT(*) FILTER (WHERE pfr = true AND faced_raise = false) /
-                NULLIF(COUNT(*) FILTER (WHERE faced_raise = false), 0), 1) as player_open_pct
+            COUNT(*) FILTER (WHERE pot_unopened = true) as rfi_opportunities,
+            COUNT(*) FILTER (WHERE pfr = true AND pot_unopened = true) as opened,
+            ROUND(100.0 * COUNT(*) FILTER (WHERE pfr = true AND pot_unopened = true) /
+                NULLIF(COUNT(*) FILTER (WHERE pot_unopened = true), 0), 1) as player_open_pct
         FROM player_hand_summary
         WHERE LOWER(player_name) = ANY(:nicknames)
         AND position IS NOT NULL
         AND position NOT IN ('BB')
         GROUP BY position
-        HAVING COUNT(*) FILTER (WHERE faced_raise = false) >= 10
+        HAVING COUNT(*) FILTER (WHERE pot_unopened = true) >= 10
         ORDER BY CASE position
             WHEN 'UTG' THEN 1 WHEN 'MP' THEN 2 WHEN 'HJ' THEN 3
             WHEN 'CO' THEN 4 WHEN 'BTN' THEN 5 WHEN 'SB' THEN 6
@@ -551,18 +554,19 @@ def get_mygame_gto_analysis(db: Session = Depends(get_db)):
     # ============================================
     # 5. STEAL ATTEMPTS
     # ============================================
+    # Steals are RFI from late positions - use pot_unopened for accurate opportunity counting
     steal_query = text("""
         SELECT
             position,
-            COUNT(*) FILTER (WHERE faced_raise = false) as opportunities,
+            COUNT(*) FILTER (WHERE pot_unopened = true) as opportunities,
             COUNT(*) FILTER (WHERE steal_attempt = true) as steals,
             ROUND(100.0 * COUNT(*) FILTER (WHERE steal_attempt = true) /
-                NULLIF(COUNT(*) FILTER (WHERE faced_raise = false), 0), 1) as steal_pct
+                NULLIF(COUNT(*) FILTER (WHERE pot_unopened = true), 0), 1) as steal_pct
         FROM player_hand_summary
         WHERE LOWER(player_name) = ANY(:nicknames)
         AND position IN ('CO', 'BTN', 'SB')
         GROUP BY position
-        HAVING COUNT(*) FILTER (WHERE faced_raise = false) >= 10
+        HAVING COUNT(*) FILTER (WHERE pot_unopened = true) >= 10
         ORDER BY position
     """)
     steal_result = db.execute(steal_query, {"nicknames": hero_nicknames})
@@ -899,7 +903,7 @@ def get_mygame_scenario_hands(
             ) ha ON ha.hand_id = phs.hand_id AND ha.player_name = phs.player_name
             WHERE LOWER(phs.player_name) = ANY(:nicknames)
             AND phs.position = :position
-            AND phs.faced_raise = false
+            AND phs.pot_unopened = true
             ORDER BY rh.timestamp DESC
             LIMIT :limit
         """)
