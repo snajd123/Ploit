@@ -131,42 +131,53 @@ const MyGame = () => {
   // Calculate category stats for GTO summary cards
   const calculateCategoryStats = (category: GTOCategoryKey, data: GTOAnalysisResponse) => {
     let totalHands = 0;
-    let weightedDeviation = 0;
+    let totalWeightedDeviation = 0;
     let leakCount = 0;
 
-    const processRow = (row: any, diffKey: string, handsKey: string) => {
+    // Process multiple diff keys but only count hands once per row
+    const processRowMultiAction = (row: any, diffKeys: string[], handsKey: string) => {
+      const hands = row[handsKey] || 0;
+      totalHands += hands;
+
+      // Average deviation across actions, weighted by hands
+      let rowDeviation = 0;
+      diffKeys.forEach(diffKey => {
+        const diff = row[diffKey] ?? 0;
+        const absDiff = Math.abs(diff);
+        rowDeviation += absDiff;
+        if (absDiff > 10) leakCount++;
+      });
+      totalWeightedDeviation += (rowDeviation / diffKeys.length) * hands;
+    };
+
+    const processRowSingleAction = (row: any, diffKey: string, handsKey: string) => {
       const hands = row[handsKey] || 0;
       const diff = row[diffKey] ?? 0;
       const absDiff = Math.abs(diff);
 
       totalHands += hands;
-      weightedDeviation += absDiff * hands;
+      totalWeightedDeviation += absDiff * hands;
       if (absDiff > 10) leakCount++;
     };
 
     if (category === 'opening') {
-      data.opening_ranges?.forEach(row => processRow(row, 'open_diff', 'opportunities'));
-      data.steal_attempts?.forEach(row => processRow(row, 'steal_diff', 'opportunities'));
+      data.opening_ranges?.forEach(row => processRowSingleAction(row, 'open_diff', 'opportunities'));
+      data.steal_attempts?.forEach(row => processRowSingleAction(row, 'steal_diff', 'opportunities'));
     } else if (category === 'defense') {
       data.defense_vs_open?.forEach(row => {
-        processRow(row, 'fold_diff', 'total_opportunities');
-        processRow(row, 'call_diff', 'total_opportunities');
-        processRow(row, 'raise_diff', 'total_opportunities');
+        processRowMultiAction(row, ['fold_diff', 'call_diff', 'raise_diff'], 'total_opportunities');
       });
     } else if (category === 'facing_3bet') {
       data.facing_3bet?.forEach(row => {
-        processRow(row, 'fold_diff', 'times_opened');
-        processRow(row, 'call_diff', 'times_opened');
-        processRow(row, '4bet_diff', 'times_opened');
+        processRowMultiAction(row, ['fold_diff', 'call_diff', '4bet_diff'], 'times_opened');
       });
     } else if (category === 'facing_4bet') {
       data.facing_4bet_reference?.forEach(row => {
-        processRow(row, 'fold_diff', 'sample_size');
-        processRow(row, 'call_diff', 'sample_size');
+        processRowMultiAction(row, ['fold_diff', 'call_diff'], 'sample_size');
       });
     }
 
-    const avgDeviation = totalHands > 0 ? weightedDeviation / totalHands : 0;
+    const avgDeviation = totalHands > 0 ? totalWeightedDeviation / totalHands : 0;
     return { avgDeviation, totalHands, leakCount };
   };
 
