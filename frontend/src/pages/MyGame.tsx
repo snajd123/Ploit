@@ -6,7 +6,7 @@ import {
   Settings, AlertCircle, BarChart2, Shield, AlertTriangle
 } from 'lucide-react';
 import { api } from '../services/api';
-import { GTOCategoryDetailView } from '../components/gto';
+import { GTOCategoryDetailView, GTOCategorySummaryCard } from '../components/gto';
 import LeakAnalysisView from '../components/LeakAnalysisView';
 import ScenarioHandsModal, { type ScenarioSelection } from '../components/ScenarioHandsModal';
 import { mapPriorityLeaksToGTOLeaks } from '../utils/gtoUtils';
@@ -129,57 +129,150 @@ const MyGame = () => {
     return `${sign}${value.toFixed(1)} BB`;
   };
 
-  // Calculate category stats for GTO summary cards
-  const calculateCategoryStats = (category: GTOCategoryKey, data: GTOAnalysisResponse) => {
+  // Enhanced category stats with detailed info for GTOCategorySummaryCard
+  interface CategoryStats {
+    avgDeviation: number;
+    totalHands: number;
+    leakCount: number;
+    worstLeak: { position: string; deviation: number } | null;
+    tendency: string;
+    positionStats: { position: string; deviation: number; status: 'good' | 'warning' | 'bad' }[];
+    actionBreakdown: { playerFold: number; gtoFold: number; playerRaise: number; gtoRaise: number } | null;
+  }
+
+  // Calculate aggregate stats for a category
+  const calculateCategoryStats = (category: GTOCategoryKey, data: GTOAnalysisResponse): CategoryStats => {
     let totalHands = 0;
-    let totalWeightedDeviation = 0;
+    let weightedDeviation = 0;
     let leakCount = 0;
+    let worstLeak: { position: string; deviation: number } | null = null;
+    const positionStats: { position: string; deviation: number; status: 'good' | 'warning' | 'bad' }[] = [];
+    let actionBreakdown: CategoryStats['actionBreakdown'] = null;
 
-    // Process multiple diff keys but only count hands once per row
-    const processRowMultiAction = (row: any, diffKeys: string[], handsKey: string) => {
-      const hands = row[handsKey] || 0;
-      totalHands += hands;
+    // Track tendency (positive = too aggressive/loose, negative = too passive/tight)
+    let tendencySum = 0;
 
-      // Average deviation across actions, weighted by hands
-      let rowDeviation = 0;
-      diffKeys.forEach(diffKey => {
-        const diff = row[diffKey] ?? 0;
-        const absDiff = Math.abs(diff);
-        rowDeviation += absDiff;
-        if (absDiff > 10) leakCount++;
-      });
-      totalWeightedDeviation += (rowDeviation / diffKeys.length) * hands;
-    };
-
-    const processRowSingleAction = (row: any, diffKey: string, handsKey: string) => {
+    const processRow = (row: any, diffKey: string, handsKey: string, isRaiseDiff: boolean = false) => {
       const hands = row[handsKey] || 0;
       const diff = row[diffKey] ?? 0;
       const absDiff = Math.abs(diff);
 
       totalHands += hands;
-      totalWeightedDeviation += absDiff * hands;
+      weightedDeviation += absDiff * hands;
       if (absDiff > 10) leakCount++;
+
+      // Track worst leak
+      if (!worstLeak || absDiff > Math.abs(worstLeak.deviation)) {
+        worstLeak = { position: row.position + (row.vs_position ? ` vs ${row.vs_position}` : ''), deviation: diff };
+      }
+
+      // Track tendency (raise diffs: positive = too aggressive, fold diffs: positive = too passive)
+      if (isRaiseDiff) {
+        tendencySum += diff; // positive = raises more than GTO
+      } else {
+        tendencySum -= diff; // positive fold diff means folding more = passive
+      }
     };
 
-    if (category === 'opening') {
-      data.opening_ranges?.forEach(row => processRowSingleAction(row, 'open_diff', 'opportunities'));
-      data.steal_attempts?.forEach(row => processRowSingleAction(row, 'steal_diff', 'opportunities'));
-    } else if (category === 'defense') {
-      data.defense_vs_open?.forEach(row => {
-        processRowMultiAction(row, ['fold_diff', 'call_diff', 'raise_diff'], 'total_opportunities');
-      });
-    } else if (category === 'facing_3bet') {
-      data.facing_3bet?.forEach(row => {
-        processRowMultiAction(row, ['fold_diff', 'call_diff', '4bet_diff'], 'times_opened');
-      });
-    } else if (category === 'facing_4bet') {
-      data.facing_4bet_reference?.forEach(row => {
-        processRowMultiAction(row, ['fold_diff', 'call_diff'], 'sample_size');
-      });
+    const addPositionStat = (position: string, deviation: number) => {
+      const absDev = Math.abs(deviation);
+      const status = absDev < 5 ? 'good' : absDev < 10 ? 'warning' : 'bad';
+      positionStats.push({ position, deviation, status });
+    };
+
+    switch (category) {
+      case 'opening':
+        data.opening_ranges?.forEach(row => {
+          processRow(row, 'frequency_diff', 'total_hands', true);
+          addPositionStat(row.position, row.frequency_diff);
+        });
+        // Calculate tendency for opening
+        if (data.opening_ranges?.length) {
+          const avgDiff = data.opening_ranges.reduce((sum, r) => sum + (r.frequency_diff || 0), 0) / data.opening_ranges.length;
+          tendencySum = avgDiff;
+        }
+        break;
+
+      case 'defense':
+        let totalPlayerFold = 0, totalGtoFold = 0, totalPlayer3bet = 0, totalGto3bet = 0, defenseCount = 0;
+        data.defense_vs_open?.forEach(row => {
+          processRow({ ...row }, 'fold_diff', 'sample_size', false);
+          addPositionStat(row.position, row.fold_diff || 0);
+          totalPlayerFold += row.player_fold || 0;
+          totalGtoFold += row.gto_fold || 0;
+          totalPlayer3bet += row.player_3bet || 0;
+          totalGto3bet += row.gto_3bet || 0;
+          defenseCount++;
+          tendencySum += (row.fold_diff || 0); // positive fold = too passive
+        });
+        if (defenseCount > 0) {
+          actionBreakdown = {
+            playerFold: totalPlayerFold / defenseCount,
+            gtoFold: totalGtoFold / defenseCount,
+            playerRaise: totalPlayer3bet / defenseCount,
+            gtoRaise: totalGto3bet / defenseCount,
+          };
+        }
+        break;
+
+      case 'facing_3bet':
+        let f3PlayerFold = 0, f3GtoFold = 0, f3Player4bet = 0, f3Gto4bet = 0, f3Count = 0;
+        data.facing_3bet?.forEach(row => {
+          processRow(row, 'fold_diff', 'sample_size', false);
+          addPositionStat(row.position, row.fold_diff || 0);
+          f3PlayerFold += row.player_fold || 0;
+          f3GtoFold += row.gto_fold || 0;
+          f3Player4bet += row.player_4bet || 0;
+          f3Gto4bet += row.gto_4bet || 0;
+          f3Count++;
+          tendencySum += (row.fold_diff || 0);
+        });
+        if (f3Count > 0) {
+          actionBreakdown = {
+            playerFold: f3PlayerFold / f3Count,
+            gtoFold: f3GtoFold / f3Count,
+            playerRaise: f3Player4bet / f3Count,
+            gtoRaise: f3Gto4bet / f3Count,
+          };
+        }
+        break;
+
+      case 'facing_4bet':
+        let f4PlayerFold = 0, f4GtoFold = 0, f4Player5bet = 0, f4Gto5bet = 0, f4Count = 0;
+        data.facing_4bet_reference?.forEach(row => {
+          processRow(row, 'fold_diff', 'sample_size', false);
+          addPositionStat(row.position + (row.vs_position ? ` vs ${row.vs_position}` : ''), row.fold_diff || 0);
+          f4PlayerFold += row.player_fold || 0;
+          f4GtoFold += row.gto_fold || 0;
+          f4Player5bet += row.player_5bet || 0;
+          f4Gto5bet += row.gto_5bet || 0;
+          f4Count++;
+          tendencySum += (row.fold_diff || 0);
+        });
+        if (f4Count > 0) {
+          actionBreakdown = {
+            playerFold: f4PlayerFold / f4Count,
+            gtoFold: f4GtoFold / f4Count,
+            playerRaise: f4Player5bet / f4Count,
+            gtoRaise: f4Gto5bet / f4Count,
+          };
+        }
+        break;
     }
 
-    const avgDeviation = totalHands > 0 ? totalWeightedDeviation / totalHands : 0;
-    return { avgDeviation, totalHands, leakCount };
+    const avgDeviation = totalHands > 0 ? weightedDeviation / totalHands : 0;
+
+    // Determine tendency label
+    let tendency = 'Balanced';
+    if (category === 'opening') {
+      if (tendencySum > 5) tendency = 'Too Loose';
+      else if (tendencySum < -5) tendency = 'Too Tight';
+    } else {
+      if (tendencySum > 5) tendency = 'Too Passive';
+      else if (tendencySum < -5) tendency = 'Too Aggressive';
+    }
+
+    return { avgDeviation, totalHands, leakCount, worstLeak, tendency, positionStats, actionBreakdown };
   };
 
   // Handle scenario click - show hands modal inline
@@ -448,44 +541,28 @@ const MyGame = () => {
 
               {/* Category Summary Cards */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {(Object.keys(GTO_CATEGORY_CONFIG) as GTOCategoryKey[]).map(category => {
-                  const config = GTO_CATEGORY_CONFIG[category];
-                  const stats = calculateCategoryStats(category, gtoData);
-                  const Icon = config.icon;
+                {(Object.keys(GTO_CATEGORY_CONFIG) as GTOCategoryKey[]).map(categoryKey => {
+                  const config = GTO_CATEGORY_CONFIG[categoryKey];
+                  const stats = calculateCategoryStats(categoryKey, gtoData);
+
+                  // Skip categories with no data
+                  if (stats.totalHands === 0) return null;
 
                   return (
-                    <button
-                      key={category}
-                      onClick={() => setSelectedCategory(category)}
-                      className="card hover:border-indigo-300 transition-colors text-left"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-start space-x-3">
-                          <div className="p-2 bg-gray-100 rounded-lg">
-                            <Icon className="text-gray-600" size={20} />
-                          </div>
-                          <div>
-                            <h3 className="font-semibold text-gray-900">{config.title}</h3>
-                            <p className="text-sm text-gray-500">{config.subtitle}</p>
-                            <div className="mt-2 flex items-center space-x-4 text-sm">
-                              <span className="text-gray-600">{stats.totalHands} hands</span>
-                              {stats.leakCount > 0 && (
-                                <span className="text-orange-600">{stats.leakCount} leaks</span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <div className={`text-lg font-bold ${
-                            stats.avgDeviation < 5 ? 'text-green-600' :
-                            stats.avgDeviation < 10 ? 'text-yellow-600' : 'text-red-600'
-                          }`}>
-                            {stats.avgDeviation.toFixed(1)}%
-                          </div>
-                          <div className="text-xs text-gray-500">avg deviation</div>
-                        </div>
-                      </div>
-                    </button>
+                    <GTOCategorySummaryCard
+                      key={categoryKey}
+                      title={config.title}
+                      subtitle={config.subtitle}
+                      icon={config.icon}
+                      avgDeviation={stats.avgDeviation}
+                      totalHands={stats.totalHands}
+                      leakCount={stats.leakCount}
+                      worstLeak={stats.worstLeak}
+                      tendency={stats.tendency}
+                      positionStats={stats.positionStats}
+                      actionBreakdown={stats.actionBreakdown}
+                      onClick={() => setSelectedCategory(categoryKey)}
+                    />
                   );
                 })}
               </div>
