@@ -418,6 +418,7 @@ export interface ScenarioHandsResponse {
   vs_position: string | null;
   gto_frequencies: Record<string, number>;
   total_hands: number;
+  total_hands_evaluated?: number;  // Total hands before filtering (for showing "X mistakes in Y hands")
   hands_with_hole_cards: number;
   // Enhanced summary
   summary: ScenarioHandsSummary;
