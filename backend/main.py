@@ -1928,10 +1928,10 @@ async def get_player_gto_analysis(
             severity = 'minor' if abs(diff) < 5 else 'moderate' if abs(diff) < 15 else 'major'
             opening_ranges.append({
                 'position': pos,
-                'total_hands': row['rfi_opportunities'],
+                'opportunities': row['rfi_opportunities'],
                 'player_frequency': player_freq,
                 'gto_frequency': round(gto_freq, 1),
-                'frequency_diff': round(diff, 1),
+                'open_diff': round(diff, 1),
                 'leak_severity': severity,
                 'leak_type': 'Too Loose' if diff > 5 else 'Too Tight' if diff < -5 else None
             })
@@ -1994,7 +1994,7 @@ async def get_player_gto_analysis(
 
             defense_vs_open.append({
                 'position': pos,
-                'sample_size': row['faced_open'],
+                'total_opportunities': row['faced_open'],
                 'player_fold': round(fold_freq, 1),
                 'player_call': round(call_freq, 1),
                 'player_3bet': round(threebet_freq, 1),
@@ -2003,7 +2003,7 @@ async def get_player_gto_analysis(
                 'gto_3bet': round(gto_3bet, 1),
                 'fold_diff': round(fold_freq - gto_fold, 1),
                 'call_diff': round(call_freq - gto_call, 1),
-                '3bet_diff': round(threebet_freq - gto_3bet, 1),
+                'raise_diff': round(threebet_freq - gto_3bet, 1),
             })
 
         # ============================================
@@ -2062,7 +2062,7 @@ async def get_player_gto_analysis(
 
             facing_3bet.append({
                 'position': pos,
-                'sample_size': row['faced_3bet'],
+                'times_opened': row['faced_3bet'],
                 'player_fold': round(fold, 1),
                 'player_call': round(call, 1),
                 'player_4bet': round(four_bet, 1),
@@ -2259,10 +2259,10 @@ async def get_player_gto_analysis(
 
             steal_attempts.append({
                 'position': pos,
-                'sample_size': row['opportunities'],
+                'opportunities': row['opportunities'],
                 'player_frequency': round(player_freq, 1),
                 'gto_frequency': round(gto_freq, 1),
-                'frequency_diff': round(diff, 1),
+                'steal_diff': round(diff, 1),
                 'leak_type': 'Over-stealing' if diff > 10 else 'Under-stealing' if diff < -10 else None
             })
 
@@ -2428,10 +2428,10 @@ async def get_player_gto_analysis(
         all_deviations = []
 
         for r in opening_ranges:
-            all_deviations.append(abs(r['frequency_diff']))
+            all_deviations.append(abs(r['open_diff']))
         for r in defense_vs_open:
             all_deviations.append(abs(r['call_diff']))
-            all_deviations.append(abs(r['3bet_diff']))
+            all_deviations.append(abs(r['raise_diff']))
         for r in facing_3bet:
             all_deviations.append(abs(r['fold_diff']))
             all_deviations.append(abs(r['call_diff']))
@@ -2439,7 +2439,7 @@ async def get_player_gto_analysis(
             all_deviations.append(abs(r['fold_diff']))
             all_deviations.append(abs(r['3bet_diff']))
         for r in steal_attempts:
-            all_deviations.append(abs(r['frequency_diff']))
+            all_deviations.append(abs(r['steal_diff']))
 
         avg_deviation = sum(all_deviations) / len(all_deviations) if all_deviations else 0
         adherence_score = max(0, 100 - avg_deviation * 1.5)

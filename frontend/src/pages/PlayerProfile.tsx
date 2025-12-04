@@ -111,12 +111,12 @@ const calculateCategoryStats = (category: GTOCategoryKey, data: GTOAnalysisRespo
   switch (category) {
     case 'opening':
       data.opening_ranges?.forEach(row => {
-        processRow(row, 'frequency_diff', 'total_hands', true);
-        addPositionStat(row.position, row.frequency_diff);
+        processRow(row, 'open_diff', 'opportunities', true);
+        addPositionStat(row.position, row.open_diff);
       });
       // Calculate tendency for opening
       if (data.opening_ranges?.length) {
-        const avgDiff = data.opening_ranges.reduce((sum, r) => sum + (r.frequency_diff || 0), 0) / data.opening_ranges.length;
+        const avgDiff = data.opening_ranges.reduce((sum, r) => sum + (r.open_diff || 0), 0) / data.opening_ranges.length;
         tendencySum = avgDiff;
       }
       break;
@@ -124,8 +124,8 @@ const calculateCategoryStats = (category: GTOCategoryKey, data: GTOAnalysisRespo
     case 'defense':
       let totalPlayerFold = 0, totalGtoFold = 0, totalPlayer3bet = 0, totalGto3bet = 0, defenseCount = 0;
       data.defense_vs_open?.forEach(row => {
-        const maxDiff = Math.max(Math.abs(row.fold_diff || 0), Math.abs(row.call_diff || 0), Math.abs(row['3bet_diff'] || 0));
-        processRow({ ...row, maxDiff }, 'fold_diff', 'sample_size', false);
+        const maxDiff = Math.max(Math.abs(row.fold_diff || 0), Math.abs(row.call_diff || 0), Math.abs(row.raise_diff || 0));
+        processRow({ ...row, maxDiff }, 'fold_diff', 'total_opportunities', false);
         addPositionStat(row.position, row.fold_diff || 0);
         totalPlayerFold += row.player_fold || 0;
         totalGtoFold += row.gto_fold || 0;
@@ -147,7 +147,7 @@ const calculateCategoryStats = (category: GTOCategoryKey, data: GTOAnalysisRespo
     case 'facing_3bet':
       let f3PlayerFold = 0, f3GtoFold = 0, f3Player4bet = 0, f3Gto4bet = 0, f3Count = 0;
       data.facing_3bet?.forEach(row => {
-        processRow(row, 'fold_diff', 'sample_size', false);
+        processRow(row, 'fold_diff', 'times_opened', false);
         addPositionStat(row.position, row.fold_diff || 0);
         f3PlayerFold += row.player_fold || 0;
         f3GtoFold += row.gto_fold || 0;
@@ -265,9 +265,9 @@ const extractGTOPositionalLeaks = (data: GTOAnalysisResponse): LeakExtractionRes
 
   // Opening ranges (RFI)
   data.opening_ranges?.forEach(row => {
-    const diff = row.frequency_diff ?? 0;
+    const diff = row.open_diff ?? 0;
     const absDiff = Math.abs(diff);
-    const sampleSize = row.total_hands ?? 0;
+    const sampleSize = row.opportunities ?? 0;
     const confidence = getConfidenceTier(sampleSize, SAMPLE_THRESHOLDS.rfi);
 
     if (absDiff > MODERATE_THRESHOLD && confidence) {
@@ -287,14 +287,14 @@ const extractGTOPositionalLeaks = (data: GTOAnalysisResponse): LeakExtractionRes
 
   // Defense vs open (aggregate by position)
   data.defense_vs_open?.forEach(row => {
-    const sampleSize = row.sample_size ?? 0;
+    const sampleSize = row.total_opportunities ?? 0;
     const confidence = getConfidenceTier(sampleSize, SAMPLE_THRESHOLDS.defense);
     if (!confidence) return; // Skip if insufficient sample
 
     const diffs = [
       { action: 'Fold', diff: row.fold_diff, player: row.player_fold, gto: row.gto_fold },
       { action: 'Call', diff: row.call_diff, player: row.player_call, gto: row.gto_call },
-      { action: '3-Bet', diff: row['3bet_diff'], player: row.player_3bet, gto: row.gto_3bet },
+      { action: '3-Bet', diff: row.raise_diff, player: row.player_3bet, gto: row.gto_3bet },
     ];
     diffs.forEach(({ action, diff, player, gto }) => {
       if (diff != null && Math.abs(diff) > MODERATE_THRESHOLD) {
@@ -344,7 +344,7 @@ const extractGTOPositionalLeaks = (data: GTOAnalysisResponse): LeakExtractionRes
 
   // Facing 3-bet (aggregate)
   data.facing_3bet?.forEach(row => {
-    const sampleSize = row.sample_size ?? 0;
+    const sampleSize = row.times_opened ?? 0;
     const confidence = getConfidenceTier(sampleSize, SAMPLE_THRESHOLDS.facing_3bet);
     if (!confidence) {
       // Track insufficient samples for this category
