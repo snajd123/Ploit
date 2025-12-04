@@ -265,14 +265,17 @@ const LeakProgressView: React.FC<LeakProgressViewProps> = ({ sessionId }) => {
     fetchData();
   }, [sessionId]);
 
-  // Group scenarios by category
+  // Group scenarios by category, filtering out those with 0 observations
   const groupedScenarios = useMemo(() => {
     if (!data) return { opening: [], defense: [], facing_3bet: [] };
 
+    // Only show scenarios that have session data (session_sample > 0)
+    const hasSessionData = (s: ScenarioComparison) => s.session_sample > 0;
+
     return {
-      opening: data.scenarios.filter(s => s.category === 'opening'),
-      defense: data.scenarios.filter(s => s.category === 'defense'),
-      facing_3bet: data.scenarios.filter(s => s.category === 'facing_3bet')
+      opening: data.scenarios.filter(s => s.category === 'opening' && hasSessionData(s)),
+      defense: data.scenarios.filter(s => s.category === 'defense' && hasSessionData(s)),
+      facing_3bet: data.scenarios.filter(s => s.category === 'facing_3bet' && hasSessionData(s))
     };
   }, [data]);
 
