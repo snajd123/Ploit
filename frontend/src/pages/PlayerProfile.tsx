@@ -14,6 +14,7 @@ import LeakAnalysisView from '../components/LeakAnalysisView';
 import { GTOCategorySummaryCard, GTOCategoryDetailView } from '../components/gto';
 import ScenarioHandsModal, { type ScenarioSelection } from '../components/ScenarioHandsModal';
 import { STAT_DEFINITIONS, getStatDefinitionsWithGTO, GTOOptimalRange } from '../config/statDefinitions';
+import { mapPriorityLeaksToGTOLeaks } from '../utils/gtoUtils';
 import type { GTOAnalysisResponse } from '../types';
 
 // GTO navigation state
@@ -111,12 +112,12 @@ const calculateCategoryStats = (category: GTOCategoryKey, data: GTOAnalysisRespo
   switch (category) {
     case 'opening':
       data.opening_ranges?.forEach(row => {
-        processRow(row, 'open_diff', 'opportunities', true);
-        addPositionStat(row.position, row.open_diff);
+        processRow(row, 'frequency_diff', 'total_hands', true);
+        addPositionStat(row.position, row.frequency_diff);
       });
       // Calculate tendency for opening
       if (data.opening_ranges?.length) {
-        const avgDiff = data.opening_ranges.reduce((sum, r) => sum + (r.open_diff || 0), 0) / data.opening_ranges.length;
+        const avgDiff = data.opening_ranges.reduce((sum, r) => sum + (r.frequency_diff || 0), 0) / data.opening_ranges.length;
         tendencySum = avgDiff;
       }
       break;
@@ -124,8 +125,8 @@ const calculateCategoryStats = (category: GTOCategoryKey, data: GTOAnalysisRespo
     case 'defense':
       let totalPlayerFold = 0, totalGtoFold = 0, totalPlayer3bet = 0, totalGto3bet = 0, defenseCount = 0;
       data.defense_vs_open?.forEach(row => {
-        const maxDiff = Math.max(Math.abs(row.fold_diff || 0), Math.abs(row.call_diff || 0), Math.abs(row.raise_diff || 0));
-        processRow({ ...row, maxDiff }, 'fold_diff', 'total_opportunities', false);
+        const maxDiff = Math.max(Math.abs(row.fold_diff || 0), Math.abs(row.call_diff || 0), Math.abs(row['3bet_diff'] || 0));
+        processRow({ ...row, maxDiff }, 'fold_diff', 'sample_size', false);
         addPositionStat(row.position, row.fold_diff || 0);
         totalPlayerFold += row.player_fold || 0;
         totalGtoFold += row.gto_fold || 0;
@@ -147,7 +148,7 @@ const calculateCategoryStats = (category: GTOCategoryKey, data: GTOAnalysisRespo
     case 'facing_3bet':
       let f3PlayerFold = 0, f3GtoFold = 0, f3Player4bet = 0, f3Gto4bet = 0, f3Count = 0;
       data.facing_3bet?.forEach(row => {
-        processRow(row, 'fold_diff', 'times_opened', false);
+        processRow(row, 'fold_diff', 'sample_size', false);
         addPositionStat(row.position, row.fold_diff || 0);
         f3PlayerFold += row.player_fold || 0;
         f3GtoFold += row.gto_fold || 0;
@@ -202,283 +203,6 @@ const calculateCategoryStats = (category: GTOCategoryKey, data: GTOAnalysisRespo
   }
 
   return { avgDeviation, totalHands, leakCount, worstLeak, tendency, positionStats, actionBreakdown };
-};
-
-// Interface for GTO positional leaks
-interface GTOPositionalLeak {
-  category: string;
-  position: string;
-  vsPosition?: string;
-  action: string;
-  playerValue: number;
-  gtoValue: number;
-  deviation: number;
-  severity: 'moderate' | 'major';
-  sampleSize: number;
-  confidence: 'low' | 'moderate' | 'high';
-}
-
-// Sample size thresholds for statistical significance (based on poker statistics research)
-// Key insight: Never show deviations with < minimum opportunities - that's just noise
-const SAMPLE_THRESHOLDS = {
-  // RFI by position: need 20+ opps to show, 50 for moderate, 100 for high confidence
-  rfi: { min: 20, moderate: 50, high: 100 },
-  // Defense vs opens (aggregate by position): 25+ min, 60 moderate, 120 high
-  defense: { min: 25, moderate: 60, high: 120 },
-  // Defense position matchups (e.g., BB vs CO): need more samples due to specificity
-  defense_matchup: { min: 50, moderate: 120, high: 240 },
-  // Facing 3-bet (aggregate): 20+ for fold stats, 30+ for 4-bet stats
-  facing_3bet: { min: 20, moderate: 50, high: 100 },
-  // Facing 3-bet matchups: need more samples
-  facing_3bet_matchup: { min: 40, moderate: 100, high: 200 },
-  // Facing 4-bet: rare scenario, need decent sample
-  facing_4bet: { min: 25, moderate: 60, high: 120 },
-};
-
-// Get confidence tier based on sample size
-const getConfidenceTier = (sampleSize: number, thresholds: { min: number; moderate: number; high: number }): 'low' | 'moderate' | 'high' | null => {
-  if (sampleSize < thresholds.min) return null; // Don't show at all
-  if (sampleSize < thresholds.moderate) return 'low';
-  if (sampleSize < thresholds.high) return 'moderate';
-  return 'high';
-};
-
-// Result type for leak extraction
-interface LeakExtractionResult {
-  leaks: GTOPositionalLeak[];
-  insufficientSamples: {
-    category: string;
-    count: number;
-    minRequired: number;
-  }[];
-}
-
-// Extract positional leaks from GTO analysis data (with statistical significance filtering)
-const extractGTOPositionalLeaks = (data: GTOAnalysisResponse): LeakExtractionResult => {
-  const leaks: GTOPositionalLeak[] = [];
-  const insufficientSamples: LeakExtractionResult['insufficientSamples'] = [];
-  const MAJOR_THRESHOLD = 15;
-  const MODERATE_THRESHOLD = 8;
-
-  // Track insufficient samples by category
-  const insufficientByCategory: Record<string, number> = {};
-
-  // Opening ranges (RFI)
-  data.opening_ranges?.forEach(row => {
-    const diff = row.open_diff ?? 0;
-    const absDiff = Math.abs(diff);
-    const sampleSize = row.opportunities ?? 0;
-    const confidence = getConfidenceTier(sampleSize, SAMPLE_THRESHOLDS.rfi);
-
-    if (absDiff > MODERATE_THRESHOLD && confidence) {
-      leaks.push({
-        category: 'Opening',
-        position: row.position,
-        action: 'RFI',
-        playerValue: row.player_frequency ?? 0,
-        gtoValue: row.gto_frequency ?? 0,
-        deviation: diff,
-        severity: absDiff > MAJOR_THRESHOLD ? 'major' : 'moderate',
-        sampleSize,
-        confidence,
-      });
-    }
-  });
-
-  // Defense vs open (aggregate by position)
-  data.defense_vs_open?.forEach(row => {
-    const sampleSize = row.total_opportunities ?? 0;
-    const confidence = getConfidenceTier(sampleSize, SAMPLE_THRESHOLDS.defense);
-    if (!confidence) return; // Skip if insufficient sample
-
-    const diffs = [
-      { action: 'Fold', diff: row.fold_diff, player: row.player_fold, gto: row.gto_fold },
-      { action: 'Call', diff: row.call_diff, player: row.player_call, gto: row.gto_call },
-      { action: '3-Bet', diff: row.raise_diff, player: row.player_3bet, gto: row.gto_3bet },
-    ];
-    diffs.forEach(({ action, diff, player, gto }) => {
-      if (diff != null && Math.abs(diff) > MODERATE_THRESHOLD) {
-        leaks.push({
-          category: 'Defense',
-          position: row.position,
-          action,
-          playerValue: player ?? 0,
-          gtoValue: gto ?? 0,
-          deviation: diff,
-          severity: Math.abs(diff) > MAJOR_THRESHOLD ? 'major' : 'moderate',
-          sampleSize,
-          confidence,
-        });
-      }
-    });
-  });
-
-  // Position matchups (defense) - requires higher sample sizes
-  data.position_matchups?.forEach(row => {
-    const sampleSize = row.sample_size ?? 0;
-    const confidence = getConfidenceTier(sampleSize, SAMPLE_THRESHOLDS.defense_matchup);
-    if (!confidence) return; // Skip if insufficient sample
-
-    const diffs = [
-      { action: 'Fold', diff: row.fold_diff, player: row.player_fold, gto: row.gto_fold },
-      { action: 'Call', diff: row.call_diff, player: row.player_call, gto: row.gto_call },
-      { action: '3-Bet', diff: row['3bet_diff'], player: row.player_3bet, gto: row.gto_3bet },
-    ];
-    diffs.forEach(({ action, diff, player, gto }) => {
-      if (diff != null && Math.abs(diff) > MODERATE_THRESHOLD) {
-        leaks.push({
-          category: 'Defense',
-          position: row.position,
-          vsPosition: row.vs_position,
-          action,
-          playerValue: player ?? 0,
-          gtoValue: gto ?? 0,
-          deviation: diff,
-          severity: Math.abs(diff) > MAJOR_THRESHOLD ? 'major' : 'moderate',
-          sampleSize,
-          confidence,
-        });
-      }
-    });
-  });
-
-  // Facing 3-bet (aggregate)
-  data.facing_3bet?.forEach(row => {
-    const sampleSize = row.times_opened ?? 0;
-    const confidence = getConfidenceTier(sampleSize, SAMPLE_THRESHOLDS.facing_3bet);
-    if (!confidence) {
-      // Track insufficient samples for this category
-      insufficientByCategory['Facing 3-Bet'] = (insufficientByCategory['Facing 3-Bet'] || 0) + 1;
-      return;
-    }
-
-    const diffs = [
-      { action: 'Fold', diff: row.fold_diff, player: row.player_fold, gto: row.gto_fold },
-      { action: 'Call', diff: row.call_diff, player: row.player_call, gto: row.gto_call },
-      { action: '4-Bet', diff: row['4bet_diff'], player: row.player_4bet, gto: row.gto_4bet },
-    ];
-    diffs.forEach(({ action, diff, player, gto }) => {
-      if (diff != null && Math.abs(diff) > MODERATE_THRESHOLD) {
-        leaks.push({
-          category: 'Facing 3-Bet',
-          position: row.position,
-          action,
-          playerValue: player ?? 0,
-          gtoValue: gto ?? 0,
-          deviation: diff,
-          severity: Math.abs(diff) > MAJOR_THRESHOLD ? 'major' : 'moderate',
-          sampleSize,
-          confidence,
-        });
-      }
-    });
-  });
-
-  // Facing 3-bet matchups - requires higher sample sizes
-  data.facing_3bet_matchups?.forEach(row => {
-    const sampleSize = row.sample_size ?? 0;
-    const confidence = getConfidenceTier(sampleSize, SAMPLE_THRESHOLDS.facing_3bet_matchup);
-    if (!confidence) return;
-
-    const diffs = [
-      { action: 'Fold', diff: row.fold_diff, player: row.player_fold, gto: row.gto_fold },
-      { action: 'Call', diff: row.call_diff, player: row.player_call, gto: row.gto_call },
-      { action: '4-Bet', diff: row['4bet_diff'], player: row.player_4bet, gto: row.gto_4bet },
-    ];
-    diffs.forEach(({ action, diff, player, gto }) => {
-      if (diff != null && Math.abs(diff) > MODERATE_THRESHOLD) {
-        leaks.push({
-          category: 'Facing 3-Bet',
-          position: row.position,
-          vsPosition: row.vs_position,
-          action,
-          playerValue: player ?? 0,
-          gtoValue: gto ?? 0,
-          deviation: diff,
-          severity: Math.abs(diff) > MAJOR_THRESHOLD ? 'major' : 'moderate',
-          sampleSize,
-          confidence,
-        });
-      }
-    });
-  });
-
-  // Facing 4-bet
-  data.facing_4bet_reference?.forEach(row => {
-    const sampleSize = row.sample_size ?? 0;
-    const confidence = getConfidenceTier(sampleSize, SAMPLE_THRESHOLDS.facing_4bet);
-    if (!confidence) return;
-
-    const diffs = [
-      { action: 'Fold', diff: row.fold_diff, player: row.player_fold, gto: row.gto_fold },
-      { action: 'Call', diff: row.call_diff, player: row.player_call, gto: row.gto_call },
-      { action: '5-Bet', diff: row['5bet_diff'], player: row.player_5bet, gto: row.gto_5bet },
-    ];
-    diffs.forEach(({ action, diff, player, gto }) => {
-      if (diff != null && Math.abs(diff) > MODERATE_THRESHOLD) {
-        leaks.push({
-          category: 'Facing 4-Bet',
-          position: row.position,
-          vsPosition: row.vs_position,
-          action,
-          playerValue: player ?? 0,
-          gtoValue: gto ?? 0,
-          deviation: diff,
-          severity: Math.abs(diff) > MAJOR_THRESHOLD ? 'major' : 'moderate',
-          sampleSize,
-          confidence,
-        });
-      }
-    });
-  });
-
-  // EV weights by position (same as session analysis)
-  const EV_WEIGHTS: Record<string, number> = {
-    // Opening - BTN most frequent
-    'Opening_BTN': 1.5, 'Opening_CO': 1.3, 'Opening_SB': 1.4, 'Opening_MP': 1.1, 'Opening_UTG': 1.0,
-    // Defense - BB highest frequency
-    'Defense_BB': 1.6, 'Defense_SB': 1.2, 'Defense_BTN': 1.0, 'Defense_CO': 0.9, 'Defense_MP': 0.8,
-    // Facing 3-bet
-    'Facing 3-Bet_BTN': 1.4, 'Facing 3-Bet_CO': 1.3, 'Facing 3-Bet_SB': 1.2, 'Facing 3-Bet_MP': 1.0, 'Facing 3-Bet_UTG': 0.9,
-    // Facing 4-bet
-    'Facing 4-Bet_BTN': 1.3, 'Facing 4-Bet_CO': 1.2, 'Facing 4-Bet_SB': 1.1, 'Facing 4-Bet_MP': 1.0, 'Facing 4-Bet_UTG': 0.9,
-  };
-
-  // Calculate priority score (same formula as session analysis)
-  const calculatePriorityScore = (leak: GTOPositionalLeak): number => {
-    const severityScores = { minor: 1, moderate: 2, major: 3 };
-    const confidenceScores = { low: 0.6, moderate: 0.85, high: 1.0 };
-
-    const severityScore = severityScores[leak.severity] || 1;
-    const evWeight = EV_WEIGHTS[`${leak.category}_${leak.position}`] || 1.0;
-    const deviation = Math.abs(leak.deviation);
-    const confidence = confidenceScores[leak.confidence] || 0.5;
-
-    return (severityScore * 10 + deviation * 0.5) * evWeight * confidence;
-  };
-
-  // Sort by priority score (higher = more important to fix)
-  leaks.sort((a, b) => calculatePriorityScore(b) - calculatePriorityScore(a));
-
-  // Build insufficient samples array
-  const categoryThresholds: Record<string, number> = {
-    'Opening': SAMPLE_THRESHOLDS.rfi.min,
-    'Defense': SAMPLE_THRESHOLDS.defense.min,
-    'Facing 3-Bet': SAMPLE_THRESHOLDS.facing_3bet.min,
-    'Facing 4-Bet': SAMPLE_THRESHOLDS.facing_4bet.min,
-  };
-
-  Object.entries(insufficientByCategory).forEach(([category, count]) => {
-    if (count > 0) {
-      insufficientSamples.push({
-        category,
-        count,
-        minRequired: categoryThresholds[category] || 20,
-      });
-    }
-  });
-
-  return { leaks, insufficientSamples };
 };
 
 type TabId = 'overview' | 'gto' | 'leaks' | 'charts';
@@ -585,13 +309,12 @@ const PlayerProfile = () => {
     [statDefinitions]
   );
 
-  // Compute filtered GTO positional leaks (with statistical significance)
-  const filteredGTOLeaks = useMemo(() => {
-    if (!gtoAnalysis) return { all: [], major: [], moderate: [], insufficientSamples: [] };
-    const { leaks: all, insufficientSamples } = extractGTOPositionalLeaks(gtoAnalysis);
-    const major = all.filter(l => l.severity === 'major');
-    const moderate = all.filter(l => l.severity === 'moderate');
-    return { all, major, moderate, insufficientSamples };
+  // Count leaks by severity from priority_leaks (uses same logic as MyGame)
+  const leakCounts = useMemo(() => {
+    if (!gtoAnalysis?.priority_leaks) return { major: 0, moderate: 0 };
+    const major = gtoAnalysis.priority_leaks.filter(l => l.leak_severity === 'major').length;
+    const moderate = gtoAnalysis.priority_leaks.filter(l => l.leak_severity === 'moderate').length;
+    return { major, moderate };
   }, [gtoAnalysis]);
 
   if (isLoading) {
@@ -853,13 +576,13 @@ const PlayerProfile = () => {
                     </div>
                     <div className="bg-white/50 rounded-lg p-3">
                       <div className="text-2xl font-bold text-red-600">
-                        {filteredGTOLeaks.major.length}
+                        {leakCounts.major}
                       </div>
                       <div className="text-xs text-gray-600">Major Leaks</div>
                     </div>
                     <div className="bg-white/50 rounded-lg p-3">
                       <div className="text-2xl font-bold text-yellow-600">
-                        {filteredGTOLeaks.moderate.length}
+                        {leakCounts.moderate}
                       </div>
                       <div className="text-xs text-gray-600">Moderate Leaks</div>
                     </div>
@@ -926,12 +649,12 @@ const PlayerProfile = () => {
         {/* LEAKS TAB */}
         {activeTab === 'leaks' && (
           <LeakAnalysisView
-            gtoLeaks={filteredGTOLeaks.all}
+            gtoLeaks={mapPriorityLeaksToGTOLeaks(gtoAnalysis?.priority_leaks)}
             statLeaks={leakAnalysis?.leaks || []}
             totalHands={gtoAnalysis?.adherence?.total_hands || player.total_hands || 0}
             playerName={playerName}
             onLeakClick={setSelectedScenario}
-            insufficientSamples={filteredGTOLeaks.insufficientSamples}
+            insufficientSamples={[]}
             priorityLeaks={gtoAnalysis?.priority_leaks}
           />
         )}

@@ -72,7 +72,7 @@ interface InsufficientSampleInfo {
 // Priority leak from API (ScenarioComparison format)
 interface PriorityLeak {
   scenario_id: string;
-  category: 'opening' | 'defense' | 'facing_3bet';
+  category: 'opening' | 'defense' | 'facing_3bet' | 'facing_4bet';
   position: string;
   vs_position?: string | null;
   action: string;

@@ -339,24 +339,41 @@ export interface GTOAnalysisResponse {
     '5bet_diff': number | null;
   }>;
   // Priority leaks sorted by unified scoring algorithm
-  priority_leaks?: Array<{
-    scenario_id: string;
-    category: 'opening' | 'defense' | 'facing_3bet';
-    position: string;
-    vs_position?: string | null;
-    action: string;
-    display_name: string;
-    overall_value: number;
-    overall_sample: number;
-    overall_deviation: number;
-    gto_value: number;
-    is_leak: boolean;
-    leak_severity: 'none' | 'minor' | 'moderate' | 'major';
-    leak_direction: string | null;
-    confidence_level: string;
-    ev_weight?: number;
-    priority_score?: number;
-  }>;
+  priority_leaks?: PriorityLeak[];
+}
+
+// Priority leak from backend (used by both MyGame and PlayerProfile)
+export interface PriorityLeak {
+  scenario_id: string;
+  category: 'opening' | 'defense' | 'facing_3bet' | 'facing_4bet';
+  position: string;
+  vs_position?: string | null;
+  action: string;
+  display_name: string;
+  overall_value: number;
+  overall_sample: number;
+  overall_deviation: number;
+  gto_value: number;
+  is_leak: boolean;
+  leak_severity: 'none' | 'minor' | 'moderate' | 'major';
+  leak_direction: string | null;
+  confidence_level: string;
+  ev_weight?: number;
+  priority_score?: number;
+}
+
+// GTO Positional Leak format (used by LeakAnalysisView)
+export interface GTOPositionalLeak {
+  category: string;
+  position: string;
+  vsPosition?: string;
+  action: string;
+  playerValue: number;
+  gtoValue: number;
+  deviation: number;
+  severity: 'moderate' | 'major';
+  sampleSize: number;
+  confidence: 'low' | 'moderate' | 'high';
 }
 
 // Scenario Hands Drill-down Types

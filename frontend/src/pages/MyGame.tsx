@@ -9,6 +9,7 @@ import { api } from '../services/api';
 import { GTOCategoryDetailView } from '../components/gto';
 import LeakAnalysisView from '../components/LeakAnalysisView';
 import ScenarioHandsModal, { type ScenarioSelection } from '../components/ScenarioHandsModal';
+import { mapPriorityLeaksToGTOLeaks } from '../utils/gtoUtils';
 import type { MyGameOverview, HeroSessionResponse, GTOAnalysisResponse } from '../types';
 
 // Tab configuration
@@ -417,30 +418,7 @@ const MyGame = () => {
               {/* Priority Leaks */}
               {gtoData.priority_leaks && gtoData.priority_leaks.length > 0 && (
                 <LeakAnalysisView
-                  gtoLeaks={gtoData.priority_leaks.map(pl => ({
-                    category: pl.category === 'opening' ? 'Opening'
-                      : pl.category === 'defense' ? 'Defense'
-                      : pl.category === 'facing_3bet' ? 'Facing 3-Bet'
-                      : pl.category === 'facing_4bet' ? 'Facing 4-Bet'
-                      : pl.category,
-                    position: pl.position,
-                    vsPosition: pl.vs_position || undefined,
-                    action: pl.action === 'open' ? 'Open'
-                      : pl.action === 'fold' ? 'Fold'
-                      : pl.action === 'call' ? 'Call'
-                      : pl.action === '3bet' ? '3-Bet'
-                      : pl.action === '4bet' ? '4-Bet'
-                      : pl.action === '5bet' ? '5-Bet'
-                      : pl.action,
-                    playerValue: pl.overall_value,
-                    gtoValue: pl.gto_value,
-                    deviation: pl.overall_deviation,
-                    severity: (pl.leak_severity === 'major' ? 'major' : 'moderate') as 'major' | 'moderate',
-                    sampleSize: pl.overall_sample,
-                    confidence: (pl.confidence_level === 'high' ? 'high'
-                      : pl.confidence_level === 'moderate' ? 'moderate'
-                      : 'low') as 'low' | 'moderate' | 'high',
-                  }))}
+                  gtoLeaks={mapPriorityLeaksToGTOLeaks(gtoData.priority_leaks)}
                   statLeaks={[]}
                   totalHands={gtoData.adherence?.total_hands || overview?.total_hands || 0}
                   playerName="Hero"
