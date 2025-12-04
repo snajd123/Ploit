@@ -1128,26 +1128,33 @@ def get_mygame_scenario_hands(
         return hand_combo, tier, cat
 
     # Get per-hand GTO frequencies for actions
+    # Use the correct tables: gto_scenarios + gto_frequencies
     hand_gto_query = text("""
-        SELECT hand_combo, action, gto_freq
-        FROM gto_preflop_ranges
-        WHERE category = :scenario
-        AND position = :position
-        AND (opponent_position = :vs_position OR (:vs_position IS NULL AND opponent_position IS NULL))
+        SELECT gf.hand, gs.action, SUM(gf.frequency * 100) as freq
+        FROM gto_frequencies gf
+        JOIN gto_scenarios gs ON gf.scenario_id = gs.scenario_id
+        WHERE gs.category = :scenario
+        AND gs.position = :position
+        AND (gs.opponent_position = :vs_position OR (:vs_position IS NULL AND gs.opponent_position IS NULL))
+        GROUP BY gf.hand, gs.action
     """)
-    hand_gto_result = db.execute(hand_gto_query, {
-        "scenario": scenario,
-        "position": position,
-        "vs_position": vs_position
-    })
-    hand_gto_freqs = {}
-    for row in hand_gto_result:
-        combo = row[0]
-        action = row[1]
-        freq = float(row[2]) if row[2] else 0
-        if combo not in hand_gto_freqs:
-            hand_gto_freqs[combo] = {}
-        hand_gto_freqs[combo][action] = freq
+    try:
+        hand_gto_result = db.execute(hand_gto_query, {
+            "scenario": scenario,
+            "position": position,
+            "vs_position": vs_position
+        })
+        hand_gto_freqs = {}
+        for row in hand_gto_result:
+            combo = row[0]
+            action = row[1]
+            freq = float(row[2]) if row[2] else 0
+            if combo not in hand_gto_freqs:
+                hand_gto_freqs[combo] = {}
+            hand_gto_freqs[combo][action] = freq
+    except Exception as e:
+        # GTO data may not be available - proceed without it
+        hand_gto_freqs = {}
 
     # Process hands
     hands = []
