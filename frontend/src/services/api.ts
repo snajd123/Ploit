@@ -442,11 +442,13 @@ class ApiClient {
   }
 
   // Get scenario hands aggregated across all hero nicknames
+  // deviation: If provided, shows mistakes (deviation < 0 = under-doing action, show hands where didn't do it)
   async getMyGameScenarioHands(
     scenario: string,
     position: string,
     vsPosition?: string,
     action?: string,
+    deviation?: number,
     limit: number = 1000
   ): Promise<ScenarioHandsResponse> {
     const params = new URLSearchParams({
@@ -459,6 +461,9 @@ class ApiClient {
     }
     if (action) {
       params.append('action', action);
+    }
+    if (deviation !== undefined) {
+      params.append('deviation', deviation.toString());
     }
     const response = await this.client.get<ScenarioHandsResponse>(
       `/api/my-game/scenario-hands?${params}`

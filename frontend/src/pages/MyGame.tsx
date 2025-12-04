@@ -80,13 +80,15 @@ const MyGame = () => {
   });
 
   // Fetch scenario hands for drill-down modal (aggregated across all hero nicknames)
+  // Pass deviation to show mistakes (when deviation < 0, show hands where player DIDN'T do the action but should have)
   const { data: scenarioHandsData, isLoading: scenarioHandsLoading } = useQuery({
     queryKey: ['myGameScenarioHands', selectedScenario],
     queryFn: () => api.getMyGameScenarioHands(
       selectedScenario!.scenario,
       selectedScenario!.position,
       selectedScenario!.vsPosition,
-      selectedScenario!.action
+      selectedScenario!.action,
+      selectedScenario!.deviation
     ),
     enabled: !!selectedScenario,
   });

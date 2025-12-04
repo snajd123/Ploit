@@ -807,12 +807,17 @@ def get_mygame_scenario_hands(
     position: str = Query(..., description="Player's position: UTG, MP, CO, BTN, SB, BB"),
     vs_position: Optional[str] = Query(None, description="Opponent position for matchup scenarios"),
     action: Optional[str] = Query(None, description="Filter by action: fold, call, raise, 3bet, 4bet, 5bet"),
+    deviation: Optional[float] = Query(None, description="Deviation from GTO. If < 0 (under-doing), show hands where player DIDN'T do action (mistakes). If > 0 (over-doing), show hands where player DID the action."),
     limit: int = Query(1000, ge=1, le=5000, description="Max hands to return"),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
     Get scenario hands aggregated across all hero nicknames.
     Returns hands where any hero was in the specified scenario with GTO deviation analysis.
+
+    When deviation is provided:
+    - deviation < 0 (under-doing action): Shows hands where player DIDN'T do the action but should have (mistakes)
+    - deviation > 0 (over-doing action): Shows hands where player DID the action but shouldn't have (mistakes)
     """
     hero_nicknames = list(get_hero_nicknames(db))
 
@@ -1084,6 +1089,9 @@ def get_mygame_scenario_hands(
     rows = result.fetchall()
 
     # Filter by action if specified
+    # When deviation is provided, we want to show MISTAKES:
+    # - deviation < 0 (under-doing action): Show hands where player DIDN'T do the action (but should have)
+    # - deviation > 0 (over-doing action): Show hands where player DID the action (but shouldn't have)
     if action:
         # Normalize action names (e.g., 'raise' -> '3bet' for defense)
         action_lower = action.lower()
@@ -1095,9 +1103,19 @@ def get_mygame_scenario_hands(
             '5bet': ['5bet'],
             'fold': ['fold'],
             'call': ['call'],
+            'open': ['open'],
         }
         valid_actions = action_map.get(action_lower, [action_lower])
-        rows = [row for row in rows if row.player_action.lower() in valid_actions]
+
+        # Determine if we should invert the filter based on deviation
+        if deviation is not None and deviation < 0:
+            # Under-doing the action: Show hands where player DIDN'T do this action (mistakes)
+            # e.g., "Fold in BB: 47% vs 68% GTO" - show hands where player called/raised but should have folded
+            rows = [row for row in rows if row.player_action.lower() not in valid_actions]
+        else:
+            # Over-doing the action OR no deviation: Show hands where player DID this action
+            # e.g., "Fold in BB: 80% vs 68% GTO" - show hands where player folded but shouldn't have
+            rows = [row for row in rows if row.player_action.lower() in valid_actions]
 
     # Hand categorization helper
     def categorize_hand(hole_cards: Optional[str]) -> tuple:

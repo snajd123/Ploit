@@ -61,6 +61,7 @@ interface ScenarioSelection {
   position: string;
   vsPosition?: string;
   action?: string;  // Specific action for the leak (e.g., 'call', 'fold', 'raise')
+  deviation?: number;  // Deviation from GTO - used to show mistakes (negative = under-doing, positive = over-doing)
 }
 
 // Insufficient sample info
@@ -646,6 +647,7 @@ const LeakAnalysisView: React.FC<LeakAnalysisViewProps> = ({
             <div className="space-y-2">
               {priorityFixes.map((fix, idx) => {
                 // Create handler for viewing hands (only for GTO leaks, not stat-based)
+                // Pass deviation so backend can show mistakes (hands where player deviated from GTO)
                 const handleViewHands = !('isStatBased' in fix.leak) && onLeakClick
                   ? (leak: GTOPositionalLeak) => {
                       const scenario = mapCategoryToScenario(leak.category);
@@ -655,6 +657,7 @@ const LeakAnalysisView: React.FC<LeakAnalysisViewProps> = ({
                           position: leak.position,
                           vsPosition: leak.vsPosition,
                           action: leak.action,
+                          deviation: leak.deviation,  // Pass deviation to show mistakes
                         });
                       }
                     }
@@ -735,6 +738,7 @@ const LeakAnalysisView: React.FC<LeakAnalysisViewProps> = ({
                       position: leak.position,
                       vsPosition: leak.vsPosition,
                       action: leak.action,
+                      deviation: leak.deviation,  // Pass deviation to show mistakes
                     })
                   : undefined;
 
