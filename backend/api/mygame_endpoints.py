@@ -1255,8 +1255,10 @@ def get_mygame_scenario_hands(
     summary_suboptimal = 0
     summary_mistakes = 0
     hands_with_hole_cards = 0
+    total_hands_evaluated = 0  # Track total before filtering
 
     for row in rows:
+        total_hands_evaluated += 1
         hole_cards = row.hole_cards
         hand_combo, hand_tier, hand_category = categorize_hand(hole_cards)
 
@@ -1386,7 +1388,8 @@ def get_mygame_scenario_hands(
         'position': position,
         'vs_position': vs_position,
         'hero_nicknames': hero_nicknames,
-        'total_hands': len(hands),
+        'total_hands_evaluated': total_hands_evaluated,  # All hands analyzed before filtering
+        'total_hands': len(hands),  # Hands shown after filtering (mistakes only when deviation provided)
         'hands_with_hole_cards': sum(1 for h in hands if h.get('hole_cards')),
         'gto_frequencies': gto_freqs,
         'summary': {

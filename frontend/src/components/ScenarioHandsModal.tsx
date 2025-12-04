@@ -111,7 +111,9 @@ const ScenarioHandsModal = ({
             </h2>
             {data && (
               <p className="text-blue-100 text-sm mt-1">
-                {data.total_hands} hands analyzed
+                {data.total_hands_evaluated && data.total_hands_evaluated !== data.total_hands
+                  ? `${data.total_hands} mistakes found in ${data.total_hands_evaluated} hands analyzed`
+                  : `${data.total_hands} hands analyzed`}
                 {data.hands_with_hole_cards > 0 && ` - ${data.hands_with_hole_cards} with hole cards`}
               </p>
             )}
