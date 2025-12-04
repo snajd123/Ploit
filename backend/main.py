@@ -413,9 +413,10 @@ async def import_from_email(
 
         if parse_result.total_hands == 0:
             logger.warning(f"No hands found in email from {sender}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No valid hand histories found in email"
+            # Return 200 OK to prevent SendGrid retries
+            return JSONResponse(
+                status_code=200,
+                content={"detail": "No valid hand histories found in email", "hands_parsed": 0}
             )
 
         # Insert hands into database
@@ -460,13 +461,12 @@ async def import_from_email(
             message=f"Successfully imported {insert_result['hands_inserted']} hands from email"
         )
 
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"Error processing email import: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error processing email: {str(e)}"
+        # Return 200 OK to prevent SendGrid retries - we log the error but don't want retries
+        return JSONResponse(
+            status_code=200,
+            content={"detail": f"Error processing email: {str(e)}", "error": True}
         )
 
 
