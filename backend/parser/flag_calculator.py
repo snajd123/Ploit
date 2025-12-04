@@ -529,17 +529,32 @@ class FlagCalculator:
         """
         Calculate profit/loss for the hand.
 
+        The action amounts in PokerStars format are CUMULATIVE per street.
+        For example, if player posts BB €0.04, then raises to €0.22, then raises to €21.29:
+        - The amounts stored are: 0.04, 0.22, 21.29
+        - But actual investment is €21.29 for preflop (the final cumulative amount)
+
+        So we need to take the MAX amount per street, not the sum.
+
         Sets: won_hand, profit_loss
         """
         import re
 
-        # Sum all amounts this player put in
         player_actions = [a for a in self.hand.actions if a.player_name == player_name]
 
-        total_invested = Decimal("0")
+        # Calculate total invested: MAX amount per street (since amounts are cumulative)
+        # Group by street and take the maximum amount per street
+        street_max_amounts = {}
         for action in player_actions:
-            if action.amount > Decimal("0"):
-                total_invested += action.amount
+            if action.amount and action.amount > Decimal("0"):
+                street = action.street
+                if street not in street_max_amounts:
+                    street_max_amounts[street] = action.amount
+                else:
+                    street_max_amounts[street] = max(street_max_amounts[street], action.amount)
+
+        # Sum the max amounts across all streets = total invested
+        total_invested = sum(street_max_amounts.values(), Decimal("0"))
 
         # Check for uncalled bet returned (e.g., "Uncalled bet (€10.12) returned to snajd")
         # This happens when everyone folds to a bet - the unmatched portion is returned
