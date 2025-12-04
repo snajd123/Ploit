@@ -9,10 +9,12 @@ import math
 from typing import Dict, Any, List
 
 # Sample thresholds by scenario type (per poker professor recommendations)
+# Aligned with PlayerProfile.tsx SAMPLE_THRESHOLDS
 SAMPLE_THRESHOLDS = {
-    'opening': {'min_display': 30, 'confident': 75, 'very_confident': 150},
+    'opening': {'min_display': 20, 'confident': 50, 'very_confident': 100},
     'defense': {'min_display': 25, 'confident': 60, 'very_confident': 120},
     'facing_3bet': {'min_display': 20, 'confident': 50, 'very_confident': 100},
+    'facing_4bet': {'min_display': 25, 'confident': 60, 'very_confident': 120},
 }
 
 # Leak weights by position and scenario (based on EV impact)
@@ -60,6 +62,25 @@ LEAK_WEIGHTS = {
     'facing_3bet_HJ_fold': 1.0,
     'facing_3bet_HJ_call': 0.9,
     'facing_3bet_HJ_4bet': 0.9,
+    # Facing 4-bet - rare but high EV spots
+    'facing_4bet_BTN_fold': 1.3,
+    'facing_4bet_BTN_call': 1.2,
+    'facing_4bet_BTN_5bet': 1.1,
+    'facing_4bet_CO_fold': 1.2,
+    'facing_4bet_CO_call': 1.1,
+    'facing_4bet_CO_5bet': 1.0,
+    'facing_4bet_SB_fold': 1.1,
+    'facing_4bet_SB_call': 1.0,
+    'facing_4bet_SB_5bet': 1.0,
+    'facing_4bet_MP_fold': 1.0,
+    'facing_4bet_MP_call': 0.9,
+    'facing_4bet_MP_5bet': 0.9,
+    'facing_4bet_UTG_fold': 0.9,
+    'facing_4bet_UTG_call': 0.8,
+    'facing_4bet_UTG_5bet': 0.8,
+    'facing_4bet_HJ_fold': 1.0,
+    'facing_4bet_HJ_call': 0.9,
+    'facing_4bet_HJ_5bet': 0.9,
 }
 
 # Severity multipliers for improvement scoring
@@ -77,13 +98,16 @@ def get_leak_weight(scenario_id: str) -> float:
 
 
 def get_leak_severity(deviation: float) -> str:
-    """Determine leak severity based on deviation from GTO"""
+    """Determine leak severity based on deviation from GTO.
+
+    Thresholds aligned with PlayerProfile.tsx:
+    - MODERATE_THRESHOLD = 8 (was 5)
+    - MAJOR_THRESHOLD = 15
+    """
     abs_dev = abs(deviation)
-    if abs_dev < 5:
+    if abs_dev < 8:
         return "none"
-    elif abs_dev < 10:
-        return "minor"
-    elif abs_dev < 20:
+    elif abs_dev < 15:
         return "moderate"
     else:
         return "major"
@@ -173,7 +197,7 @@ def build_priority_leaks_from_gto_analysis(gto_data: Dict[str, Any]) -> List[Dic
             'gto_value': r.get('gto_frequency', 0),
             'is_leak': is_leak,
             'leak_severity': severity,
-            'leak_direction': 'too_loose' if deviation > 5 else 'too_tight' if deviation < -5 else None,
+            'leak_direction': 'too_loose' if deviation > 8 else 'too_tight' if deviation < -8 else None,
             'confidence_level': get_confidence_level(sample, 'opening'),
             'ev_weight': get_leak_weight(f"opening_{pos}"),
         }
@@ -200,7 +224,7 @@ def build_priority_leaks_from_gto_analysis(gto_data: Dict[str, Any]) -> List[Dic
             'gto_value': r.get('gto_fold', 0),
             'is_leak': fold_severity != 'none',
             'leak_severity': fold_severity,
-            'leak_direction': 'too_high' if fold_dev > 5 else 'too_low' if fold_dev < -5 else None,
+            'leak_direction': 'too_high' if fold_dev > 8 else 'too_low' if fold_dev < -8 else None,
             'confidence_level': get_confidence_level(sample, 'defense'),
             'ev_weight': get_leak_weight(f"defense_{pos}_fold"),
         }
@@ -222,7 +246,7 @@ def build_priority_leaks_from_gto_analysis(gto_data: Dict[str, Any]) -> List[Dic
             'gto_value': r.get('gto_call', 0),
             'is_leak': call_severity != 'none',
             'leak_severity': call_severity,
-            'leak_direction': 'too_high' if call_dev > 5 else 'too_low' if call_dev < -5 else None,
+            'leak_direction': 'too_high' if call_dev > 8 else 'too_low' if call_dev < -8 else None,
             'confidence_level': get_confidence_level(sample, 'defense'),
             'ev_weight': get_leak_weight(f"defense_{pos}_call"),
         }
@@ -244,7 +268,7 @@ def build_priority_leaks_from_gto_analysis(gto_data: Dict[str, Any]) -> List[Dic
             'gto_value': r.get('gto_3bet', 0),
             'is_leak': threebet_severity != 'none',
             'leak_severity': threebet_severity,
-            'leak_direction': 'too_high' if threebet_dev > 5 else 'too_low' if threebet_dev < -5 else None,
+            'leak_direction': 'too_high' if threebet_dev > 8 else 'too_low' if threebet_dev < -8 else None,
             'confidence_level': get_confidence_level(sample, 'defense'),
             'ev_weight': get_leak_weight(f"defense_{pos}_3bet"),
         }
@@ -271,7 +295,7 @@ def build_priority_leaks_from_gto_analysis(gto_data: Dict[str, Any]) -> List[Dic
             'gto_value': r.get('gto_fold', 0),
             'is_leak': fold_severity != 'none',
             'leak_severity': fold_severity,
-            'leak_direction': 'too_high' if fold_dev > 5 else 'too_low' if fold_dev < -5 else None,
+            'leak_direction': 'too_high' if fold_dev > 8 else 'too_low' if fold_dev < -8 else None,
             'confidence_level': get_confidence_level(sample, 'facing_3bet'),
             'ev_weight': get_leak_weight(f"facing_3bet_{pos}_fold"),
         }
@@ -293,7 +317,7 @@ def build_priority_leaks_from_gto_analysis(gto_data: Dict[str, Any]) -> List[Dic
             'gto_value': r.get('gto_call', 0),
             'is_leak': call_severity != 'none',
             'leak_severity': call_severity,
-            'leak_direction': 'too_high' if call_dev > 5 else 'too_low' if call_dev < -5 else None,
+            'leak_direction': 'too_high' if call_dev > 8 else 'too_low' if call_dev < -8 else None,
             'confidence_level': get_confidence_level(sample, 'facing_3bet'),
             'ev_weight': get_leak_weight(f"facing_3bet_{pos}_call"),
         }
@@ -315,12 +339,90 @@ def build_priority_leaks_from_gto_analysis(gto_data: Dict[str, Any]) -> List[Dic
             'gto_value': r.get('gto_4bet', 0),
             'is_leak': fourbet_severity != 'none',
             'leak_severity': fourbet_severity,
-            'leak_direction': 'too_high' if fourbet_dev > 5 else 'too_low' if fourbet_dev < -5 else None,
+            'leak_direction': 'too_high' if fourbet_dev > 8 else 'too_low' if fourbet_dev < -8 else None,
             'confidence_level': get_confidence_level(sample, 'facing_3bet'),
             'ev_weight': get_leak_weight(f"facing_3bet_{pos}_4bet"),
         }
         fourbet_scenario['priority_score'] = calculate_priority_score(fourbet_scenario)
         scenarios.append(fourbet_scenario)
+
+    # 4. Facing 4-bet
+    for r in gto_data.get('facing_4bet_reference', []):
+        pos = r.get('position', '')
+        vs_pos = r.get('vs_position', '')
+        sample = r.get('sample_size', 0)
+
+        # Fold action
+        fold_dev = r.get('fold_diff')
+        if fold_dev is not None:
+            fold_severity = get_leak_severity(fold_dev)
+            fold_scenario = {
+                'scenario_id': f"facing_4bet_{pos}_fold",
+                'category': 'facing_4bet',
+                'position': pos,
+                'vs_position': vs_pos,
+                'action': 'fold',
+                'display_name': f"{pos} vs 4-Bet - Fold%",
+                'overall_value': r.get('player_fold', 0),
+                'overall_sample': sample,
+                'overall_deviation': fold_dev,
+                'gto_value': r.get('gto_fold', 0),
+                'is_leak': fold_severity != 'none',
+                'leak_severity': fold_severity,
+                'leak_direction': 'too_high' if fold_dev > 8 else 'too_low' if fold_dev < -8 else None,
+                'confidence_level': get_confidence_level(sample, 'facing_4bet'),
+                'ev_weight': get_leak_weight(f"facing_4bet_{pos}_fold"),
+            }
+            fold_scenario['priority_score'] = calculate_priority_score(fold_scenario)
+            scenarios.append(fold_scenario)
+
+        # Call action
+        call_dev = r.get('call_diff')
+        if call_dev is not None:
+            call_severity = get_leak_severity(call_dev)
+            call_scenario = {
+                'scenario_id': f"facing_4bet_{pos}_call",
+                'category': 'facing_4bet',
+                'position': pos,
+                'vs_position': vs_pos,
+                'action': 'call',
+                'display_name': f"{pos} vs 4-Bet - Call%",
+                'overall_value': r.get('player_call', 0),
+                'overall_sample': sample,
+                'overall_deviation': call_dev,
+                'gto_value': r.get('gto_call', 0),
+                'is_leak': call_severity != 'none',
+                'leak_severity': call_severity,
+                'leak_direction': 'too_high' if call_dev > 8 else 'too_low' if call_dev < -8 else None,
+                'confidence_level': get_confidence_level(sample, 'facing_4bet'),
+                'ev_weight': get_leak_weight(f"facing_4bet_{pos}_call"),
+            }
+            call_scenario['priority_score'] = calculate_priority_score(call_scenario)
+            scenarios.append(call_scenario)
+
+        # 5-bet action
+        fivebet_dev = r.get('5bet_diff')
+        if fivebet_dev is not None:
+            fivebet_severity = get_leak_severity(fivebet_dev)
+            fivebet_scenario = {
+                'scenario_id': f"facing_4bet_{pos}_5bet",
+                'category': 'facing_4bet',
+                'position': pos,
+                'vs_position': vs_pos,
+                'action': '5bet',
+                'display_name': f"{pos} vs 4-Bet - 5-Bet%",
+                'overall_value': r.get('player_5bet', 0),
+                'overall_sample': sample,
+                'overall_deviation': fivebet_dev,
+                'gto_value': r.get('gto_5bet', 0),
+                'is_leak': fivebet_severity != 'none',
+                'leak_severity': fivebet_severity,
+                'leak_direction': 'too_high' if fivebet_dev > 8 else 'too_low' if fivebet_dev < -8 else None,
+                'confidence_level': get_confidence_level(sample, 'facing_4bet'),
+                'ev_weight': get_leak_weight(f"facing_4bet_{pos}_5bet"),
+            }
+            fivebet_scenario['priority_score'] = calculate_priority_score(fivebet_scenario)
+            scenarios.append(fivebet_scenario)
 
     # Filter to leaks only and sort by priority
     leaks_only = [s for s in scenarios if s.get('is_leak') and s.get('priority_score', 0) > 0]

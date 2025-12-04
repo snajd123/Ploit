@@ -127,7 +127,7 @@ const categorizeLeak = (leak: GTOPositionalLeak): TendencyType | null => {
     // Under-calling = not calling enough = might be folding or raising instead
     return deviation > 0 ? 'call_too_much' : 'fold_too_much';
   }
-  if (action === 'RFI' || action === '3-Bet' || action === '4-Bet' || action === '5-Bet') {
+  if (action === 'RFI' || action === 'Open' || action === '3-Bet' || action === '4-Bet' || action === '5-Bet') {
     if (deviation > 0) return 'too_aggressive'; // Over-raising
     if (deviation < 0) return 'not_aggressive'; // Under-raising
   }

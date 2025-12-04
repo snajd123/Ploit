@@ -420,7 +420,9 @@ const MyGame = () => {
                   gtoLeaks={gtoData.priority_leaks.map(pl => ({
                     category: pl.category === 'opening' ? 'Opening'
                       : pl.category === 'defense' ? 'Defense'
-                      : 'Facing 3-Bet',
+                      : pl.category === 'facing_3bet' ? 'Facing 3-Bet'
+                      : pl.category === 'facing_4bet' ? 'Facing 4-Bet'
+                      : pl.category,
                     position: pl.position,
                     vsPosition: pl.vs_position || undefined,
                     action: pl.action === 'open' ? 'Open'
@@ -428,6 +430,7 @@ const MyGame = () => {
                       : pl.action === 'call' ? 'Call'
                       : pl.action === '3bet' ? '3-Bet'
                       : pl.action === '4bet' ? '4-Bet'
+                      : pl.action === '5bet' ? '5-Bet'
                       : pl.action,
                     playerValue: pl.overall_value,
                     gtoValue: pl.gto_value,
