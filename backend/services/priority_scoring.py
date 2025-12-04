@@ -182,8 +182,8 @@ def build_priority_leaks_from_gto_analysis(gto_data: Dict[str, Any]) -> List[Dic
     # 1. Opening ranges (RFI)
     for r in gto_data.get('opening_ranges', []):
         pos = r.get('position', '')
-        deviation = r.get('open_diff', 0)
-        sample = r.get('opportunities', 0)
+        deviation = r.get('frequency_diff', 0)
+        sample = r.get('total_hands', 0)  # Use total_hands field
         severity = get_leak_severity(deviation)
         is_leak = severity != 'none'
 
@@ -209,7 +209,7 @@ def build_priority_leaks_from_gto_analysis(gto_data: Dict[str, Any]) -> List[Dic
     # 2. Defense vs opens
     for r in gto_data.get('defense_vs_open', []):
         pos = r.get('position', '')
-        total_sample = r.get('total_opportunities', 0)
+        total_sample = r.get('sample_size', 0)  # Field name from mygame_endpoints
 
         # Fold action - use action-specific count if available
         fold_count = r.get('fold_count', total_sample)
@@ -261,7 +261,7 @@ def build_priority_leaks_from_gto_analysis(gto_data: Dict[str, Any]) -> List[Dic
 
         # 3-bet action - use action-specific count if available
         threebet_count = r.get('3bet_count', total_sample)
-        threebet_dev = r.get('raise_diff', 0)
+        threebet_dev = r.get('3bet_diff', 0)
         threebet_severity = get_leak_severity(threebet_dev)
         threebet_scenario = {
             'scenario_id': f"defense_{pos}_3bet",
@@ -286,7 +286,7 @@ def build_priority_leaks_from_gto_analysis(gto_data: Dict[str, Any]) -> List[Dic
     # 3. Facing 3-bet
     for r in gto_data.get('facing_3bet', []):
         pos = r.get('position', '')
-        total_sample = r.get('times_opened', 0)
+        total_sample = r.get('sample_size', 0)  # Field name from mygame_endpoints
 
         # Fold action - use action-specific count if available
         fold_count = r.get('fold_count', total_sample)
@@ -438,8 +438,14 @@ def build_priority_leaks_from_gto_analysis(gto_data: Dict[str, Any]) -> List[Dic
             fivebet_scenario['priority_score'] = calculate_priority_score(fivebet_scenario)
             scenarios.append(fivebet_scenario)
 
-    # Filter to leaks only and sort by priority
-    leaks_only = [s for s in scenarios if s.get('is_leak') and s.get('priority_score', 0) > 0]
+    # Filter to leaks only with sufficient sample size, and sort by priority
+    # Exclude "insufficient" confidence scenarios - they have no statistical significance
+    leaks_only = [
+        s for s in scenarios
+        if s.get('is_leak')
+        and s.get('priority_score', 0) > 0
+        and s.get('confidence_level') != 'insufficient'
+    ]
     priority_leaks = sorted(leaks_only, key=lambda x: x.get('priority_score', 0), reverse=True)
 
     return priority_leaks
