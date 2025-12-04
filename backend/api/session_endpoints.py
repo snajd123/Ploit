@@ -576,11 +576,30 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
 
         overall_deviation = overall_value - gto_value
         session_deviation = session_value - gto_value
-        is_leak = abs(overall_deviation) >= 5 and overall_sample >= 10
+
+        # A leak exists if overall is significantly off GTO
+        overall_is_leak = abs(overall_deviation) >= 5 and overall_sample >= 10
+        # Session has a problem if it's significantly off GTO (even if overall is OK)
+        session_is_problem = abs(session_deviation) >= 5 if session_sample >= 5 else False
+        # Mark as leak if either overall has a leak OR session is problematic
+        is_leak = overall_is_leak or session_is_problem
 
         scenario_id = f"opening_{pos}"
-        leak_severity = get_leak_severity(overall_deviation) if is_leak else "none"
+        # Use the larger deviation for severity assessment
+        severity_deviation = overall_deviation if abs(overall_deviation) >= abs(session_deviation) else session_deviation
+        leak_severity = get_leak_severity(severity_deviation) if is_leak else "none"
         ev_weight = get_leak_weight(scenario_id)
+
+        # Always calculate improvement status when we have session data
+        improvement_status = get_improvement_status(
+            overall_value, session_value, gto_value, session_sample, min_sample_opening
+        ) if session_sample > 0 else None
+
+        # Determine the primary leak direction (use session if overall is OK but session is off)
+        if abs(session_deviation) >= 5 and session_sample >= 5:
+            leak_direction = "too_loose" if session_deviation > 0 else "too_tight" if session_deviation < 0 else None
+        else:
+            leak_direction = "too_loose" if overall_deviation > 0 else "too_tight" if overall_deviation < 0 else None
 
         scenario = {
             "scenario_id": scenario_id,
@@ -594,7 +613,7 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
             "overall_sample": overall_sample,
             "overall_deviation": round(overall_deviation, 1),
             "is_leak": is_leak,
-            "leak_direction": "too_loose" if overall_deviation > 0 else "too_tight" if overall_deviation < 0 else None,
+            "leak_direction": leak_direction,
             "leak_severity": leak_severity,
             "ev_weight": ev_weight,
 
@@ -606,10 +625,8 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
 
             "improvement_score": round(calculate_improvement_score(
                 overall_value, session_value, gto_value, session_sample, min_sample_opening, leak_severity
-            ), 1) if session_sample > 0 and is_leak else None,
-            "improvement_status": get_improvement_status(
-                overall_value, session_value, gto_value, session_sample, min_sample_opening
-            ) if session_sample > 0 and is_leak else None,
+            ), 1) if session_sample > 0 else None,
+            "improvement_status": improvement_status,
             "within_gto_zone": abs(session_deviation) < 5 if session_sample > 0 else None,
             "overcorrected": get_improvement_status(
                 overall_value, session_value, gto_value, session_sample, min_sample_opening
@@ -713,11 +730,30 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
 
             overall_deviation = overall_value - gto_value
             session_deviation = session_value - gto_value
-            is_leak = abs(overall_deviation) >= 5 and overall_sample >= 5
+
+            # A leak exists if overall is significantly off GTO
+            overall_is_leak = abs(overall_deviation) >= 5 and overall_sample >= 5
+            # Session has a problem if it's significantly off GTO (even if overall is OK)
+            session_is_problem = abs(session_deviation) >= 5 if session_sample >= 3 else False
+            # Mark as leak if either overall has a leak OR session is problematic
+            is_leak = overall_is_leak or session_is_problem
 
             scenario_id = f"defense_{pos}_{action}"
-            leak_severity = get_leak_severity(overall_deviation) if is_leak else "none"
+            # Use the larger deviation for severity assessment
+            severity_deviation = overall_deviation if abs(overall_deviation) >= abs(session_deviation) else session_deviation
+            leak_severity = get_leak_severity(severity_deviation) if is_leak else "none"
             ev_weight = get_leak_weight(scenario_id)
+
+            # Always calculate improvement status when we have session data
+            improvement_status = get_improvement_status(
+                overall_value, session_value, gto_value, session_sample, min_sample_defense
+            ) if session_sample > 0 else None
+
+            # Determine the primary leak direction (use session if overall is OK but session is off)
+            if abs(session_deviation) >= 5 and session_sample >= 3:
+                leak_direction = "too_high" if session_deviation > 0 else "too_low" if session_deviation < 0 else None
+            else:
+                leak_direction = "too_high" if overall_deviation > 0 else "too_low" if overall_deviation < 0 else None
 
             scenario = {
                 "scenario_id": scenario_id,
@@ -731,7 +767,7 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
                 "overall_sample": overall_sample,
                 "overall_deviation": round(overall_deviation, 1),
                 "is_leak": is_leak,
-                "leak_direction": "too_high" if overall_deviation > 0 else "too_low" if overall_deviation < 0 else None,
+                "leak_direction": leak_direction,
                 "leak_severity": leak_severity,
                 "ev_weight": ev_weight,
 
@@ -743,14 +779,10 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
 
                 "improvement_score": round(calculate_improvement_score(
                     overall_value, session_value, gto_value, session_sample, min_sample_defense, leak_severity
-                ), 1) if session_sample > 0 and is_leak else None,
-                "improvement_status": get_improvement_status(
-                    overall_value, session_value, gto_value, session_sample, min_sample_defense
-                ) if session_sample > 0 and is_leak else None,
+                ), 1) if session_sample > 0 else None,
+                "improvement_status": improvement_status,
                 "within_gto_zone": abs(session_deviation) < 5 if session_sample > 0 else None,
-                "overcorrected": get_improvement_status(
-                    overall_value, session_value, gto_value, session_sample, min_sample_defense
-                ) == "overcorrected" if session_sample > 0 and is_leak else False,
+                "overcorrected": improvement_status == "overcorrected" if session_sample > 0 else False,
                 "confidence_level": get_confidence_level(session_sample, 'defense')
             }
             scenario["priority_score"] = calculate_priority_score(scenario)
@@ -846,11 +878,30 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
 
             overall_deviation = overall_value - gto_value
             session_deviation = session_value - gto_value
-            is_leak = abs(overall_deviation) >= 5 and overall_sample >= 5
+
+            # A leak exists if overall is significantly off GTO
+            overall_is_leak = abs(overall_deviation) >= 5 and overall_sample >= 5
+            # Session has a problem if it's significantly off GTO (even if overall is OK)
+            session_is_problem = abs(session_deviation) >= 5 if session_sample >= 3 else False
+            # Mark as leak if either overall has a leak OR session is problematic
+            is_leak = overall_is_leak or session_is_problem
 
             scenario_id = f"facing_3bet_{pos}_{action}"
-            leak_severity = get_leak_severity(overall_deviation) if is_leak else "none"
+            # Use the larger deviation for severity assessment
+            severity_deviation = overall_deviation if abs(overall_deviation) >= abs(session_deviation) else session_deviation
+            leak_severity = get_leak_severity(severity_deviation) if is_leak else "none"
             ev_weight = get_leak_weight(scenario_id)
+
+            # Always calculate improvement status when we have session data
+            improvement_status = get_improvement_status(
+                overall_value, session_value, gto_value, session_sample, min_sample_f3bet
+            ) if session_sample > 0 else None
+
+            # Determine the primary leak direction (use session if overall is OK but session is off)
+            if abs(session_deviation) >= 5 and session_sample >= 3:
+                leak_direction = "too_high" if session_deviation > 0 else "too_low" if session_deviation < 0 else None
+            else:
+                leak_direction = "too_high" if overall_deviation > 0 else "too_low" if overall_deviation < 0 else None
 
             scenario = {
                 "scenario_id": scenario_id,
@@ -864,7 +915,7 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
                 "overall_sample": overall_sample,
                 "overall_deviation": round(overall_deviation, 1),
                 "is_leak": is_leak,
-                "leak_direction": "too_high" if overall_deviation > 0 else "too_low" if overall_deviation < 0 else None,
+                "leak_direction": leak_direction,
                 "leak_severity": leak_severity,
                 "ev_weight": ev_weight,
 
@@ -876,14 +927,10 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
 
                 "improvement_score": round(calculate_improvement_score(
                     overall_value, session_value, gto_value, session_sample, min_sample_f3bet, leak_severity
-                ), 1) if session_sample > 0 and is_leak else None,
-                "improvement_status": get_improvement_status(
-                    overall_value, session_value, gto_value, session_sample, min_sample_f3bet
-                ) if session_sample > 0 and is_leak else None,
+                ), 1) if session_sample > 0 else None,
+                "improvement_status": improvement_status,
                 "within_gto_zone": abs(session_deviation) < 5 if session_sample > 0 else None,
-                "overcorrected": get_improvement_status(
-                    overall_value, session_value, gto_value, session_sample, min_sample_f3bet
-                ) == "overcorrected" if session_sample > 0 and is_leak else False,
+                "overcorrected": improvement_status == "overcorrected" if session_sample > 0 else False,
                 "confidence_level": get_confidence_level(session_sample, 'facing_3bet')
             }
             scenario["priority_score"] = calculate_priority_score(scenario)
