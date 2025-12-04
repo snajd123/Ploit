@@ -798,6 +798,7 @@ def get_mygame_scenario_hands(
     scenario: str = Query(..., description="Scenario type: opening, defense, facing_3bet, facing_4bet"),
     position: str = Query(..., description="Player's position: UTG, MP, CO, BTN, SB, BB"),
     vs_position: Optional[str] = Query(None, description="Opponent position for matchup scenarios"),
+    action: Optional[str] = Query(None, description="Filter by action: fold, call, raise, 3bet, 4bet, 5bet"),
     limit: int = Query(1000, ge=1, le=5000, description="Max hands to return"),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
@@ -1073,6 +1074,22 @@ def get_mygame_scenario_hands(
     # Execute query
     result = db.execute(hands_query, params)
     rows = result.fetchall()
+
+    # Filter by action if specified
+    if action:
+        # Normalize action names (e.g., 'raise' -> '3bet' for defense)
+        action_lower = action.lower()
+        # Map common names to what's stored in results
+        action_map = {
+            'raise': ['raise', '3bet', '4bet', '5bet'],
+            '3bet': ['3bet'],
+            '4bet': ['4bet'],
+            '5bet': ['5bet'],
+            'fold': ['fold'],
+            'call': ['call'],
+        }
+        valid_actions = action_map.get(action_lower, [action_lower])
+        rows = [row for row in rows if row.player_action.lower() in valid_actions]
 
     # Hand categorization helper
     def categorize_hand(hole_cards: Optional[str]) -> tuple:

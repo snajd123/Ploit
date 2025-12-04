@@ -447,6 +447,7 @@ class ApiClient {
     scenario: string,
     position: string,
     vsPosition?: string,
+    action?: string,
     limit: number = 1000
   ): Promise<ScenarioHandsResponse> {
     const params = new URLSearchParams({
@@ -456,6 +457,9 @@ class ApiClient {
     });
     if (vsPosition) {
       params.append('vs_position', vsPosition);
+    }
+    if (action) {
+      params.append('action', action);
     }
     const response = await this.client.get<ScenarioHandsResponse>(
       `/api/my-game/scenario-hands?${params}`

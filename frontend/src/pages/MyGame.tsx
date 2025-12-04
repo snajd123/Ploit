@@ -85,7 +85,8 @@ const MyGame = () => {
     queryFn: () => api.getMyGameScenarioHands(
       selectedScenario!.scenario,
       selectedScenario!.position,
-      selectedScenario!.vsPosition
+      selectedScenario!.vsPosition,
+      selectedScenario!.action
     ),
     enabled: !!selectedScenario,
   });
