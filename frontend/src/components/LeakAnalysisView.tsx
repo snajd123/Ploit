@@ -60,6 +60,7 @@ interface ScenarioSelection {
   scenario: 'opening' | 'defense' | 'facing_3bet' | 'facing_4bet';
   position: string;
   vsPosition?: string;
+  action?: string;  // Specific action for the leak (e.g., 'call', 'fold', 'raise')
 }
 
 // Insufficient sample info
@@ -652,6 +653,7 @@ const LeakAnalysisView: React.FC<LeakAnalysisViewProps> = ({
                           scenario,
                           position: leak.position,
                           vsPosition: leak.vsPosition,
+                          action: leak.action,
                         });
                       }
                     }
@@ -731,6 +733,7 @@ const LeakAnalysisView: React.FC<LeakAnalysisViewProps> = ({
                       scenario,
                       position: leak.position,
                       vsPosition: leak.vsPosition,
+                      action: leak.action,
                     })
                   : undefined;
 

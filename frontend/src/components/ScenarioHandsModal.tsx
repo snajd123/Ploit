@@ -12,6 +12,7 @@ export interface ScenarioSelection {
   scenario: 'opening' | 'defense' | 'facing_3bet' | 'facing_4bet';
   position: string;
   vsPosition?: string;
+  action?: string;  // Specific action for the leak (e.g., 'call', 'fold', 'raise')
 }
 
 interface ScenarioHandsModalProps {
@@ -105,6 +106,7 @@ const ScenarioHandsModal = ({
             <h2 className="text-xl font-bold text-white">
               {scenarioLabels[selection.scenario]} - {selection.position}
               {selection.vsPosition && ` vs ${selection.vsPosition}`}
+              {selection.action && ` - ${selection.action.charAt(0).toUpperCase() + selection.action.slice(1)}`}
             </h2>
             {data && (
               <p className="text-blue-100 text-sm mt-1">
