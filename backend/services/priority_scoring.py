@@ -156,8 +156,9 @@ def build_priority_leaks_from_gto_analysis(gto_data: Dict[str, Any]) -> List[Dic
     # 1. Opening ranges (RFI)
     for r in gto_data.get('opening_ranges', []):
         pos = r.get('position', '')
-        deviation = r.get('frequency_diff', 0)
-        sample = r.get('total_hands', 0)
+        # Support both old and new field names
+        deviation = r.get('open_diff', r.get('frequency_diff', 0))
+        sample = r.get('opportunities', r.get('total_hands', 0))
         severity = get_leak_severity(deviation)
         is_leak = severity != 'none'
 
@@ -183,7 +184,8 @@ def build_priority_leaks_from_gto_analysis(gto_data: Dict[str, Any]) -> List[Dic
     # 2. Defense vs opens
     for r in gto_data.get('defense_vs_open', []):
         pos = r.get('position', '')
-        sample = r.get('sample_size', 0)
+        # Support both old and new field names
+        sample = r.get('total_opportunities', r.get('sample_size', 0))
 
         # Fold action
         fold_dev = r.get('fold_diff', 0)
@@ -229,8 +231,8 @@ def build_priority_leaks_from_gto_analysis(gto_data: Dict[str, Any]) -> List[Dic
         call_scenario['priority_score'] = calculate_priority_score(call_scenario)
         scenarios.append(call_scenario)
 
-        # 3-bet action
-        threebet_dev = r.get('3bet_diff', 0)
+        # 3-bet action (raise_diff in new format, 3bet_diff in old)
+        threebet_dev = r.get('raise_diff', r.get('3bet_diff', 0))
         threebet_severity = get_leak_severity(threebet_dev)
         threebet_scenario = {
             'scenario_id': f"defense_{pos}_3bet",
@@ -254,7 +256,8 @@ def build_priority_leaks_from_gto_analysis(gto_data: Dict[str, Any]) -> List[Dic
     # 3. Facing 3-bet
     for r in gto_data.get('facing_3bet', []):
         pos = r.get('position', '')
-        sample = r.get('sample_size', 0)
+        # Support both old and new field names
+        sample = r.get('times_opened', r.get('sample_size', 0))
 
         # Fold action
         fold_dev = r.get('fold_diff', 0)
