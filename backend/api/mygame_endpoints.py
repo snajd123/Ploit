@@ -1172,59 +1172,52 @@ def get_mygame_scenario_hands(
         suited_str = 's' if suited else 'o' if rank1 != rank2 else ''
         return f"{rank1}{rank2}{suited_str}"
 
-    # Get per-hand GTO frequencies for actions
-    # Use the correct tables: gto_scenarios + gto_frequencies
+    # Build GTO lookup table keyed by (hand_type, opponent_position)
+    # This allows us to look up GTO for each hand using its actual opponent position
+    # Fetch ALL opponent positions so we can use per-hand lookup
     hand_gto_query = text("""
-        SELECT gf.hand, gs.action, SUM(gf.frequency * 100) as freq
+        SELECT gf.hand, gs.action, gs.opponent_position, gf.frequency * 100 as freq
         FROM gto_frequencies gf
         JOIN gto_scenarios gs ON gf.scenario_id = gs.scenario_id
         WHERE gs.category = :scenario
         AND gs.position = :position
-        AND (gs.opponent_position = :vs_position OR (:vs_position IS NULL AND gs.opponent_position IS NULL))
-        GROUP BY gf.hand, gs.action
     """)
     try:
         hand_gto_result = db.execute(hand_gto_query, {
             "scenario": scenario,
-            "position": position,
-            "vs_position": vs_position
+            "position": position
         })
-        # Aggregate by hand type (e.g., "A3o") instead of full combo (e.g., "Ad3h")
-        # Track sums and counts for averaging
-        hand_type_sums = {}  # {hand_type: {action: total_freq}}
-        hand_type_counts = {}  # {hand_type: {action: count}}
+        # Build lookup: (hand_type, opponent_position) -> {action: avg_freq}
+        # Track sums and counts for averaging combos of the same hand type
+        temp_lookup = {}  # {(hand_type, opp_pos): {action: [freqs]}}
 
         for row in hand_gto_result:
             combo = row[0]
             action = row[1]
-            freq = float(row[2]) if row[2] else 0
+            opp_pos = row[2]
+            freq = float(row[3]) if row[3] else 0
 
             # Convert full combo to hand type
             hand_type = combo_to_hand_type(combo)
             if not hand_type:
                 continue
 
-            if hand_type not in hand_type_sums:
-                hand_type_sums[hand_type] = {}
-                hand_type_counts[hand_type] = {}
+            key = (hand_type, opp_pos)
+            if key not in temp_lookup:
+                temp_lookup[key] = {}
+            if action not in temp_lookup[key]:
+                temp_lookup[key][action] = []
+            temp_lookup[key][action].append(freq)
 
-            if action not in hand_type_sums[hand_type]:
-                hand_type_sums[hand_type][action] = 0
-                hand_type_counts[hand_type][action] = 0
-
-            hand_type_sums[hand_type][action] += freq
-            hand_type_counts[hand_type][action] += 1
-
-        # Calculate averages to get final hand_gto_freqs keyed by hand type
-        hand_gto_freqs = {}
-        for hand_type, action_sums in hand_type_sums.items():
-            hand_gto_freqs[hand_type] = {}
-            for action, total in action_sums.items():
-                count = hand_type_counts[hand_type][action]
-                hand_gto_freqs[hand_type][action] = total / count if count > 0 else 0
+        # Average frequencies for each (hand_type, opponent_position, action)
+        hand_gto_lookup = {}  # {(hand_type, opp_pos): {action: avg_freq}}
+        for key, actions in temp_lookup.items():
+            hand_gto_lookup[key] = {}
+            for action, freqs in actions.items():
+                hand_gto_lookup[key][action] = sum(freqs) / len(freqs) if freqs else 0
     except Exception as e:
         # GTO data may not be available - proceed without it
-        hand_gto_freqs = {}
+        hand_gto_lookup = {}
 
     # Process hands
     hands = []
@@ -1246,8 +1239,21 @@ def get_mygame_scenario_hands(
         deviation_description = None
         deviation_severity = None
 
-        if hand_combo and hand_combo in hand_gto_freqs:
-            action_gto_freq = hand_gto_freqs[hand_combo].get(action, 0)
+        # Get actual opponent position for this specific hand
+        actual_vs_pos = row.vs_pos if hasattr(row, 'vs_pos') else vs_position
+
+        # Look up hand-specific GTO using (hand_type, opponent_position)
+        hand_specific_gto = None
+        if hand_combo:
+            # Try exact matchup lookup first
+            hand_specific_gto = hand_gto_lookup.get((hand_combo, actual_vs_pos))
+
+            # For opening scenarios, opponent_position is NULL in GTO data
+            if not hand_specific_gto and scenario == 'opening':
+                hand_specific_gto = hand_gto_lookup.get((hand_combo, None))
+
+        if hand_specific_gto:
+            action_gto_freq = hand_specific_gto.get(action, 0)
             if action_gto_freq >= 50:
                 deviation_type = 'correct'
                 summary_correct += 1
@@ -1258,12 +1264,13 @@ def get_mygame_scenario_hands(
                 summary_suboptimal += 1
             else:
                 deviation_type = 'mistake'
-                best_action = max(hand_gto_freqs[hand_combo].items(), key=lambda x: x[1]) if hand_gto_freqs[hand_combo] else (None, 0)
+                best_action = max(hand_specific_gto.items(), key=lambda x: x[1]) if hand_specific_gto else (None, 0)
                 deviation_severity = 'major' if action_gto_freq < 5 else 'moderate'
                 if best_action[0]:
                     deviation_description = f"GTO prefers {best_action[0]} ({best_action[1]:.0f}%)"
                 summary_mistakes += 1
         elif gto_freqs:
+            # Fall back to aggregate frequencies if no hand-specific GTO found
             action_gto_freq = gto_freqs.get(action, 0)
             if action_gto_freq >= 50:
                 deviation_type = 'correct'
