@@ -527,56 +527,79 @@ class FlagCalculator:
 
     def _calculate_profit_loss(self, player_name: str, flags: PlayerHandSummaryFlags) -> None:
         """
-        Calculate profit/loss for the hand.
+        Calculate profit/loss for the hand from raw text.
 
-        The action amounts in PokerStars format are CUMULATIVE per street.
-        For example, if player posts BB €0.04, then raises to €0.22, then raises to €21.29:
-        - The amounts stored are: 0.04, 0.22, 21.29
-        - But actual investment is €21.29 for preflop (the final cumulative amount)
+        Simple logic:
+        - If hero collected: P&L = collected - invested
+        - If hero didn't collect: P&L = -invested
 
-        So we need to take the MAX amount per street, not the sum.
+        Per street tracking:
+        - "raises X to Y" -> position = Y (cumulative)
+        - "calls X" -> position += X (additional)
+        - "bets X" / "posts X" -> position = X
 
         Sets: won_hand, profit_loss
         """
         import re
 
-        player_actions = [a for a in self.hand.actions if a.player_name == player_name]
+        escaped = re.escape(player_name)
+        raw_text = self.hand.raw_text
 
-        # Calculate total invested: MAX amount per street (since amounts are cumulative)
-        # Group by street and take the maximum amount per street
-        street_max_amounts = {}
-        for action in player_actions:
-            if action.amount and action.amount > Decimal("0"):
-                street = action.street
-                if street not in street_max_amounts:
-                    street_max_amounts[street] = action.amount
-                else:
-                    street_max_amounts[street] = max(street_max_amounts[street], action.amount)
+        current_street_investment = Decimal("0")
+        total_invested = Decimal("0")
 
-        # Sum the max amounts across all streets = total invested
-        total_invested = sum(street_max_amounts.values(), Decimal("0"))
+        for line in raw_text.split('\n'):
+            # Detect street changes - commit current street investment
+            if line.startswith('*** FLOP ***') or line.startswith('*** TURN ***') or \
+               line.startswith('*** RIVER ***') or line.startswith('*** SHOW DOWN ***') or \
+               line.startswith('*** SUMMARY ***'):
+                total_invested += current_street_investment
+                current_street_investment = Decimal("0")
+                if line.startswith('*** SUMMARY ***'):
+                    break
+                continue
 
-        # Check for uncalled bet returned (e.g., "Uncalled bet (€10.12) returned to snajd")
-        # This happens when everyone folds to a bet - the unmatched portion is returned
-        escaped_name = re.escape(player_name)
-        uncalled_pattern = rf"Uncalled bet \([$€£]?([\d.]+)\) returned to {escaped_name}"
-        uncalled_match = re.search(uncalled_pattern, self.hand.raw_text)
+            # Only process hero's actions
+            if not line.startswith(f'{player_name}:'):
+                continue
 
+            # "raises X to Y" -> position = Y
+            raise_match = re.search(r'raises .* to [$€£]?([\d.]+)', line)
+            if raise_match:
+                current_street_investment = Decimal(raise_match.group(1))
+                continue
+
+            # "bets X" -> position = X
+            bet_match = re.search(r'bets [$€£]?([\d.]+)', line)
+            if bet_match:
+                current_street_investment = Decimal(bet_match.group(1))
+                continue
+
+            # "calls X" -> add X
+            call_match = re.search(r'calls [$€£]?([\d.]+)', line)
+            if call_match:
+                current_street_investment += Decimal(call_match.group(1))
+                continue
+
+            # "posts small/big blind X"
+            post_match = re.search(r'posts (?:small blind|big blind|the ante) [$€£]?([\d.]+)', line)
+            if post_match:
+                current_street_investment += Decimal(post_match.group(1))
+                continue
+
+        # Subtract uncalled bet returns
+        uncalled_match = re.search(rf'Uncalled bet \([$€£]?([\d.]+)\) returned to {escaped}', raw_text)
         if uncalled_match:
-            returned_amount = Decimal(uncalled_match.group(1))
-            total_invested -= returned_amount
+            total_invested -= Decimal(uncalled_match.group(1))
 
-        # Check if player won (collected from pot)
-        # Handle multiple currency symbols: $, €, £, etc.
-        collect_pattern = rf"{escaped_name} collected [$€£]?([\d.]+)"
-        collect_match = re.search(collect_pattern, self.hand.raw_text)
+        # Check if hero collected (can be multiple pots)
+        collect_matches = re.findall(rf'{escaped} collected [$€£]?([\d.]+)', raw_text)
+        total_collected = sum(Decimal(m) for m in collect_matches) if collect_matches else Decimal("0")
 
-        if collect_match:
-            won_amount = Decimal(collect_match.group(1))
+        if total_collected > 0:
             flags.won_hand = True
-            flags.profit_loss = won_amount - total_invested
+            flags.profit_loss = total_collected - total_invested
         else:
-            # Lost what they invested
             flags.profit_loss = -total_invested
 
     # Helper methods
