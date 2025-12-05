@@ -1,3 +1,4 @@
+// Session Group Analysis - Multi-nickname support
 import React, { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
@@ -510,12 +511,15 @@ const SessionGroupAnalysis: React.FC = () => {
       setError(null);
 
       try {
+        console.log('Fetching group analysis for session IDs:', sessionIds);
         const result = await api.getSessionGroupAnalysis(sessionIds);
+        console.log('Group analysis response:', result);
         setData(result);
       } catch (err: any) {
         console.error('Error fetching group analysis:', err);
+        console.error('Error details:', err.response?.data, err.message);
         // Extract error message from API response
-        const errorMessage = err.response?.data?.detail || 'Failed to load group analysis data';
+        const errorMessage = err.response?.data?.detail || err.message || 'Failed to load group analysis data';
         setError(errorMessage);
       } finally {
         setLoading(false);
