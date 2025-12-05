@@ -775,7 +775,7 @@ export interface SessionTrendData {
 
 export interface SessionGroupAnalysisResponse {
   session_ids: number[];
-  player_name: string;
+  player_names: string[];
   total_hands: number;
   total_profit_bb: number;
   session_count: number;
