@@ -58,41 +58,62 @@ class PoolDetail(BaseModel):
 def get_pools(db: Session = Depends(get_db)) -> List[PoolSummary]:
     """
     Get all pools (grouped by site + stake level), excluding hero players.
+    Uses raw_hands.stake_level to determine which stake each player plays at.
     """
     hero_nicknames = list(get_hero_nicknames(db))
 
-    # Get all non-hero players with their stats and stake level
+    # Get stake levels from raw_hands via player_hand_summary
+    # This correctly links opponent players to stakes through the hands they played
     query = """
         WITH player_stakes AS (
-            SELECT DISTINCT ON (ps.player_name)
-                ps.player_name,
-                ps.total_hands,
-                ps.vpip_pct,
-                ps.pfr_pct,
-                ps.three_bet_pct,
-                s.table_stakes
-            FROM player_stats ps
-            LEFT JOIN sessions s ON s.player_name = ps.player_name
-            WHERE ps.total_hands > 0
+            -- Get the most common stake level for each player
+            SELECT
+                phs.player_name,
+                rh.stake_level,
+                COUNT(*) as hands_at_stake
+            FROM player_hand_summary phs
+            JOIN raw_hands rh ON phs.hand_id = rh.hand_id
+            WHERE rh.stake_level IS NOT NULL
     """
 
     params = {}
     if hero_nicknames:
-        query += " AND LOWER(ps.player_name) != ALL(:hero_nicknames)"
+        query += " AND LOWER(phs.player_name) != ALL(:hero_nicknames)"
         params["hero_nicknames"] = hero_nicknames
 
     query += """
-            ORDER BY ps.player_name, s.start_time DESC
+            GROUP BY phs.player_name, rh.stake_level
+        ),
+        player_primary_stake AS (
+            -- Pick the stake where each player has the most hands
+            SELECT DISTINCT ON (player_name)
+                player_name,
+                stake_level,
+                hands_at_stake
+            FROM player_stakes
+            ORDER BY player_name, hands_at_stake DESC
+        ),
+        player_with_stats AS (
+            -- Join with player_stats for VPIP/PFR/3bet
+            SELECT
+                pps.player_name,
+                pps.stake_level,
+                pps.hands_at_stake,
+                ps.vpip_pct,
+                ps.pfr_pct,
+                ps.three_bet_pct
+            FROM player_primary_stake pps
+            LEFT JOIN player_stats ps ON pps.player_name = ps.player_name
         )
         SELECT
-            COALESCE(table_stakes, 'Unknown') as stake_level,
+            stake_level,
             COUNT(*) as player_count,
-            COALESCE(SUM(total_hands), 0) as total_hands,
+            COALESCE(SUM(hands_at_stake), 0) as total_hands,
             COALESCE(AVG(vpip_pct), 0) as avg_vpip,
             COALESCE(AVG(pfr_pct), 0) as avg_pfr,
             COALESCE(AVG(three_bet_pct), 0) as avg_3bet
-        FROM player_stakes
-        GROUP BY table_stakes
+        FROM player_with_stats
+        GROUP BY stake_level
         ORDER BY total_hands DESC
     """
 
@@ -130,35 +151,44 @@ def get_pool_detail(
 ) -> PoolDetail:
     """
     Get detailed information about a specific pool.
+    Uses raw_hands.stake_level to determine which stake each player plays at.
     """
     hero_nicknames = list(get_hero_nicknames(db))
 
-    # Get all players in this stake level
+    # Get all players in this stake level via raw_hands
     query = """
-        WITH player_stakes AS (
-            SELECT DISTINCT ON (ps.player_name)
-                ps.player_name,
-                ps.total_hands,
-                ps.vpip_pct,
-                ps.pfr_pct,
-                ps.three_bet_pct,
-                ps.fold_to_three_bet_pct,
-                ps.player_type,
-                s.table_stakes
-            FROM player_stats ps
-            LEFT JOIN sessions s ON s.player_name = ps.player_name
-            WHERE ps.total_hands > 0 AND COALESCE(s.table_stakes, 'Unknown') = :stake_level
+        WITH player_stake_hands AS (
+            -- Get hand counts per player at the requested stake
+            SELECT
+                phs.player_name,
+                COUNT(*) as hands_at_stake
+            FROM player_hand_summary phs
+            JOIN raw_hands rh ON phs.hand_id = rh.hand_id
+            WHERE rh.stake_level = :stake_level
     """
 
     params = {"stake_level": stake_level, "limit": limit}
     if hero_nicknames:
-        query += " AND LOWER(ps.player_name) != ALL(:hero_nicknames)"
+        query += " AND LOWER(phs.player_name) != ALL(:hero_nicknames)"
         params["hero_nicknames"] = hero_nicknames
 
     query += """
-            ORDER BY ps.player_name, s.start_time DESC
+            GROUP BY phs.player_name
+        ),
+        player_with_stats AS (
+            -- Join with player_stats for detailed stats
+            SELECT
+                psh.player_name,
+                psh.hands_at_stake as total_hands,
+                ps.vpip_pct,
+                ps.pfr_pct,
+                ps.three_bet_pct,
+                ps.fold_to_three_bet_pct,
+                ps.player_type
+            FROM player_stake_hands psh
+            LEFT JOIN player_stats ps ON psh.player_name = ps.player_name
         )
-        SELECT * FROM player_stakes
+        SELECT * FROM player_with_stats
     """
 
     # Add sorting
