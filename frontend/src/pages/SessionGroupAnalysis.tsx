@@ -557,14 +557,17 @@ const SessionGroupAnalysis: React.FC = () => {
     fetchAggregateData();
   }, [activeTab, sessionIds, gtoScore, mistakes]);
 
-  // Group scenarios by category
+  // Group scenarios by category (only show scenarios with session data)
   const groupedScenarios = useMemo(() => {
     if (!data) return { opening: [], defense: [], facing_3bet: [] };
 
+    // Filter to only include scenarios that have session data
+    const withSessionData = data.aggregated.scenarios.filter(s => s.session_value != null);
+
     return {
-      opening: data.aggregated.scenarios.filter(s => s.category === 'opening'),
-      defense: data.aggregated.scenarios.filter(s => s.category === 'defense'),
-      facing_3bet: data.aggregated.scenarios.filter(s => s.category === 'facing_3bet')
+      opening: withSessionData.filter(s => s.category === 'opening'),
+      defense: withSessionData.filter(s => s.category === 'defense'),
+      facing_3bet: withSessionData.filter(s => s.category === 'facing_3bet')
     };
   }, [data]);
 
@@ -957,13 +960,13 @@ const SessionGroupAnalysis: React.FC = () => {
                 </p>
               </div>
               <div className="text-sm text-gray-500">
-                {data.aggregated.priority_leaks?.length || 0} leaks to address
+                {data.aggregated.priority_leaks?.filter(s => s.session_value != null).length || 0} leaks to address
               </div>
             </div>
 
-            {data.aggregated.priority_leaks && data.aggregated.priority_leaks.length > 0 ? (
+            {data.aggregated.priority_leaks && data.aggregated.priority_leaks.filter(s => s.session_value != null).length > 0 ? (
               <div className="space-y-4">
-                {data.aggregated.priority_leaks.map((scenario, idx) => (
+                {data.aggregated.priority_leaks.filter(s => s.session_value != null).map((scenario, idx) => (
                   <PriorityLeakCard
                     key={scenario.scenario_id}
                     scenario={scenario}
