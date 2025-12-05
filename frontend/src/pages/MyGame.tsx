@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   User, TrendingUp, TrendingDown, Calendar, Clock, Target, ChevronRight,
-  Settings, AlertCircle, BarChart2, Shield, AlertTriangle
+  Settings, AlertCircle, BarChart2, Shield, AlertTriangle, CheckSquare, Square
 } from 'lucide-react';
 import { api } from '../services/api';
 import { GTOCategoryDetailView, GTOCategorySummaryCard } from '../components/gto';
@@ -52,11 +52,13 @@ const GTO_CATEGORY_CONFIG: Record<GTOCategoryKey, {
 };
 
 const MyGame = () => {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<TabId>('overview');
   const [overview, setOverview] = useState<MyGameOverview | null>(null);
   const [sessions, setSessions] = useState<HeroSessionResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedSessionIds, setSelectedSessionIds] = useState<Set<number>>(new Set());
 
   // GTO analysis state
   const [selectedCategory, setSelectedCategory] = useState<GTOCategoryKey | null>(null);
@@ -591,6 +593,45 @@ const MyGame = () => {
 
       {activeTab === 'sessions' && (
         <div className="space-y-4">
+          {/* Selection Summary Bar */}
+          {selectedSessionIds.size > 0 && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center justify-between">
+              <div className="flex items-center gap-6">
+                <div className="flex items-center gap-2">
+                  <CheckSquare className="w-5 h-5 text-blue-600" />
+                  <span className="font-medium text-blue-900">
+                    {selectedSessionIds.size} session{selectedSessionIds.size !== 1 ? 's' : ''} selected
+                  </span>
+                </div>
+                <div className="text-sm text-blue-700">
+                  {sessions.filter(s => selectedSessionIds.has(s.session_id)).reduce((sum, s) => sum + s.total_hands, 0).toLocaleString()} hands
+                </div>
+                <div className={`text-sm font-medium ${sessions.filter(s => selectedSessionIds.has(s.session_id)).reduce((sum, s) => sum + s.profit_loss_bb, 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {sessions.filter(s => selectedSessionIds.has(s.session_id)).reduce((sum, s) => sum + s.profit_loss_bb, 0) >= 0 ? '+' : ''}
+                  {sessions.filter(s => selectedSessionIds.has(s.session_id)).reduce((sum, s) => sum + s.profit_loss_bb, 0).toFixed(1)} bb
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setSelectedSessionIds(new Set())}
+                  className="text-sm text-gray-600 hover:text-gray-800"
+                >
+                  Clear Selection
+                </button>
+                <button
+                  onClick={() => {
+                    const ids = Array.from(selectedSessionIds).join(',');
+                    navigate(`/sessions/analysis?ids=${ids}`);
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <BarChart2 className="w-4 h-4" />
+                  Analyze Progress
+                </button>
+              </div>
+            </div>
+          )}
+
           {sessions.length === 0 ? (
             <div className="card text-center py-12 text-gray-500">
               <Calendar className="mx-auto mb-2" size={32} />
@@ -599,37 +640,87 @@ const MyGame = () => {
             </div>
           ) : (
             <div className="space-y-2">
-              {sessions.map(session => (
-                <Link
-                  key={session.session_id}
-                  to={`/sessions/${session.session_id}`}
-                  className="block card hover:border-indigo-300 transition-colors"
+              {/* Select All Row */}
+              <div className="flex items-center justify-between px-4 py-2 bg-gray-50 rounded-lg">
+                <button
+                  onClick={() => setSelectedSessionIds(new Set(sessions.map(s => s.session_id)))}
+                  className="flex items-center gap-2 text-sm text-gray-700 hover:text-gray-900"
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-4">
-                      <div>
-                        <p className="font-medium text-gray-900">
-                          {session.table_stakes}
-                          {session.table_name && (
-                            <span className="text-gray-500 ml-2">{session.table_name}</span>
-                          )}
-                        </p>
-                        <p className="text-sm text-gray-500">
-                          {formatDate(session.start_time)} · {session.total_hands} hands · {session.duration_minutes}min
-                        </p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className={`font-bold ${session.profit_loss_bb >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {formatProfit(session.profit_loss_bb)}
-                      </p>
-                      <p className={`text-sm ${session.bb_100 >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {session.bb_100.toFixed(1)} bb/100
-                      </p>
+                  <CheckSquare className="w-4 h-4" />
+                  Select All ({sessions.length})
+                </button>
+                {selectedSessionIds.size > 0 && (
+                  <button
+                    onClick={() => setSelectedSessionIds(new Set())}
+                    className="text-sm text-gray-500 hover:text-gray-700"
+                  >
+                    Deselect All
+                  </button>
+                )}
+              </div>
+
+              {sessions.map(session => {
+                const isSelected = selectedSessionIds.has(session.session_id);
+                return (
+                  <div
+                    key={session.session_id}
+                    className={`card hover:border-indigo-300 transition-colors ${isSelected ? 'ring-2 ring-blue-500 bg-blue-50/30' : ''}`}
+                  >
+                    <div className="flex items-center">
+                      {/* Checkbox */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedSessionIds(prev => {
+                            const next = new Set(prev);
+                            if (next.has(session.session_id)) {
+                              next.delete(session.session_id);
+                            } else {
+                              next.add(session.session_id);
+                            }
+                            return next;
+                          });
+                        }}
+                        className="mr-4 flex-shrink-0"
+                      >
+                        {isSelected ? (
+                          <CheckSquare className="w-5 h-5 text-blue-600" />
+                        ) : (
+                          <Square className="w-5 h-5 text-gray-400 hover:text-gray-600" />
+                        )}
+                      </button>
+
+                      {/* Session Content - Clickable to navigate */}
+                      <Link
+                        to={`/sessions/${session.session_id}`}
+                        className="flex-1 flex items-center justify-between"
+                      >
+                        <div className="flex items-center space-x-4">
+                          <div>
+                            <p className="font-medium text-gray-900">
+                              {session.table_stakes}
+                              {session.table_name && (
+                                <span className="text-gray-500 ml-2">{session.table_name}</span>
+                              )}
+                            </p>
+                            <p className="text-sm text-gray-500">
+                              {formatDate(session.start_time)} · {session.total_hands} hands · {session.duration_minutes}min
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className={`font-bold ${session.profit_loss_bb >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {formatProfit(session.profit_loss_bb)}
+                          </p>
+                          <p className={`text-sm ${session.bb_100 >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {session.bb_100.toFixed(1)} bb/100
+                          </p>
+                        </div>
+                      </Link>
                     </div>
                   </div>
-                </Link>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
