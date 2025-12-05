@@ -1266,9 +1266,9 @@ def get_session_group_analysis(request: GroupAnalysisRequest, db: Session = Depe
             COUNT(*) FILTER (WHERE pot_unopened = true) as opportunities,
             COUNT(*) FILTER (WHERE pfr = true AND pot_unopened = true) as opened
         FROM player_hand_summary
-        WHERE player_name = ANY(:player_names) AND position IS NOT NULL AND position NOT IN ('BB')
+        WHERE player_name IN :player_names AND position IS NOT NULL AND position NOT IN ('BB')
         GROUP BY position HAVING COUNT(*) FILTER (WHERE pot_unopened = true) >= 10
-    """), {"player_names": player_names})
+    """), {"player_names": tuple(player_names)})
     overall_opening = {row[0]: {"sample": row[1], "value": (row[2] / row[1] * 100) if row[1] > 0 else 0}
                        for row in overall_opening_result}
 
@@ -1278,10 +1278,10 @@ def get_session_group_analysis(request: GroupAnalysisRequest, db: Session = Depe
             COUNT(*) FILTER (WHERE pot_unopened = true) as opportunities,
             COUNT(*) FILTER (WHERE pfr = true AND pot_unopened = true) as opened
         FROM player_hand_summary
-        WHERE player_name = ANY(:player_names) AND session_id = ANY(:session_ids)
+        WHERE player_name IN :player_names AND session_id IN :session_ids
         AND position IS NOT NULL AND position NOT IN ('BB')
         GROUP BY position
-    """), {"player_names": player_names, "session_ids": session_ids})
+    """), {"player_names": tuple(player_names), "session_ids": tuple(session_ids)})
     combined_opening = {row[0]: {"sample": row[1], "value": (row[2] / row[1] * 100) if row[1] > 0 else 0}
                         for row in combined_opening_result}
 
@@ -1346,9 +1346,9 @@ def get_session_group_analysis(request: GroupAnalysisRequest, db: Session = Depe
             COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND vpip = true AND pfr = false) as called,
             COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND made_three_bet = true) as three_bets
         FROM player_hand_summary
-        WHERE player_name = ANY(:player_names) AND position IN ('BB', 'SB', 'BTN', 'CO', 'MP')
+        WHERE player_name IN :player_names AND position IN ('BB', 'SB', 'BTN', 'CO', 'MP')
         GROUP BY position HAVING COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false) >= 5
-    """), {"player_names": player_names})
+    """), {"player_names": tuple(player_names)})
     overall_defense = {}
     for row in overall_defense_result:
         pos, total = row[0], row[1] or 0
@@ -1365,10 +1365,10 @@ def get_session_group_analysis(request: GroupAnalysisRequest, db: Session = Depe
             COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND vpip = true AND pfr = false) as called,
             COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND made_three_bet = true) as three_bets
         FROM player_hand_summary
-        WHERE player_name = ANY(:player_names) AND session_id = ANY(:session_ids)
+        WHERE player_name IN :player_names AND session_id IN :session_ids
         AND position IN ('BB', 'SB', 'BTN', 'CO', 'MP')
         GROUP BY position
-    """), {"player_names": player_names, "session_ids": session_ids})
+    """), {"player_names": tuple(player_names), "session_ids": tuple(session_ids)})
     combined_defense = {}
     for row in combined_defense_result:
         pos, total = row[0], row[1] or 0
@@ -1444,9 +1444,9 @@ def get_session_group_analysis(request: GroupAnalysisRequest, db: Session = Depe
             COUNT(*) FILTER (WHERE called_three_bet = true AND pfr = true) as called,
             COUNT(*) FILTER (WHERE four_bet = true AND pfr = true) as four_bet
         FROM player_hand_summary
-        WHERE player_name = ANY(:player_names) AND position IS NOT NULL
+        WHERE player_name IN :player_names AND position IS NOT NULL
         GROUP BY position HAVING COUNT(*) FILTER (WHERE faced_three_bet = true AND pfr = true) >= 5
-    """), {"player_names": player_names})
+    """), {"player_names": tuple(player_names)})
     overall_f3bet = {}
     for row in overall_f3bet_result:
         pos, total = row[0], row[1] or 0
@@ -1463,10 +1463,10 @@ def get_session_group_analysis(request: GroupAnalysisRequest, db: Session = Depe
             COUNT(*) FILTER (WHERE called_three_bet = true AND pfr = true) as called,
             COUNT(*) FILTER (WHERE four_bet = true AND pfr = true) as four_bet
         FROM player_hand_summary
-        WHERE player_name = ANY(:player_names) AND session_id = ANY(:session_ids)
+        WHERE player_name IN :player_names AND session_id IN :session_ids
         AND position IS NOT NULL
         GROUP BY position
-    """), {"player_names": player_names, "session_ids": session_ids})
+    """), {"player_names": tuple(player_names), "session_ids": tuple(session_ids)})
     combined_f3bet = {}
     for row in combined_f3bet_result:
         pos, total = row[0], row[1] or 0
