@@ -266,9 +266,9 @@ const StatsTrendChart: React.FC<{
 }> = ({ trends, statKey, label, color }) => {
   const data = trends.map((t, idx) => ({
     name: t.date ? new Date(t.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : `S${idx + 1}`,
-    value: t.stats[statKey] || 0,
+    value: t.stats[statKey] ?? 0,
     hands: t.hands
-  }));
+  })).filter(d => d.value != null);
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-4">
@@ -1031,10 +1031,10 @@ const SessionGroupAnalysis: React.FC = () => {
                       <td className={`px-4 py-3 text-sm text-right font-medium ${trend.profit_bb >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                         {trend.profit_bb >= 0 ? '+' : ''}{trend.profit_bb.toFixed(1)}
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-600 text-right">{trend.stats.vpip_pct.toFixed(1)}%</td>
-                      <td className="px-4 py-3 text-sm text-gray-600 text-right">{trend.stats.pfr_pct.toFixed(1)}%</td>
-                      <td className="px-4 py-3 text-sm text-gray-600 text-right">{trend.stats.three_bet_pct.toFixed(1)}%</td>
-                      <td className="px-4 py-3 text-sm text-gray-600 text-right">{trend.stats.fold_to_three_bet_pct.toFixed(1)}%</td>
+                      <td className="px-4 py-3 text-sm text-gray-600 text-right">{(trend.stats.vpip_pct ?? 0).toFixed(1)}%</td>
+                      <td className="px-4 py-3 text-sm text-gray-600 text-right">{(trend.stats.pfr_pct ?? 0).toFixed(1)}%</td>
+                      <td className="px-4 py-3 text-sm text-gray-600 text-right">{(trend.stats.three_bet_pct ?? 0).toFixed(1)}%</td>
+                      <td className="px-4 py-3 text-sm text-gray-600 text-right">{trend.stats.fold_to_three_bet_pct != null ? trend.stats.fold_to_three_bet_pct.toFixed(1) : '—'}%</td>
                     </tr>
                   ))}
                 </tbody>
