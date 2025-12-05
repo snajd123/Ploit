@@ -216,11 +216,11 @@ const MyGame = () => {
               </div>
             </button>
 
-            <Link to="/tools" className="card hover:border-indigo-300 transition-colors group">
+            <Link to="/gto-browser" className="card hover:border-indigo-300 transition-colors group">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="font-semibold text-gray-900">GTO Analysis</h3>
-                  <p className="text-sm text-gray-500">Find leaks & study ranges</p>
+                  <h3 className="font-semibold text-gray-900">GTO Browser</h3>
+                  <p className="text-sm text-gray-500">Study optimal ranges</p>
                 </div>
                 <ChevronRight className="text-gray-400 group-hover:text-indigo-500 transition-colors" size={20} />
               </div>
