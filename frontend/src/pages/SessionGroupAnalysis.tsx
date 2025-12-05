@@ -588,6 +588,22 @@ const SessionGroupAnalysis: React.FC = () => {
     );
   }
 
+  // Defensive checks for required data fields
+  if (!data.aggregated || !data.session_trends) {
+    return (
+      <div className="text-center py-24">
+        <AlertCircle className="mx-auto mb-4 text-red-500" size={48} />
+        <p className="text-red-600 text-lg">Invalid response data from server</p>
+        <button
+          onClick={() => navigate('/sessions')}
+          className="mt-4 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+        >
+          Back to Sessions
+        </button>
+      </div>
+    );
+  }
+
   const { aggregated, session_trends } = data;
   const { summary } = aggregated;
 
