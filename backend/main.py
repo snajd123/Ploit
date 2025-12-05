@@ -23,6 +23,7 @@ from backend.database import get_db, check_db_connection
 from backend.services import DatabaseService, ClaudeService
 from backend.services.database_service import DatabaseConnectionError
 from backend.services.stats_calculator import StatsCalculator
+from backend.services.session_detector import SessionDetector
 from backend.parser import PokerStarsParser
 from backend.config import get_settings
 from backend.verification_endpoint import router as verification_router
@@ -276,6 +277,13 @@ async def upload_hand_history(
             for player in affected_players:
                 service.update_player_stats(player)
 
+            # Detect and create sessions for imported hands
+            logger.info("Detecting sessions for imported hands")
+            session_detector = SessionDetector(db)
+            detected_sessions = session_detector.detect_all_sessions()
+            total_sessions = sum(len(s) for s in detected_sessions.values())
+            logger.info(f"Created {total_sessions} sessions for {len(detected_sessions)} players")
+
             # Determine stake level (from first hand)
             stake_level = parse_result.hands[0].stake_level if parse_result.hands else None
 
@@ -433,6 +441,13 @@ async def import_from_email(
         for player in affected_players:
             service.update_player_stats(player)
 
+        # Detect and create sessions for imported hands
+        logger.info("Detecting sessions for email-imported hands")
+        session_detector = SessionDetector(db)
+        detected_sessions = session_detector.detect_all_sessions()
+        total_sessions = sum(len(s) for s in detected_sessions.values())
+        logger.info(f"Created {total_sessions} sessions for {len(detected_sessions)} players")
+
         # Determine stake level
         stake_level = parse_result.hands[0].stake_level if parse_result.hands else None
 
@@ -531,6 +546,13 @@ async def import_from_text(
         logger.info(f"Updating stats for {len(affected_players)} players")
         for player in affected_players:
             service.update_player_stats(player)
+
+        # Detect and create sessions for imported hands
+        logger.info("Detecting sessions for text-imported hands")
+        session_detector = SessionDetector(db)
+        detected_sessions = session_detector.detect_all_sessions()
+        total_sessions = sum(len(s) for s in detected_sessions.values())
+        logger.info(f"Created {total_sessions} sessions for {len(detected_sessions)} players")
 
         # Determine stake level
         stake_level = parse_result.hands[0].stake_level if parse_result.hands else None
