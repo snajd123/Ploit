@@ -1291,7 +1291,14 @@ def get_mygame_scenario_hands(
         # For combo-level filtering when showing leak mistakes:
         # Check if GTO wanted the leak action, not just the action taken
         leak_action_gto_freq = None
-        if deviation is not None and leak_action and hand_specific_gto:
+        if deviation is not None and leak_action and hand_combo and not hand_specific_gto:
+            # Hand has hole cards but is NOT in the GTO range
+            # This means GTO never plays this hand aggressively → fold is 100%
+            if leak_action == 'fold':
+                leak_action_gto_freq = 100  # Fold is always correct for hands not in range
+            else:
+                leak_action_gto_freq = 0  # No aggressive action for hands not in range
+        elif deviation is not None and leak_action and hand_specific_gto:
             # Map leak_action to GTO action name (handle variations)
             gto_action_names = {
                 'fold': ['fold', 'Fold'],
@@ -1336,8 +1343,23 @@ def get_mygame_scenario_hands(
                 if best_action[0]:
                     deviation_description = f"GTO prefers {best_action[0]} ({best_action[1]:.0f}%)"
                 summary_mistakes += 1
+        elif hand_combo:
+            # Hand has hole cards but is NOT in the GTO range
+            # This means GTO never plays this hand aggressively → fold is 100% correct
+            if action == 'fold':
+                # Folding a hand that's not in range = correct play
+                action_gto_freq = 100  # Implicitly 100% fold frequency
+                deviation_type = 'correct'
+                summary_correct += 1
+            else:
+                # Playing a hand that's not in range = mistake
+                action_gto_freq = 0  # 0% frequency for this action
+                deviation_type = 'mistake'
+                deviation_severity = 'major'
+                deviation_description = "Hand not in GTO range - should fold"
+                summary_mistakes += 1
         elif gto_freqs:
-            # Fall back to aggregate frequencies if no hand-specific GTO found
+            # No hole cards available - fall back to aggregate frequencies
             action_gto_freq = gto_freqs.get(action, 0)
             if action_gto_freq >= 50:
                 deviation_type = 'correct'
