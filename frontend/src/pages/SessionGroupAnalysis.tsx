@@ -512,9 +512,11 @@ const SessionGroupAnalysis: React.FC = () => {
       try {
         const result = await api.getSessionGroupAnalysis(sessionIds);
         setData(result);
-      } catch (err) {
+      } catch (err: any) {
         console.error('Error fetching group analysis:', err);
-        setError('Failed to load group analysis data');
+        // Extract error message from API response
+        const errorMessage = err.response?.data?.detail || 'Failed to load group analysis data';
+        setError(errorMessage);
       } finally {
         setLoading(false);
       }
