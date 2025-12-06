@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 PREGAME_TOOLS = [
     {
         "name": "get_player_full_stats",
-        "description": "Get comprehensive stats for a specific player including all preflop and postflop metrics. Use this to understand a player's complete tendencies.",
+        "description": "Get comprehensive PREFLOP stats for a specific player: VPIP, PFR, 3bet, fold to 3bet, 4bet, cold call, squeeze, limp, steal attempt, fold to steal, 3bet vs steal, plus profit/loss and exploitability index.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -46,13 +46,13 @@ PREGAME_TOOLS = [
     },
     {
         "name": "get_gto_scenario_frequency",
-        "description": "Get GTO frequency for a specific preflop scenario. Scenarios follow pattern: POSITION_vs_OPPONENT_action (e.g., 'BB_vs_BTN_3bet', 'CO_open', 'SB_vs_UTG_call')",
+        "description": "Get GTO frequency for a specific preflop scenario. 189 scenarios available. Patterns: 'BTN_open', 'UTG_open', 'BB_vs_BTN_3bet', 'BB_vs_BTN_call', 'BB_vs_BTN_fold', 'BTN_vs_BB_3bet_fold', 'BTN_vs_BB_3bet_4bet'. Actions: open, call, fold, 3bet, 4bet, 5bet, allin, limp, raise. Positions: UTG, MP, CO, BTN, SB, BB.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "scenario_name": {
                     "type": "string",
-                    "description": "The scenario name (e.g., 'BB_vs_BTN_3bet', 'UTG_open')"
+                    "description": "The scenario name (e.g., 'BTN_open', 'BB_vs_BTN_3bet', 'BB_vs_CO_fold')"
                 }
             },
             "required": ["scenario_name"]
@@ -175,7 +175,7 @@ def _get_player_full_stats(db: Session, player_name: str) -> str:
             vpip_pct, pfr_pct, three_bet_pct, fold_to_three_bet_pct,
             four_bet_pct, cold_call_pct, squeeze_pct, limp_pct,
             steal_attempt_pct, fold_to_steal_pct, three_bet_vs_steal_pct,
-            total_profit_loss, bb_per_100
+            total_profit_loss, bb_per_100, exploitability_index
         FROM player_stats
         WHERE player_name = :name
     """), {"name": player_name}).fetchone()
@@ -187,6 +187,7 @@ def _get_player_full_stats(db: Session, player_name: str) -> str:
         "player_name": result.player_name,
         "total_hands": result.total_hands,
         "player_type": result.player_type,
+        "exploitability_index": float(result.exploitability_index) if result.exploitability_index else None,
         "preflop": {
             "vpip": float(result.vpip_pct) if result.vpip_pct else None,
             "pfr": float(result.pfr_pct) if result.pfr_pct else None,
@@ -328,7 +329,7 @@ def _get_pool_statistics(db: Session, stake_level: str, hero_nicknames: List[str
             SELECT psh.player_name, psh.hands_at_stake,
                    ps.vpip_pct, ps.pfr_pct, ps.three_bet_pct,
                    ps.fold_to_three_bet_pct, ps.cold_call_pct, ps.limp_pct,
-                   ps.steal_attempt_pct, ps.fold_to_steal_pct, ps.player_type
+                   ps.steal_attempt_pct, ps.fold_to_steal_pct, ps.squeeze_pct, ps.player_type
             FROM player_stake_hands psh
             JOIN player_stats ps ON psh.player_name = ps.player_name
         )
@@ -342,7 +343,8 @@ def _get_pool_statistics(db: Session, stake_level: str, hero_nicknames: List[str
             SUM(cold_call_pct * hands_at_stake) / NULLIF(SUM(hands_at_stake), 0) as avg_cold_call,
             SUM(limp_pct * hands_at_stake) / NULLIF(SUM(hands_at_stake), 0) as avg_limp,
             SUM(steal_attempt_pct * hands_at_stake) / NULLIF(SUM(hands_at_stake), 0) as avg_steal,
-            SUM(fold_to_steal_pct * hands_at_stake) / NULLIF(SUM(hands_at_stake), 0) as avg_fold_to_steal
+            SUM(fold_to_steal_pct * hands_at_stake) / NULLIF(SUM(hands_at_stake), 0) as avg_fold_to_steal,
+            SUM(squeeze_pct * hands_at_stake) / NULLIF(SUM(hands_at_stake), 0) as avg_squeeze
         FROM player_with_stats
     """
 
@@ -353,8 +355,8 @@ def _get_pool_statistics(db: Session, stake_level: str, hero_nicknames: List[str
 
     return json.dumps({
         "stake_level": stake,
-        "player_count": result.player_count,
-        "total_hands": result.total_hands,
+        "player_count": int(result.player_count),
+        "total_hands": int(result.total_hands),
         "weighted_averages": {
             "vpip": round(float(result.avg_vpip), 1) if result.avg_vpip else None,
             "pfr": round(float(result.avg_pfr), 1) if result.avg_pfr else None,
@@ -362,6 +364,7 @@ def _get_pool_statistics(db: Session, stake_level: str, hero_nicknames: List[str
             "three_bet": round(float(result.avg_3bet), 1) if result.avg_3bet else None,
             "fold_to_3bet": round(float(result.avg_f3b), 1) if result.avg_f3b else None,
             "cold_call": round(float(result.avg_cold_call), 1) if result.avg_cold_call else None,
+            "squeeze": round(float(result.avg_squeeze), 1) if result.avg_squeeze else None,
             "limp": round(float(result.avg_limp), 1) if result.avg_limp else None,
             "steal_attempt": round(float(result.avg_steal), 1) if result.avg_steal else None,
             "fold_to_steal": round(float(result.avg_fold_to_steal), 1) if result.avg_fold_to_steal else None
