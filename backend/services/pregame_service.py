@@ -103,6 +103,54 @@ def get_population_stats_from_db(db: Session, stake_level: str, hero_nicknames: 
     }
 
 
+def get_gto_baselines(db: Session) -> Dict[str, Any]:
+    """
+    Get key GTO baseline frequencies for the AI prompt.
+    These are aggregate frequencies from GTOWizard data.
+    """
+    try:
+        result = db.execute(text("""
+            SELECT scenario_name, gto_aggregate_freq
+            FROM gto_scenarios
+            WHERE gto_aggregate_freq IS NOT NULL
+            ORDER BY scenario_name
+        """)).fetchall()
+
+        baselines = {}
+        for row in result:
+            baselines[row[0]] = float(row[1]) if row[1] else None
+
+        # Organize into useful categories
+        gto_data = {
+            "opening": {},
+            "defense": {},
+            "three_bet": {},
+            "fold_to_3bet": {}
+        }
+
+        for name, freq in baselines.items():
+            if freq is None:
+                continue
+            # Opening ranges
+            if "_open" in name:
+                pos = name.replace("_open", "")
+                gto_data["opening"][pos] = round(freq * 100, 1)
+            # Defense (calls)
+            elif "_call" in name and "vs_" in name:
+                gto_data["defense"][name] = round(freq * 100, 1)
+            # 3-bet frequencies
+            elif "_3bet" in name and "vs_" in name:
+                gto_data["three_bet"][name] = round(freq * 100, 1)
+            # Fold to 3-bet
+            elif "_fold" in name and "4bet" not in name:
+                gto_data["fold_to_3bet"][name] = round(freq * 100, 1)
+
+        return gto_data
+    except Exception as e:
+        logger.error(f"Error fetching GTO baselines: {e}")
+        return {}
+
+
 def classify_player(stats: Dict[str, Any], sample_size: int) -> str:
     """Classify player type based on stats."""
     vpip = stats.get("vpip", 0) or 0
@@ -372,14 +420,15 @@ def generate_strategy_with_claude(
     opponent_profiles: List[Dict[str, Any]],
     table_softness: float,
     table_classification: str,
-    pool_stats: Dict[str, Any]
+    pool_stats: Dict[str, Any],
+    gto_baselines: Dict[str, Any]
 ) -> Dict[str, Any]:
     """
     Use Claude to generate exploitation strategy.
     """
     client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
-    # Build opponent summary for prompt
+    # Build opponent summary for prompt with GTO deviation analysis
     opponent_summaries = []
     for p in opponent_profiles:
         stats = p.get("stats", {})
@@ -399,6 +448,38 @@ def generate_strategy_with_claude(
     # Pool stats info
     pool_info = f"Pool Average ({pool_stats.get('player_count', 0)} players): VPIP {pool_stats['vpip']:.1f}% | PFR {pool_stats['pfr']:.1f}% | 3bet {pool_stats['three_bet']:.1f}%"
 
+    # Format GTO baselines for the prompt
+    gto_section = ""
+    if gto_baselines:
+        gto_lines = ["GTO REFERENCE (from GTOWizard solver data):"]
+
+        # Opening frequencies
+        if gto_baselines.get("opening"):
+            opens = gto_baselines["opening"]
+            gto_lines.append(f"  Opening frequencies: UTG {opens.get('UTG', 'N/A')}% | HJ {opens.get('HJ', 'N/A')}% | CO {opens.get('CO', 'N/A')}% | BTN {opens.get('BTN', 'N/A')}% | SB {opens.get('SB', 'N/A')}%")
+
+        # Key 3-bet frequencies
+        if gto_baselines.get("three_bet"):
+            three_bets = gto_baselines["three_bet"]
+            key_3bets = []
+            for scenario, freq in sorted(three_bets.items())[:6]:
+                clean = scenario.replace("_3bet", "").replace("_vs_", " vs ")
+                key_3bets.append(f"{clean}: {freq}%")
+            if key_3bets:
+                gto_lines.append(f"  3-bet frequencies: {' | '.join(key_3bets)}")
+
+        # Key defense frequencies
+        if gto_baselines.get("defense"):
+            defense = gto_baselines["defense"]
+            key_defense = []
+            for scenario, freq in sorted(defense.items())[:6]:
+                clean = scenario.replace("_call", " call").replace("_vs_", " vs ")
+                key_defense.append(f"{clean}: {freq}%")
+            if key_defense:
+                gto_lines.append(f"  Defense (call) frequencies: {' | '.join(key_defense)}")
+
+        gto_section = "\n".join(gto_lines)
+
     prompt = f"""You are a professional poker coach generating a preflop exploitation strategy for a 6-max No Limit Hold'em cash game.
 
 TABLE INFO:
@@ -407,26 +488,34 @@ TABLE INFO:
 - Hero Position: {hero_position or "Unknown"}
 - {pool_info}
 
+{gto_section}
+
 OPPONENTS:
 {opponents_text}
 
-Generate a comprehensive PREFLOP exploitation strategy. Focus ONLY on preflop decisions (opening, 3-betting, defense, squeezing, etc.). Do NOT include postflop advice.
+Generate a comprehensive PREFLOP exploitation strategy. Use the GTO reference data above as your baseline - identify how opponents deviate from GTO and exploit those deviations.
 
-IMPORTANT: Only generate specific exploits for players with 30+ hands of data. For UNKNOWN players or those with insufficient data, do NOT include them in opponent_exploits - we don't have reliable information to exploit them yet.
+IMPORTANT GUIDELINES:
+- Only generate specific exploits for players with 30+ hands of data
+- For UNKNOWN players, do NOT include them in opponent_exploits
+- Compare player stats to GTO baselines to identify exploitable tendencies
+- When a player folds more than GTO, increase bluff frequency
+- When a player calls more than GTO, value bet wider and bluff less
+- When a player 3-bets less than GTO, open wider; when more, tighten opens
 
 Return a JSON object with this exact structure:
 {{
   "general_strategy": {{
-    "overview": "2-3 sentence summary of how to approach this table",
-    "opening_adjustments": ["List of 2-4 specific opening range adjustments"],
-    "three_bet_adjustments": ["List of 2-4 specific 3-bet range adjustments"],
-    "defense_adjustments": ["List of 2-3 blind defense adjustments"],
+    "overview": "2-3 sentence summary of how to approach this table, referencing key GTO deviations",
+    "opening_adjustments": ["List of 2-4 specific opening range adjustments based on GTO deviations"],
+    "three_bet_adjustments": ["List of 2-4 specific 3-bet range adjustments based on GTO deviations"],
+    "defense_adjustments": ["List of 2-3 blind defense adjustments based on GTO deviations"],
     "key_principle": "One sentence - the most important thing to remember"
   }},
   "opponent_exploits": [
     {{
       "name": "PlayerName",
-      "exploit": "1-2 sentence specific exploit for this player"
+      "exploit": "1-2 sentence specific exploit referencing their GTO deviation"
     }}
   ],
   "priority_actions": [
@@ -435,7 +524,7 @@ Return a JSON object with this exact structure:
 }}
 
 Be specific with hand examples (e.g., "3-bet A5s-A2s, K9s+" rather than "3-bet wider").
-Only include players in opponent_exploits if they have 30+ hands of data with clear tendencies to exploit.
+Reference GTO deviations where possible (e.g., "Player folds 72% vs GTO 56%, so 3-bet bluff wider").
 Respond with ONLY the JSON object, no other text."""
 
     response_text = ""
@@ -666,6 +755,10 @@ async def process_pregame_analysis(
                 hero_position = "BB"
             break
 
+    # Get GTO baselines from database
+    gto_baselines = get_gto_baselines(db)
+    logger.info(f"Loaded GTO baselines: {len(gto_baselines.get('opening', {}))} opening, {len(gto_baselines.get('three_bet', {}))} 3bet scenarios")
+
     # Generate strategy with Claude
     ai_result = generate_strategy_with_claude(
         stake_level=stake_level,
@@ -673,7 +766,8 @@ async def process_pregame_analysis(
         opponent_profiles=profiles,
         table_softness=softness_score,
         table_classification=table_classification,
-        pool_stats=pool_stats
+        pool_stats=pool_stats,
+        gto_baselines=gto_baselines
     )
     strategy = ai_result["strategy"]
     ai_prompt = ai_result["prompt"]
