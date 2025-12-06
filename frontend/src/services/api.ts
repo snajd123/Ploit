@@ -39,6 +39,8 @@ import type {
   PoolSummary,
   PoolDetail,
   PreGameStrategyResponse,
+  PreGameStrategySummary,
+  PreGameStrategyDetail,
   QuickLookupResponse,
   DetectAllSessionsResponse,
 } from '../types';
@@ -256,6 +258,25 @@ class ApiClient {
   }): Promise<PreGameStrategyResponse> {
     const response = await this.client.post<PreGameStrategyResponse>('/api/strategy/pre-game', request);
     return response.data;
+  }
+
+  // Get list of saved pre-game strategies
+  async getPregameStrategies(limit: number = 50): Promise<PreGameStrategySummary[]> {
+    const response = await this.client.get<PreGameStrategySummary[]>('/api/pregame/', {
+      params: { limit }
+    });
+    return response.data;
+  }
+
+  // Get specific pre-game strategy detail
+  async getPregameStrategy(strategyId: number): Promise<PreGameStrategyDetail> {
+    const response = await this.client.get<PreGameStrategyDetail>(`/api/pregame/${strategyId}`);
+    return response.data;
+  }
+
+  // Delete pre-game strategy
+  async deletePregameStrategy(strategyId: number): Promise<void> {
+    await this.client.delete(`/api/pregame/${strategyId}`);
   }
 
   // Quick opponent lookup

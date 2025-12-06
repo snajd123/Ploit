@@ -36,6 +36,7 @@ from backend.api.pool_analysis_endpoints import router as pool_analysis_router
 from backend.api.settings_endpoints import router as settings_router
 from backend.api.mygame_endpoints import router as mygame_router
 from backend.api.pools_endpoints import router as pools_router
+from backend.api.pregame_endpoints import router as pregame_router
 from backend.models.conversation_models import ClaudeConversation, ClaudeMessage
 from backend.auth import verify_api_key, InputValidator
 
@@ -96,6 +97,9 @@ app.include_router(mygame_router)
 
 # Include Pools router
 app.include_router(pools_router)
+
+# Include Pre-Game router
+app.include_router(pregame_router)
 
 # ========================================
 # Pydantic Models
@@ -332,6 +336,76 @@ from fastapi import Form, Request
 import email
 from email import policy
 from email.parser import BytesParser
+import httpx
+
+
+async def send_pregame_email(
+    to_email: str,
+    strategy_text: str,
+    strategy_id: int,
+    db: Session
+):
+    """
+    Send pre-game strategy email via SendGrid.
+    """
+    sendgrid_api_key = os.getenv("SENDGRID_API_KEY")
+    from_email = os.getenv("SENDGRID_FROM_EMAIL", "strategy@ploit.poker")
+
+    if not sendgrid_api_key:
+        logger.warning("SENDGRID_API_KEY not set, skipping email send")
+        return
+
+    # Clean up sender email (might have name in format "Name <email@example.com>")
+    import re
+    email_match = re.search(r'<([^>]+)>', to_email)
+    if email_match:
+        to_email = email_match.group(1)
+    to_email = to_email.strip()
+
+    # Extract subject from strategy text
+    subject_line = "Pre-Game Strategy"
+    for line in strategy_text.split('\n'):
+        if line.startswith("Subject:"):
+            subject_line = line.replace("Subject:", "").strip()
+            break
+
+    # Remove Subject line from body
+    body_lines = [l for l in strategy_text.split('\n') if not l.startswith("Subject:")]
+    body_text = '\n'.join(body_lines).strip()
+
+    payload = {
+        "personalizations": [{"to": [{"email": to_email}]}],
+        "from": {"email": from_email, "name": "Ploit Poker"},
+        "subject": subject_line,
+        "content": [{"type": "text/plain", "value": body_text}]
+    }
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.sendgrid.com/v3/mail/send",
+                json=payload,
+                headers={
+                    "Authorization": f"Bearer {sendgrid_api_key}",
+                    "Content-Type": "application/json"
+                }
+            )
+
+            if response.status_code in (200, 202):
+                logger.info(f"Strategy email sent to {to_email}")
+                # Update database to mark email as sent
+                from sqlalchemy import text as sql_text
+                db.execute(sql_text("""
+                    UPDATE pregame_strategies
+                    SET email_sent = true, email_sent_at = NOW()
+                    WHERE id = :id
+                """), {"id": strategy_id})
+                db.commit()
+            else:
+                logger.error(f"Failed to send email: {response.status_code} - {response.text}")
+
+    except Exception as e:
+        logger.error(f"Error sending email: {e}")
 
 @app.post(
     "/api/import/email",
@@ -427,7 +501,55 @@ async def import_from_email(
                 content={"detail": "No valid hand histories found in email", "hands_parsed": 0}
             )
 
-        # Insert hands into database
+        # SINGLE HAND = PRE-GAME ANALYSIS
+        if parse_result.total_hands == 1:
+            logger.info("Single hand detected - triggering pre-game analysis")
+            from backend.services.pregame_service import process_pregame_analysis
+            from backend.services.hero_detection import get_hero_nicknames
+
+            hero_nicknames = list(get_hero_nicknames(db))
+            stake_level = parse_result.hands[0].stake_level if parse_result.hands else "NL4"
+            hand_number = parse_result.hands[0].hand_id if parse_result.hands else None
+
+            try:
+                result = await process_pregame_analysis(
+                    db=db,
+                    hand_text=content,
+                    stake_level=stake_level,
+                    hero_nicknames=hero_nicknames,
+                    sender_email=sender,
+                    hand_id=None,  # Not inserted yet
+                    hand_number=str(hand_number) if hand_number else None
+                )
+
+                logger.info(f"Pre-game analysis complete: strategy_id={result['strategy_id']}")
+
+                # Send email with strategy
+                await send_pregame_email(
+                    to_email=sender,
+                    strategy_text=result['email_text'],
+                    strategy_id=result['strategy_id'],
+                    db=db
+                )
+
+                return JSONResponse(
+                    status_code=200,
+                    content={
+                        "type": "pregame_analysis",
+                        "strategy_id": result['strategy_id'],
+                        "table_classification": result['table_classification'],
+                        "softness_score": result['softness_score'],
+                        "opponents_analyzed": len(result['opponents']),
+                        "message": "Pre-game strategy generated and emailed"
+                    }
+                )
+
+            except Exception as e:
+                logger.error(f"Pre-game analysis failed: {e}")
+                # Fall through to normal import if pre-game fails
+                logger.info("Falling back to normal import")
+
+        # Insert hands into database (normal bulk import)
         logger.info(f"Inserting {len(parse_result.hands)} hands from email")
         service = DatabaseService(db)
         insert_result = service.insert_hand_batch(parse_result.hands)

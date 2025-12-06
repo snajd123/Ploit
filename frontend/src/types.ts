@@ -999,6 +999,71 @@ export interface PreGameStrategyResponse {
   quick_tips: string[];
 }
 
+// New Pre-Game Strategy types (from email-triggered analysis)
+export interface PreGameStrategySummary {
+  id: number;
+  created_at: string;
+  stake_level: string;
+  softness_score: number;
+  table_classification: string;
+  opponent_count: number;
+  known_opponents: number;
+  email_sent: boolean;
+}
+
+export interface PreGameOpponent {
+  name: string;
+  seat: number;
+  position: string;
+  sample_size: number;
+  confidence: string;
+  confidence_score: number;
+  data_source: string;
+  stats: {
+    vpip: number | null;
+    pfr: number | null;
+    three_bet: number | null;
+    fold_to_3bet: number | null;
+    cold_call?: number | null;
+    limp?: number | null;
+  };
+  classification: string;
+  population_tendencies?: string[];
+}
+
+export interface PreGameGeneralStrategy {
+  overview: string;
+  opening_adjustments: string[];
+  three_bet_adjustments: string[];
+  defense_adjustments: string[];
+  key_principle: string;
+}
+
+export interface PreGameOpponentExploit {
+  name: string;
+  exploit: string;
+}
+
+export interface PreGameStrategy {
+  general_strategy: PreGameGeneralStrategy;
+  opponent_exploits: PreGameOpponentExploit[];
+  priority_actions: string[];
+}
+
+export interface PreGameStrategyDetail {
+  id: number;
+  created_at: string;
+  hero_nickname: string | null;
+  stake_level: string;
+  hand_number: string | null;
+  softness_score: number;
+  table_classification: string;
+  strategy: PreGameStrategy;
+  opponents: PreGameOpponent[];
+  email_sent: boolean;
+  email_sent_at: string | null;
+}
+
 export interface QuickLookupExploit {
   stat: string;
   exploit: string;

@@ -5,7 +5,7 @@ import Upload from './pages/Upload';
 import PlayersList from './pages/PlayersList';
 import PlayerProfile from './pages/PlayerProfile';
 import ClaudeChat from './pages/ClaudeChat';
-import PreGameStrategy from './pages/PreGameStrategy';
+import PreGame from './pages/PreGame';
 // GTOAnalysis moved to player profiles - redirect /gto to /players
 import GTOBrowser from './pages/GTOBrowser';
 import Sessions from './pages/Sessions';
@@ -29,7 +29,7 @@ function App() {
           <Route path="players" element={<PlayersList />} />
           <Route path="players/:playerName" element={<PlayerProfile />} />
           <Route path="claude" element={<ClaudeChat />} />
-          <Route path="pre-game" element={<PreGameStrategy />} />
+          <Route path="pre-game" element={<PreGame />} />
           <Route path="strategy" element={<Navigate to="/pre-game" replace />} />
           <Route path="gto" element={<Navigate to="/players" replace />} />
           <Route path="gto-browser" element={<GTOBrowser />} />
