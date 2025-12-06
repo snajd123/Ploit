@@ -21,64 +21,63 @@ import os
 
 logger = logging.getLogger(__name__)
 
-# Population defaults for unknown players by stake level
-POPULATION_DEFAULTS = {
-    "NL2": {
-        "vpip": 32.0,
-        "pfr": 14.0,
-        "three_bet": 4.5,
-        "fold_to_3bet": 52.0,
-        "fold_blinds": 75.0,
-        "cold_call": 12.0,
-        "limp": 18.0,
-        "tendencies": [
-            "Over-limp preflop (high limp %)",
-            "Under-3bet (only premiums)",
-            "Over-fold blinds to steals",
-            "Call 3-bets too wide with hands like KJo, QTs"
-        ]
-    },
-    "NL4": {
-        "vpip": 28.0,
-        "pfr": 17.0,
-        "three_bet": 5.5,
-        "fold_to_3bet": 55.0,
-        "fold_blinds": 70.0,
-        "cold_call": 10.0,
-        "limp": 11.0,
-        "tendencies": [
-            "Slightly tighter than NL2 but still loose",
-            "Under-3bet from most positions",
-            "Positionally unaware opens (same range EP and LP)",
-            "Fold to 4-bet too much"
-        ]
-    },
-    "NL10": {
-        "vpip": 25.0,
-        "pfr": 19.0,
-        "three_bet": 7.0,
-        "fold_to_3bet": 58.0,
-        "fold_blinds": 65.0,
-        "cold_call": 8.0,
-        "limp": 6.0,
-        "tendencies": [
-            "More balanced overall",
-            "Some regs present - be cautious",
-            "Position-aware opening ranges",
-            "Tighter 3-bet defense"
-        ]
-    }
-}
-
-
-def get_population_default(stake_level: str) -> Dict[str, Any]:
-    """Get population defaults for a stake level."""
-    # Normalize stake level
+def get_population_stats_from_db(db: Session, stake_level: str, hero_nicknames: List[str]) -> Dict[str, Any]:
+    """
+    Calculate actual population averages from database for a stake level.
+    Excludes hero nicknames from the calculation.
+    """
     stake = stake_level.upper() if stake_level else "NL4"
-    if stake in POPULATION_DEFAULTS:
-        return POPULATION_DEFAULTS[stake]
-    # Default to NL4 if unknown stake
-    return POPULATION_DEFAULTS["NL4"]
+    hero_lower = [n.lower() for n in hero_nicknames] if hero_nicknames else []
+
+    query = """
+        WITH player_stakes AS (
+            SELECT DISTINCT phs.player_name, rh.stake_level
+            FROM player_hand_summary phs
+            JOIN raw_hands rh ON phs.hand_id = rh.hand_id
+            WHERE rh.stake_level = :stake_level
+        )
+        SELECT
+            COUNT(*) as player_count,
+            AVG(ps.vpip_pct) as avg_vpip,
+            AVG(ps.pfr_pct) as avg_pfr,
+            AVG(ps.three_bet_pct) as avg_3bet,
+            AVG(ps.fold_to_3bet_pct) as avg_f3b,
+            AVG(ps.total_hands) as avg_hands
+        FROM player_stats ps
+        JOIN player_stakes pst ON ps.player_name = pst.player_name
+        WHERE LOWER(ps.player_name) != ALL(:hero_nicknames)
+        AND ps.total_hands >= 10
+    """
+
+    try:
+        result = db.execute(text(query), {
+            "stake_level": stake,
+            "hero_nicknames": hero_lower
+        }).fetchone()
+
+        if result and result.player_count and result.player_count > 5:
+            logger.info(f"Pool stats for {stake}: {result.player_count} players, VPIP={result.avg_vpip:.1f}%, PFR={result.avg_pfr:.1f}%")
+            return {
+                "vpip": float(result.avg_vpip) if result.avg_vpip else 25.0,
+                "pfr": float(result.avg_pfr) if result.avg_pfr else 18.0,
+                "three_bet": float(result.avg_3bet) if result.avg_3bet else 6.0,
+                "fold_to_3bet": float(result.avg_f3b) if result.avg_f3b else 55.0,
+                "player_count": result.player_count,
+                "source": "database"
+            }
+    except Exception as e:
+        logger.error(f"Error querying pool stats: {e}")
+
+    # Fallback if no data
+    logger.warning(f"No pool data for {stake}, using fallback defaults")
+    return {
+        "vpip": 25.0,
+        "pfr": 18.0,
+        "three_bet": 6.0,
+        "fold_to_3bet": 55.0,
+        "player_count": 0,
+        "source": "fallback"
+    }
 
 
 def classify_player(stats: Dict[str, Any], sample_size: int) -> str:
@@ -230,13 +229,15 @@ def get_opponent_stats(db: Session, player_name: str) -> Optional[Dict[str, Any]
 def build_opponent_profiles(
     db: Session,
     opponents: List[Dict[str, Any]],
-    stake_level: str
+    stake_level: str,
+    hero_nicknames: List[str]
 ) -> List[Dict[str, Any]]:
     """
     Build complete profiles for each opponent.
-    Uses database stats if available, otherwise population defaults.
+    Uses database stats if available, otherwise pool averages from database.
     """
-    population = get_population_default(stake_level)
+    # Get actual pool stats from database
+    pool_stats = get_population_stats_from_db(db, stake_level, hero_nicknames)
     profiles = []
 
     for opp in opponents:
@@ -269,7 +270,7 @@ def build_opponent_profiles(
                 "classification": classification
             }
         else:
-            # No data or insufficient - use population defaults
+            # No data or insufficient - use pool averages from database
             profile = {
                 "name": opp["name"],
                 "seat": opp["seat"],
@@ -277,17 +278,14 @@ def build_opponent_profiles(
                 "sample_size": stats["total_hands"] if stats else 0,
                 "confidence": "NONE",
                 "confidence_score": 0.0,
-                "data_source": f"POPULATION_DEFAULT_{stake_level.upper()}",
+                "data_source": f"POOL_AVERAGE_{stake_level.upper()}",
                 "stats": {
-                    "vpip": population["vpip"],
-                    "pfr": population["pfr"],
-                    "three_bet": population["three_bet"],
-                    "fold_to_3bet": population["fold_to_3bet"],
-                    "cold_call": population["cold_call"],
-                    "limp": population.get("limp", 10.0)
+                    "vpip": pool_stats["vpip"],
+                    "pfr": pool_stats["pfr"],
+                    "three_bet": pool_stats["three_bet"],
+                    "fold_to_3bet": pool_stats["fold_to_3bet"]
                 },
-                "classification": "UNKNOWN",
-                "population_tendencies": population["tendencies"]
+                "classification": "UNKNOWN"
             }
 
         profiles.append(profile)
@@ -350,7 +348,8 @@ def generate_strategy_with_claude(
     hero_position: str,
     opponent_profiles: List[Dict[str, Any]],
     table_softness: float,
-    table_classification: str
+    table_classification: str,
+    pool_stats: Dict[str, Any]
 ) -> Dict[str, Any]:
     """
     Use Claude to generate exploitation strategy.
@@ -363,8 +362,8 @@ def generate_strategy_with_claude(
         stats = p.get("stats", {})
         stats_str = f"VPIP {stats.get('vpip', 'N/A')}% | PFR {stats.get('pfr', 'N/A')}% | 3bet {stats.get('three_bet', 'N/A')}% | F3B {stats.get('fold_to_3bet', 'N/A')}%"
 
-        if p["data_source"].startswith("POPULATION"):
-            source_note = f"[UNKNOWN - using {stake_level} population defaults]"
+        if p["data_source"].startswith("POOL_AVERAGE"):
+            source_note = f"[UNKNOWN - using {stake_level} pool average]"
         else:
             source_note = f"[{p['sample_size']} hands - {p['confidence']} confidence]"
 
@@ -374,12 +373,16 @@ def generate_strategy_with_claude(
 
     opponents_text = "\n".join(opponent_summaries)
 
+    # Pool stats info
+    pool_info = f"Pool Average ({pool_stats.get('player_count', 0)} players): VPIP {pool_stats['vpip']:.1f}% | PFR {pool_stats['pfr']:.1f}% | 3bet {pool_stats['three_bet']:.1f}%"
+
     prompt = f"""You are a professional poker coach generating a preflop exploitation strategy for a 6-max No Limit Hold'em cash game.
 
 TABLE INFO:
 - Stakes: {stake_level}
 - Table Softness: {table_softness}/5.0 ({table_classification})
 - Hero Position: {hero_position or "Unknown"}
+- {pool_info}
 
 OPPONENTS:
 {opponents_text}
@@ -543,7 +546,7 @@ def format_strategy_email(
 
     for opp in opponents:
         stats = opp.get("stats", {})
-        source = "UNKNOWN" if opp["data_source"].startswith("POPULATION") else f"{opp['sample_size']} hands"
+        source = "UNKNOWN" if opp["data_source"].startswith("POOL_AVERAGE") else f"{opp['sample_size']} hands"
         stats_str = f"VPIP {stats.get('vpip', 'N/A')}% | PFR {stats.get('pfr', 'N/A')}%"
 
         lines.append(f"{opp['seat']}. {opp['name']} ({opp['position']}) - {opp['classification']} [{source}]")
@@ -601,8 +604,11 @@ async def process_pregame_analysis(
 
     logger.info(f"Found {len(opponents)} opponents")
 
-    # Build profiles with stats
-    profiles = build_opponent_profiles(db, opponents, stake_level)
+    # Get pool stats from database
+    pool_stats = get_population_stats_from_db(db, stake_level, hero_nicknames)
+
+    # Build profiles with stats (uses actual pool data from database)
+    profiles = build_opponent_profiles(db, opponents, stake_level, hero_nicknames)
 
     # Calculate table softness
     softness_score, table_classification = calculate_table_softness(profiles)
@@ -627,7 +633,8 @@ async def process_pregame_analysis(
         hero_position=hero_position,
         opponent_profiles=profiles,
         table_softness=softness_score,
-        table_classification=table_classification
+        table_classification=table_classification,
+        pool_stats=pool_stats
     )
 
     # Save to database
