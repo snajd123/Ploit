@@ -502,7 +502,8 @@ async def import_from_email(
             )
 
         # SINGLE HAND = PRE-GAME ANALYSIS
-        if parse_result.total_hands == 1:
+        # Check successful parses, not total_hands (which counts raw text chunks including email headers)
+        if len(parse_result.hands) == 1:
             logger.info("Single hand detected - triggering pre-game analysis")
             from backend.services.pregame_service import process_pregame_analysis
             from backend.services.hero_detection import get_hero_nicknames
