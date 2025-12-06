@@ -50,7 +50,7 @@ def get_population_stats_from_db(db: Session, stake_level: str, hero_nicknames: 
             AVG(ps.vpip_pct) as avg_vpip,
             AVG(ps.pfr_pct) as avg_pfr,
             AVG(ps.three_bet_pct) as avg_3bet,
-            AVG(ps.fold_to_3bet_pct) as avg_f3b,
+            AVG(ps.fold_to_three_bet_pct) as avg_f3b,
             AVG(ps.total_hands) as avg_hands
         FROM player_stats ps
         JOIN player_stakes pst ON ps.player_name = pst.player_name
@@ -79,15 +79,27 @@ def get_population_stats_from_db(db: Session, stake_level: str, hero_nicknames: 
         except:
             pass
 
-    # Fallback if no data
-    logger.warning(f"No pool data for {stake}, using fallback defaults")
+    # Stake-specific fallback defaults based on typical population tendencies
+    # NL2 is loosest/most passive, gets tighter as stakes increase
+    STAKE_DEFAULTS = {
+        "NL2": {"vpip": 30.0, "pfr": 17.0, "three_bet": 5.5, "fold_to_3bet": 60.0},
+        "NL4": {"vpip": 29.0, "pfr": 17.0, "three_bet": 5.5, "fold_to_3bet": 59.0},
+        "NL5": {"vpip": 28.0, "pfr": 17.0, "three_bet": 6.0, "fold_to_3bet": 58.0},
+        "NL10": {"vpip": 26.0, "pfr": 18.0, "three_bet": 6.5, "fold_to_3bet": 56.0},
+        "NL25": {"vpip": 24.0, "pfr": 19.0, "three_bet": 7.0, "fold_to_3bet": 54.0},
+        "NL50": {"vpip": 22.0, "pfr": 18.0, "three_bet": 7.5, "fold_to_3bet": 52.0},
+    }
+
+    defaults = STAKE_DEFAULTS.get(stake, {"vpip": 28.0, "pfr": 17.0, "three_bet": 6.0, "fold_to_3bet": 58.0})
+
+    logger.warning(f"No pool data for {stake}, using stake-specific defaults")
     return {
-        "vpip": 25.0,
-        "pfr": 18.0,
-        "three_bet": 6.0,
-        "fold_to_3bet": 55.0,
+        "vpip": defaults["vpip"],
+        "pfr": defaults["pfr"],
+        "three_bet": defaults["three_bet"],
+        "fold_to_3bet": defaults["fold_to_3bet"],
         "player_count": 0,
-        "source": "fallback"
+        "source": f"default_{stake}"
     }
 
 
