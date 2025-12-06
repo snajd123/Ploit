@@ -501,48 +501,31 @@ async def import_from_email(
                 content={"detail": "No valid hand histories found in email", "hands_parsed": 0}
             )
 
-        # PRE-GAME ANALYSIS DETECTION
-        # Trigger pre-game if:
-        # 1. Subject contains "last 1 hand" (PokerStars hand request)
-        # 2. Subject contains "[pregame]" or "pregame:" (explicit marker)
-        # 3. Only 1 hand was parsed
-        subject_lower = subject.lower()
-        is_pregame_request = (
-            "last 1 hand" in subject_lower or
-            "[pregame]" in subject_lower or
-            subject_lower.startswith("pregame:") or
-            len(parse_result.hands) == 1
-        )
-
-        if is_pregame_request and len(parse_result.hands) >= 1:
-            # Use the LAST hand (most recent) for pre-game analysis
-            target_hand = parse_result.hands[-1]
-            logger.info(f"Pre-game request detected - using hand #{target_hand.hand_id} for analysis (subject: {subject[:50]})")
+        # 1 HAND = PRE-GAME STRATEGY (no import)
+        # MULTIPLE HANDS = NORMAL IMPORT (no strategy)
+        if len(parse_result.hands) == 1:
+            target_hand = parse_result.hands[0]
+            logger.info(f"Single hand - generating pre-game strategy for #{target_hand.hand_id}")
 
             from backend.services.pregame_service import process_pregame_analysis
             from backend.services.hero_detection import get_hero_nicknames
 
             hero_nicknames = list(get_hero_nicknames(db))
-            stake_level = target_hand.stake_level
-            hand_number = target_hand.hand_id
-
-            # Get the raw text for just this hand
             hand_text = target_hand.raw_text if target_hand.raw_text else content
 
             try:
                 result = await process_pregame_analysis(
                     db=db,
                     hand_text=hand_text,
-                    stake_level=stake_level,
+                    stake_level=target_hand.stake_level,
                     hero_nicknames=hero_nicknames,
                     sender_email=sender,
-                    hand_id=None,  # Don't store hand_id - we're not importing
-                    hand_number=str(hand_number) if hand_number else None
+                    hand_id=None,
+                    hand_number=str(target_hand.hand_id)
                 )
 
-                logger.info(f"Pre-game analysis complete: strategy_id={result['strategy_id']}")
+                logger.info(f"Pre-game complete: strategy_id={result['strategy_id']}")
 
-                # Send email with strategy
                 await send_pregame_email(
                     to_email=sender,
                     strategy_text=result['email_text'],
@@ -550,7 +533,6 @@ async def import_from_email(
                     db=db
                 )
 
-                # Return WITHOUT importing any hands
                 return JSONResponse(
                     status_code=200,
                     content={
@@ -558,23 +540,17 @@ async def import_from_email(
                         "strategy_id": result['strategy_id'],
                         "table_classification": result['table_classification'],
                         "softness_score": result['softness_score'],
-                        "opponents_analyzed": len(result['opponents']),
-                        "message": "Pre-game strategy generated and emailed"
+                        "opponents_analyzed": len(result['opponents'])
                     }
                 )
 
             except Exception as e:
-                logger.error(f"Pre-game analysis failed: {e}")
+                logger.error(f"Pre-game failed: {e}")
                 import traceback
                 logger.error(traceback.format_exc())
-                # For pre-game requests, don't fall back to import - just return error
                 return JSONResponse(
                     status_code=200,
-                    content={
-                        "type": "pregame_error",
-                        "error": str(e),
-                        "message": "Pre-game analysis failed"
-                    }
+                    content={"type": "pregame_error", "error": str(e)}
                 )
 
         # Insert hands into database (normal bulk import)
