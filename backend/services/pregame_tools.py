@@ -264,14 +264,36 @@ def _get_gto_scenario_frequency(db: Session, scenario_name: str) -> str:
             })
         return json.dumps({"error": f"Scenario '{scenario_name}' not found"})
 
-    return json.dumps({
+    raw_freq = round(float(result.gto_aggregate_freq) * 100, 1) if result.gto_aggregate_freq else None
+
+    response = {
         "scenario_name": result.scenario_name,
         "position": result.position,
         "action": result.action,
         "vs_position": result.opponent_position,
-        "gto_frequency_pct": round(float(result.gto_aggregate_freq) * 100, 1) if result.gto_aggregate_freq else None,
+        "gto_frequency_pct": raw_freq,
         "category": result.category
-    })
+    }
+
+    # For facing 3-bet scenarios, calculate % of opening range (which is the meaningful stat)
+    # Raw frequencies are % of ALL hands, but players compare fold-to-3bet as % of opens
+    if "_3bet_" in scenario_name and result.action in ("fold", "call", "4bet", "allin"):
+        position = result.position
+        # Look up opening range for this position
+        open_result = db.execute(text("""
+            SELECT gto_aggregate_freq FROM gto_scenarios
+            WHERE scenario_name = :open_name
+        """), {"open_name": f"{position}_open"}).fetchone()
+
+        if open_result and open_result[0]:
+            opening_range_pct = float(open_result[0]) * 100
+            if opening_range_pct > 0 and raw_freq is not None:
+                pct_of_opening_range = round((raw_freq / opening_range_pct) * 100, 1)
+                response["pct_of_opening_range"] = pct_of_opening_range
+                response["opening_range_pct"] = round(opening_range_pct, 1)
+                response["note"] = f"When {position} opens ({opening_range_pct:.1f}% of hands) and faces 3-bet, they {result.action} {pct_of_opening_range}% of their opening range"
+
+    return json.dumps(response)
 
 
 def _list_gto_scenarios(db: Session, position: str = None, action: str = None) -> str:
