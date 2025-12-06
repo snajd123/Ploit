@@ -386,6 +386,8 @@ OPPONENTS:
 
 Generate a comprehensive PREFLOP exploitation strategy. Focus ONLY on preflop decisions (opening, 3-betting, defense, squeezing, etc.). Do NOT include postflop advice.
 
+IMPORTANT: Only generate specific exploits for players with 30+ hands of data. For UNKNOWN players or those with insufficient data, do NOT include them in opponent_exploits - we don't have reliable information to exploit them yet.
+
 Return a JSON object with this exact structure:
 {{
   "general_strategy": {{
@@ -407,7 +409,7 @@ Return a JSON object with this exact structure:
 }}
 
 Be specific with hand examples (e.g., "3-bet A5s-A2s, K9s+" rather than "3-bet wider").
-If a player is UNKNOWN, suggest watching for specific tendencies.
+Only include players in opponent_exploits if they have 30+ hands of data with clear tendencies to exploit.
 Respond with ONLY the JSON object, no other text."""
 
     try:
@@ -431,7 +433,7 @@ Respond with ONLY the JSON object, no other text."""
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse Claude response as JSON: {e}")
         logger.error(f"Response was: {response_text[:500]}")
-        # Return a basic fallback strategy
+        # Return a basic fallback strategy - only exploit players with 30+ hands
         return {
             "general_strategy": {
                 "overview": f"Table is {table_classification.lower()}. Adjust accordingly.",
@@ -443,6 +445,7 @@ Respond with ONLY the JSON object, no other text."""
             "opponent_exploits": [
                 {"name": p["name"], "exploit": f"{p['classification']} - adjust accordingly"}
                 for p in opponent_profiles
+                if p.get("sample_size", 0) >= 30
             ],
             "priority_actions": ["Play solid preflop poker", "Observe opponent tendencies"]
         }
