@@ -1062,6 +1062,8 @@ export interface PreGameStrategyDetail {
   opponents: PreGameOpponent[];
   email_sent: boolean;
   email_sent_at: string | null;
+  ai_prompt: string | null;
+  ai_response: string | null;
 }
 
 export interface QuickLookupExploit {

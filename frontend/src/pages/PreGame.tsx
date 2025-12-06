@@ -3,13 +3,14 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Target, ChevronRight, AlertCircle, Mail, MailCheck, Trash2,
   Users, Clock, ArrowLeft, Zap, Shield, Eye, TrendingUp,
-  ChevronDown, ChevronUp, AlertTriangle
+  ChevronDown, ChevronUp, AlertTriangle, Code, X
 } from 'lucide-react';
 import { api } from '../services/api';
 
 const PreGame = () => {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [expandedOpponents, setExpandedOpponents] = useState<Set<string>>(new Set());
+  const [showAiDebug, setShowAiDebug] = useState(false);
   const queryClient = useQueryClient();
 
   // Fetch list of strategies
@@ -378,8 +379,15 @@ const PreGame = () => {
           </div>
         )}
 
-        {/* Delete button */}
-        <div className="flex justify-end pt-4">
+        {/* Action buttons */}
+        <div className="flex justify-between pt-4">
+          <button
+            onClick={() => setShowAiDebug(true)}
+            className="flex items-center space-x-2 px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <Code size={18} />
+            <span>View AI Prompt</span>
+          </button>
           <button
             onClick={() => {
               if (confirm('Delete this strategy?')) {
@@ -392,6 +400,50 @@ const PreGame = () => {
             <span>Delete Strategy</span>
           </button>
         </div>
+
+        {/* AI Debug Modal */}
+        {showAiDebug && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+                <h2 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
+                  <Code className="w-5 h-5 text-purple-500" />
+                  <span>AI Prompt & Response</span>
+                </h2>
+                <button
+                  onClick={() => setShowAiDebug(false)}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <X size={20} className="text-gray-500" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-auto p-6 space-y-6">
+                {/* Prompt */}
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">Prompt Sent to Claude</h3>
+                  <pre className="bg-gray-900 text-gray-100 p-4 rounded-xl text-sm overflow-x-auto whitespace-pre-wrap font-mono">
+                    {strategyDetail?.ai_prompt || 'No prompt data available (generated before this feature was added)'}
+                  </pre>
+                </div>
+                {/* Response */}
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">Claude's Response</h3>
+                  <pre className="bg-gray-900 text-green-400 p-4 rounded-xl text-sm overflow-x-auto whitespace-pre-wrap font-mono">
+                    {strategyDetail?.ai_response || 'No response data available'}
+                  </pre>
+                </div>
+              </div>
+              <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
+                <button
+                  onClick={() => setShowAiDebug(false)}
+                  className="w-full py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

@@ -41,6 +41,8 @@ class PregameStrategyDetail(BaseModel):
     opponents: List[Dict[str, Any]]
     email_sent: bool
     email_sent_at: Optional[datetime]
+    ai_prompt: Optional[str] = None
+    ai_response: Optional[str] = None
 
 
 @router.get("/", response_model=List[PregameStrategySummary])
@@ -108,7 +110,9 @@ def get_pregame_strategy(
             strategy,
             opponents,
             email_sent,
-            email_sent_at
+            email_sent_at,
+            ai_prompt,
+            ai_response
         FROM pregame_strategies
         WHERE id = :id
     """), {"id": strategy_id})
@@ -138,7 +142,9 @@ def get_pregame_strategy(
         strategy=strategy,
         opponents=opponents,
         email_sent=row[9] or False,
-        email_sent_at=row[10]
+        email_sent_at=row[10],
+        ai_prompt=row[11],
+        ai_response=row[12]
     )
 
 

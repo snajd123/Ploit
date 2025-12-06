@@ -415,6 +415,7 @@ Be specific with hand examples (e.g., "3-bet A5s-A2s, K9s+" rather than "3-bet w
 Only include players in opponent_exploits if they have 30+ hands of data with clear tendencies to exploit.
 Respond with ONLY the JSON object, no other text."""
 
+    response_text = ""
     try:
         response = client.messages.create(
             model="claude-sonnet-4-20250514",
@@ -426,31 +427,40 @@ Respond with ONLY the JSON object, no other text."""
         response_text = response.content[0].text.strip()
 
         # Handle potential markdown code blocks
-        if response_text.startswith("```"):
-            response_text = re.sub(r"^```(?:json)?\n?", "", response_text)
-            response_text = re.sub(r"\n?```$", "", response_text)
+        clean_response = response_text
+        if clean_response.startswith("```"):
+            clean_response = re.sub(r"^```(?:json)?\n?", "", clean_response)
+            clean_response = re.sub(r"\n?```$", "", clean_response)
 
-        strategy = json.loads(response_text)
-        return strategy
+        strategy = json.loads(clean_response)
+        return {
+            "strategy": strategy,
+            "prompt": prompt,
+            "response": response_text
+        }
 
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse Claude response as JSON: {e}")
         logger.error(f"Response was: {response_text[:500]}")
         # Return a basic fallback strategy - only exploit players with 30+ hands
         return {
-            "general_strategy": {
-                "overview": f"Table is {table_classification.lower()}. Adjust accordingly.",
-                "opening_adjustments": ["Play standard opening ranges"],
-                "three_bet_adjustments": ["3-bet value hands"],
-                "defense_adjustments": ["Defend standard ranges"],
-                "key_principle": "Focus on value betting against loose players"
+            "strategy": {
+                "general_strategy": {
+                    "overview": f"Table is {table_classification.lower()}. Adjust accordingly.",
+                    "opening_adjustments": ["Play standard opening ranges"],
+                    "three_bet_adjustments": ["3-bet value hands"],
+                    "defense_adjustments": ["Defend standard ranges"],
+                    "key_principle": "Focus on value betting against loose players"
+                },
+                "opponent_exploits": [
+                    {"name": p["name"], "exploit": f"{p['classification']} - adjust accordingly"}
+                    for p in opponent_profiles
+                    if p.get("sample_size", 0) >= 30
+                ],
+                "priority_actions": ["Play solid preflop poker", "Observe opponent tendencies"]
             },
-            "opponent_exploits": [
-                {"name": p["name"], "exploit": f"{p['classification']} - adjust accordingly"}
-                for p in opponent_profiles
-                if p.get("sample_size", 0) >= 30
-            ],
-            "priority_actions": ["Play solid preflop poker", "Observe opponent tendencies"]
+            "prompt": prompt,
+            "response": response_text or "JSON parse error"
         }
     except Exception as e:
         logger.error(f"Error calling Claude API: {e}")
@@ -467,18 +477,22 @@ def save_pregame_strategy(
     table_classification: str,
     strategy: Dict[str, Any],
     opponents: List[Dict[str, Any]],
-    sender_email: Optional[str] = None
+    sender_email: Optional[str] = None,
+    ai_prompt: Optional[str] = None,
+    ai_response: Optional[str] = None
 ) -> int:
     """Save strategy to database and return ID."""
     result = db.execute(text("""
         INSERT INTO pregame_strategies (
             hero_nickname, stake_level, hand_id, hand_number,
             softness_score, table_classification,
-            strategy, opponents, sender_email
+            strategy, opponents, sender_email,
+            ai_prompt, ai_response
         ) VALUES (
             :hero_nickname, :stake_level, :hand_id, :hand_number,
             :softness_score, :table_classification,
-            :strategy, :opponents, :sender_email
+            :strategy, :opponents, :sender_email,
+            :ai_prompt, :ai_response
         )
         RETURNING id
     """), {
@@ -490,7 +504,9 @@ def save_pregame_strategy(
         "table_classification": table_classification,
         "strategy": json.dumps(strategy),
         "opponents": json.dumps(opponents),
-        "sender_email": sender_email
+        "sender_email": sender_email,
+        "ai_prompt": ai_prompt,
+        "ai_response": ai_response
     })
 
     strategy_id = result.fetchone()[0]
@@ -628,7 +644,7 @@ async def process_pregame_analysis(
             break
 
     # Generate strategy with Claude
-    strategy = generate_strategy_with_claude(
+    ai_result = generate_strategy_with_claude(
         stake_level=stake_level,
         hero_position=hero_position,
         opponent_profiles=profiles,
@@ -636,6 +652,9 @@ async def process_pregame_analysis(
         table_classification=table_classification,
         pool_stats=pool_stats
     )
+    strategy = ai_result["strategy"]
+    ai_prompt = ai_result["prompt"]
+    ai_response = ai_result["response"]
 
     # Save to database
     strategy_id = save_pregame_strategy(
@@ -648,7 +667,9 @@ async def process_pregame_analysis(
         table_classification=table_classification,
         strategy=strategy,
         opponents=profiles,
-        sender_email=sender_email
+        sender_email=sender_email,
+        ai_prompt=ai_prompt,
+        ai_response=ai_response
     )
 
     logger.info(f"Saved pre-game strategy with ID {strategy_id}")
