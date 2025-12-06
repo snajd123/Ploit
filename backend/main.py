@@ -367,11 +367,10 @@ async def send_pregame_email(
     # Build subject line
     subject_line = f"Pre-Game Strategy: {stake_level} Table" if stake_level else "Pre-Game Strategy"
 
-    # Build content - HTML primary, plain text fallback
-    content = []
+    # Build content - plain text first, then HTML (SendGrid requirement)
+    content = [{"type": "text/plain", "value": strategy_text}]
     if strategy_html:
         content.append({"type": "text/html", "value": strategy_html})
-    content.append({"type": "text/plain", "value": strategy_text})
 
     payload = {
         "personalizations": [{"to": [{"email": to_email}]}],
