@@ -594,20 +594,30 @@ Reference exact numbers from your tool queries (e.g., "Player folds 72% vs GTO 5
 
     # Parse the final JSON response
     try:
-        # Find JSON in response
         clean_response = full_response.strip()
 
-        # Try to extract JSON from the response
-        json_match = re.search(r'\{[\s\S]*"general_strategy"[\s\S]*\}', clean_response)
-        if json_match:
-            clean_response = json_match.group(0)
+        # First, try to extract JSON from markdown code blocks (most reliable)
+        code_block_match = re.search(r'```(?:json)?\s*(\{[\s\S]*?"general_strategy"[\s\S]*?\})\s*```', clean_response)
+        if code_block_match:
+            clean_response = code_block_match.group(1)
+        else:
+            # Fallback: Find the last JSON object containing "general_strategy"
+            # This handles cases where Claude outputs JSON without code blocks
+            all_matches = list(re.finditer(r'\{[^{}]*"general_strategy"[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', clean_response))
+            if all_matches:
+                clean_response = all_matches[-1].group(0)
+            else:
+                # Last resort: greedy match but take the last occurrence
+                json_match = re.search(r'(\{[\s\S]*"general_strategy"[\s\S]*"priority_actions"[\s\S]*\})\s*$', clean_response)
+                if json_match:
+                    clean_response = json_match.group(1)
 
-        # Handle markdown code blocks
-        if "```" in clean_response:
-            clean_response = re.sub(r"```(?:json)?\n?", "", clean_response)
-            clean_response = re.sub(r"\n?```", "", clean_response)
+        # Clean any remaining markdown artifacts
+        clean_response = re.sub(r'^```(?:json)?\s*', '', clean_response)
+        clean_response = re.sub(r'\s*```$', '', clean_response)
 
         strategy = json.loads(clean_response)
+        logger.info(f"Successfully parsed strategy JSON with {len(strategy.get('opponent_exploits', []))} exploits")
         return {
             "strategy": strategy,
             "prompt": full_prompt,
