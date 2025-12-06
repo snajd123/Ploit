@@ -343,10 +343,12 @@ async def send_pregame_email(
     to_email: str,
     strategy_text: str,
     strategy_id: int,
-    db: Session
+    db: Session,
+    strategy_html: str = None,
+    stake_level: str = None
 ):
     """
-    Send pre-game strategy email via SendGrid.
+    Send pre-game strategy email via SendGrid (HTML with plain text fallback).
     """
     sendgrid_api_key = os.getenv("SENDGRID_API_KEY")
     from_email = os.getenv("SENDGRID_FROM_EMAIL", "strategy@ploit.poker")
@@ -362,22 +364,20 @@ async def send_pregame_email(
         to_email = email_match.group(1)
     to_email = to_email.strip()
 
-    # Extract subject from strategy text
-    subject_line = "Pre-Game Strategy"
-    for line in strategy_text.split('\n'):
-        if line.startswith("Subject:"):
-            subject_line = line.replace("Subject:", "").strip()
-            break
+    # Build subject line
+    subject_line = f"Pre-Game Strategy: {stake_level} Table" if stake_level else "Pre-Game Strategy"
 
-    # Remove Subject line from body
-    body_lines = [l for l in strategy_text.split('\n') if not l.startswith("Subject:")]
-    body_text = '\n'.join(body_lines).strip()
+    # Build content - HTML primary, plain text fallback
+    content = []
+    if strategy_html:
+        content.append({"type": "text/html", "value": strategy_html})
+    content.append({"type": "text/plain", "value": strategy_text})
 
     payload = {
         "personalizations": [{"to": [{"email": to_email}]}],
         "from": {"email": from_email, "name": "Ploit Poker"},
         "subject": subject_line,
-        "content": [{"type": "text/plain", "value": body_text}]
+        "content": content
     }
 
     try:
@@ -530,7 +530,9 @@ async def import_from_email(
                     to_email=sender,
                     strategy_text=result['email_text'],
                     strategy_id=result['strategy_id'],
-                    db=db
+                    db=db,
+                    strategy_html=result.get('email_html'),
+                    stake_level=target_hand.stake_level
                 )
 
                 return JSONResponse(

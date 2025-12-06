@@ -699,6 +699,222 @@ def save_pregame_strategy(
     return strategy_id
 
 
+def get_classification_color(classification: str) -> tuple:
+    """Get color scheme for table classification."""
+    colors = {
+        "VERY_SOFT": ("#10b981", "#d1fae5"),  # green
+        "SOFT": ("#22c55e", "#dcfce7"),  # light green
+        "MIXED": ("#f59e0b", "#fef3c7"),  # amber
+        "TOUGH": ("#f97316", "#ffedd5"),  # orange
+        "VERY_TOUGH": ("#ef4444", "#fee2e2"),  # red
+    }
+    return colors.get(classification, ("#6b7280", "#f3f4f6"))
+
+
+def get_player_type_color(player_type: str) -> tuple:
+    """Get color scheme for player type."""
+    colors = {
+        "CALLING_STATION": ("#eab308", "#fef9c3"),  # yellow
+        "LOOSE_PASSIVE": ("#f97316", "#ffedd5"),  # orange
+        "MANIAC": ("#a855f7", "#f3e8ff"),  # purple
+        "LOOSE": ("#f59e0b", "#fef3c7"),  # amber
+        "NIT": ("#3b82f6", "#dbeafe"),  # blue
+        "TAG": ("#22c55e", "#dcfce7"),  # green
+        "LAG": ("#f97316", "#ffedd5"),  # orange
+        "TIGHT": ("#6366f1", "#e0e7ff"),  # indigo
+        "REGULAR": ("#6b7280", "#f3f4f6"),  # gray
+        "UNKNOWN": ("#9ca3af", "#f9fafb"),  # light gray
+    }
+    return colors.get(player_type, ("#6b7280", "#f3f4f6"))
+
+
+def format_strategy_html_email(
+    stake_level: str,
+    softness_score: float,
+    table_classification: str,
+    strategy: Dict[str, Any],
+    opponents: List[Dict[str, Any]],
+    strategy_id: int
+) -> str:
+    """Format strategy as professional HTML email."""
+    general = strategy.get("general_strategy", {})
+    class_color, class_bg = get_classification_color(table_classification)
+
+    # Build opponent rows
+    opponent_rows = ""
+    for opp in opponents:
+        stats = opp.get("stats", {})
+        source = "Unknown" if opp["data_source"].startswith("POOL_AVERAGE") else f"{opp['sample_size']} hands"
+        type_color, type_bg = get_player_type_color(opp.get("classification", "UNKNOWN"))
+
+        # Find exploit for this opponent
+        exploit_text = ""
+        for exp in strategy.get("opponent_exploits", []):
+            if exp["name"] == opp["name"]:
+                exploit_text = exp["exploit"]
+                break
+
+        opponent_rows += f"""
+        <tr>
+            <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">
+                <div style="font-weight: 600; color: #111827;">{opp['name']}</div>
+                <div style="font-size: 12px; color: #6b7280;">{opp['position']} • {source}</div>
+            </td>
+            <td style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: center;">
+                <span style="display: inline-block; padding: 4px 12px; border-radius: 9999px; font-size: 12px; font-weight: 500; background-color: {type_bg}; color: {type_color};">
+                    {opp.get('classification', 'UNKNOWN')}
+                </span>
+            </td>
+            <td style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: center; font-family: monospace; font-size: 13px;">
+                {stats.get('vpip', 'N/A')}%
+            </td>
+            <td style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: center; font-family: monospace; font-size: 13px;">
+                {stats.get('pfr', 'N/A')}%
+            </td>
+            <td style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: center; font-family: monospace; font-size: 13px;">
+                {stats.get('three_bet', 'N/A')}%
+            </td>
+            <td style="padding: 12px; border-bottom: 1px solid #e5e7eb; font-size: 13px; color: #374151;">
+                {exploit_text if exploit_text else '<span style="color: #9ca3af;">Insufficient data</span>'}
+            </td>
+        </tr>
+        """
+
+    # Build priority actions
+    priority_items = ""
+    for i, action in enumerate(strategy.get("priority_actions", []), 1):
+        priority_items += f"""
+        <div style="display: flex; align-items: flex-start; margin-bottom: 12px;">
+            <div style="width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); color: white; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 14px; flex-shrink: 0;">{i}</div>
+            <div style="margin-left: 12px; color: #374151; line-height: 1.5;">{action}</div>
+        </div>
+        """
+
+    # Build adjustment lists
+    def build_list(items):
+        if not items:
+            return "<li style='color: #9ca3af;'>No specific adjustments</li>"
+        return "".join([f"<li style='margin-bottom: 8px; color: #374151;'>{item}</li>" for item in items])
+
+    opening_list = build_list(general.get("opening_adjustments", []))
+    three_bet_list = build_list(general.get("three_bet_adjustments", []))
+    defense_list = build_list(general.get("defense_adjustments", []))
+
+    html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f3f4f6;">
+    <div style="max-width: 700px; margin: 0 auto; padding: 20px;">
+
+        <!-- Header -->
+        <div style="background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); border-radius: 16px 16px 0 0; padding: 32px; text-align: center;">
+            <h1 style="margin: 0; color: white; font-size: 28px; font-weight: 700;">Pre-Game Strategy</h1>
+            <p style="margin: 8px 0 0 0; color: rgba(255,255,255,0.9); font-size: 16px;">{stake_level} Table Analysis</p>
+        </div>
+
+        <!-- Table Assessment Card -->
+        <div style="background: white; padding: 24px; border-left: 1px solid #e5e7eb; border-right: 1px solid #e5e7eb;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+                <div>
+                    <div style="font-size: 13px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Table Classification</div>
+                    <span style="display: inline-block; padding: 8px 20px; border-radius: 9999px; font-size: 16px; font-weight: 600; background-color: {class_bg}; color: {class_color};">
+                        {table_classification.replace('_', ' ')}
+                    </span>
+                </div>
+                <div style="text-align: right;">
+                    <div style="font-size: 13px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Softness Score</div>
+                    <div style="font-size: 32px; font-weight: 700; color: {class_color};">{softness_score}<span style="font-size: 18px; color: #9ca3af;">/5.0</span></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Overview Card -->
+        <div style="background: #f8fafc; padding: 24px; border-left: 1px solid #e5e7eb; border-right: 1px solid #e5e7eb; border-top: 1px solid #e5e7eb;">
+            <div style="font-size: 13px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px;">Strategy Overview</div>
+            <p style="margin: 0; color: #1f2937; font-size: 16px; line-height: 1.6;">{general.get("overview", "No overview available.")}</p>
+            <div style="margin-top: 16px; padding: 16px; background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border-radius: 12px; border-left: 4px solid #f59e0b;">
+                <div style="font-size: 12px; color: #92400e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Key Principle</div>
+                <div style="color: #78350f; font-weight: 500;">{general.get("key_principle", "Play solid poker.")}</div>
+            </div>
+        </div>
+
+        <!-- Adjustments Section -->
+        <div style="background: white; padding: 24px; border: 1px solid #e5e7eb;">
+            <h2 style="margin: 0 0 20px 0; font-size: 18px; color: #111827;">Strategy Adjustments</h2>
+
+            <div style="display: grid; gap: 20px;">
+                <!-- Opening -->
+                <div style="background: #f0fdf4; border-radius: 12px; padding: 16px;">
+                    <div style="font-size: 14px; font-weight: 600; color: #166534; margin-bottom: 12px;">Opening Range</div>
+                    <ul style="margin: 0; padding-left: 20px; list-style-type: disc;">
+                        {opening_list}
+                    </ul>
+                </div>
+
+                <!-- 3-Bet -->
+                <div style="background: #fef3c7; border-radius: 12px; padding: 16px;">
+                    <div style="font-size: 14px; font-weight: 600; color: #92400e; margin-bottom: 12px;">3-Bet Strategy</div>
+                    <ul style="margin: 0; padding-left: 20px; list-style-type: disc;">
+                        {three_bet_list}
+                    </ul>
+                </div>
+
+                <!-- Defense -->
+                <div style="background: #ede9fe; border-radius: 12px; padding: 16px;">
+                    <div style="font-size: 14px; font-weight: 600; color: #5b21b6; margin-bottom: 12px;">Blind Defense</div>
+                    <ul style="margin: 0; padding-left: 20px; list-style-type: disc;">
+                        {defense_list}
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Opponents Table -->
+        <div style="background: white; padding: 24px; border: 1px solid #e5e7eb; border-top: none; overflow-x: auto;">
+            <h2 style="margin: 0 0 20px 0; font-size: 18px; color: #111827;">Opponent Analysis</h2>
+            <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                <thead>
+                    <tr style="background: #f9fafb;">
+                        <th style="padding: 12px; text-align: left; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb;">Player</th>
+                        <th style="padding: 12px; text-align: center; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb;">Type</th>
+                        <th style="padding: 12px; text-align: center; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb;">VPIP</th>
+                        <th style="padding: 12px; text-align: center; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb;">PFR</th>
+                        <th style="padding: 12px; text-align: center; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb;">3bet</th>
+                        <th style="padding: 12px; text-align: left; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb;">Exploit</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {opponent_rows}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Priority Actions -->
+        <div style="background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%); padding: 24px; border-radius: 0 0 16px 16px;">
+            <h2 style="margin: 0 0 20px 0; font-size: 18px; color: white;">Priority Actions</h2>
+            {priority_items}
+        </div>
+
+        <!-- Footer -->
+        <div style="text-align: center; padding: 24px;">
+            <a href="https://ploit.app/pregame/{strategy_id}" style="display: inline-block; padding: 14px 32px; background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); color: white; text-decoration: none; border-radius: 12px; font-weight: 600; font-size: 16px;">
+                View Full Strategy in App
+            </a>
+            <p style="margin: 20px 0 0 0; color: #6b7280; font-size: 14px;">Good luck at the tables! 🎰</p>
+        </div>
+
+    </div>
+</body>
+</html>
+    """
+
+    return html
+
+
 def format_strategy_email(
     stake_level: str,
     softness_score: float,
@@ -707,21 +923,18 @@ def format_strategy_email(
     opponents: List[Dict[str, Any]],
     strategy_id: int
 ) -> str:
-    """Format strategy as email text."""
+    """Format strategy as plain text email (fallback)."""
     general = strategy.get("general_strategy", {})
 
     lines = [
-        f"Subject: Pre-Game Strategy: {stake_level} Table",
+        f"PRE-GAME STRATEGY: {stake_level} Table",
         "",
-        "━" * 45,
-        f"TABLE ASSESSMENT: {table_classification} ({softness_score}/5.0)",
-        "━" * 45,
+        f"TABLE: {table_classification} ({softness_score}/5.0)",
         "",
-        "GENERAL STRATEGY",
-        "─" * 20,
+        "OVERVIEW:",
         general.get("overview", ""),
         "",
-        f"Key principle: {general.get('key_principle', '')}",
+        f"KEY PRINCIPLE: {general.get('key_principle', '')}",
         "",
         "OPENING ADJUSTMENTS:",
     ]
@@ -740,40 +953,27 @@ def format_strategy_email(
         lines.append(f"• {adj}")
 
     lines.append("")
-    lines.append("━" * 45)
-    lines.append("OPPONENT EXPLOITS")
-    lines.append("━" * 45)
+    lines.append("OPPONENTS:")
     lines.append("")
 
     for opp in opponents:
         stats = opp.get("stats", {})
-        source = "UNKNOWN" if opp["data_source"].startswith("POOL_AVERAGE") else f"{opp['sample_size']} hands"
-        stats_str = f"VPIP {stats.get('vpip', 'N/A')}% | PFR {stats.get('pfr', 'N/A')}%"
+        source = "Unknown" if opp["data_source"].startswith("POOL_AVERAGE") else f"{opp['sample_size']} hands"
+        lines.append(f"{opp['name']} ({opp['position']}) - {opp['classification']} [{source}]")
+        lines.append(f"  VPIP {stats.get('vpip', 'N/A')}% | PFR {stats.get('pfr', 'N/A')}% | 3bet {stats.get('three_bet', 'N/A')}%")
 
-        lines.append(f"{opp['seat']}. {opp['name']} ({opp['position']}) - {opp['classification']} [{source}]")
-        lines.append(f"   {stats_str}")
-
-        # Find exploit for this opponent
         for exp in strategy.get("opponent_exploits", []):
             if exp["name"] == opp["name"]:
-                lines.append(f"   → {exp['exploit']}")
+                lines.append(f"  → {exp['exploit']}")
                 break
         lines.append("")
 
-    lines.append("━" * 45)
-    lines.append("PRIORITY ACTIONS")
-    lines.append("━" * 45)
-    lines.append("")
-
+    lines.append("PRIORITY ACTIONS:")
     for i, action in enumerate(strategy.get("priority_actions", []), 1):
         lines.append(f"{i}. {action}")
 
     lines.append("")
-    lines.append("━" * 45)
-    lines.append("")
     lines.append(f"View in app: https://ploit.app/pregame/{strategy_id}")
-    lines.append("")
-    lines.append("Good luck at the tables!")
 
     return "\n".join(lines)
 
@@ -864,7 +1064,15 @@ async def process_pregame_analysis(
 
     logger.info(f"Saved pre-game strategy with ID {strategy_id}")
 
-    # Format email
+    # Format emails (HTML and plain text fallback)
+    email_html = format_strategy_html_email(
+        stake_level=stake_level,
+        softness_score=softness_score,
+        table_classification=table_classification,
+        strategy=strategy,
+        opponents=profiles,
+        strategy_id=strategy_id
+    )
     email_text = format_strategy_email(
         stake_level=stake_level,
         softness_score=softness_score,
@@ -880,5 +1088,6 @@ async def process_pregame_analysis(
         "table_classification": table_classification,
         "strategy": strategy,
         "opponents": profiles,
-        "email_text": email_text
+        "email_text": email_text,
+        "email_html": email_html
     }
