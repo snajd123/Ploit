@@ -19,6 +19,8 @@ import re
 import anthropic
 import os
 
+from .pregame_tools import PREGAME_TOOLS, execute_tool
+
 logger = logging.getLogger(__name__)
 
 def get_population_stats_from_db(db: Session, stake_level: str, hero_nicknames: List[str]) -> Dict[str, Any]:
@@ -435,220 +437,209 @@ def calculate_table_softness(profiles: List[Dict[str, Any]]) -> Tuple[float, str
 
 
 def generate_strategy_with_claude(
+    db: Session,
     stake_level: str,
     hero_position: str,
     opponent_profiles: List[Dict[str, Any]],
     table_softness: float,
     table_classification: str,
-    pool_stats: Dict[str, Any],
-    gto_baselines: Dict[str, Any]
+    hero_nicknames: List[str]
 ) -> Dict[str, Any]:
     """
-    Use Claude to generate exploitation strategy.
+    Use Claude with tool calling to generate exploitation strategy.
+    Claude can query the database to gather whatever information it needs.
     """
     client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
-    # Build opponent summary for prompt with GTO deviation analysis
+    # Build initial opponent info for Claude
     opponent_summaries = []
     for p in opponent_profiles:
         stats = p.get("stats", {})
         stats_str = f"VPIP {stats.get('vpip', 'N/A')}% | PFR {stats.get('pfr', 'N/A')}% | 3bet {stats.get('three_bet', 'N/A')}% | F3B {stats.get('fold_to_3bet', 'N/A')}%"
 
         if p["data_source"].startswith("POOL_AVERAGE"):
-            source_note = f"[UNKNOWN - using {stake_level} pool average]"
+            source_note = f"[UNKNOWN - using pool average - use tools to check if in database]"
         else:
             source_note = f"[{p['sample_size']} hands - {p['confidence']} confidence]"
 
-        opponent_summaries.append(f"""
-{p['seat']}. {p['name']} ({p['position']}) - {p['classification']} {source_note}
-   Stats: {stats_str}""")
+        opponent_summaries.append(f"{p['seat']}. {p['name']} ({p['position']}) - {p['classification']} {source_note}\n   Basic Stats: {stats_str}")
 
     opponents_text = "\n".join(opponent_summaries)
 
-    # Pool stats info
-    pool_info = f"Pool Average ({pool_stats.get('player_count', 0)} players): VPIP {pool_stats['vpip']:.1f}% | PFR {pool_stats['pfr']:.1f}% | 3bet {pool_stats['three_bet']:.1f}% | F3B {pool_stats['fold_to_3bet']:.1f}%"
+    # Initial system prompt
+    system_prompt = """You are a professional poker coach generating a preflop exploitation strategy for a 6-max No Limit Hold'em cash game.
 
-    # Format GTO baselines for the prompt
-    gto_section = ""
-    pool_vs_gto_section = ""
+You have access to a comprehensive database of player statistics and GTO reference data. Use the provided tools to:
+1. Look up detailed stats for each opponent (especially those with DATABASE data)
+2. Query GTO frequencies for relevant scenarios
+3. Get pool statistics for comparison
+4. Compare players to GTO to identify their biggest leaks
 
-    if gto_baselines:
-        gto_lines = ["GTO REFERENCE (from GTOWizard solver data):"]
+IMPORTANT WORKFLOW:
+1. First, get the pool statistics for this stake level
+2. Look up GTO scenarios for key spots (opening, 3-betting, defending)
+3. For each opponent with DATABASE data, get their full stats and compare to GTO
+4. Use this data to generate specific, actionable exploits
 
-        # Opening frequencies
-        if gto_baselines.get("opening"):
-            opens = gto_baselines["opening"]
-            gto_lines.append(f"  Opening frequencies: UTG {opens.get('UTG', 'N/A')}% | MP {opens.get('MP', 'N/A')}% | CO {opens.get('CO', 'N/A')}% | BTN {opens.get('BTN', 'N/A')}% | SB {opens.get('SB_raise', 'N/A')}%")
+When you have gathered enough information, generate your final strategy as a JSON object."""
 
-        # Key 3-bet frequencies
-        if gto_baselines.get("three_bet"):
-            three_bets = gto_baselines["three_bet"]
-            key_3bets = []
-            for scenario, freq in sorted(three_bets.items())[:6]:
-                clean = scenario.replace("_3bet", "").replace("_vs_", " vs ")
-                key_3bets.append(f"{clean}: {freq}%")
-            if key_3bets:
-                gto_lines.append(f"  3-bet frequencies: {' | '.join(key_3bets)}")
-
-        # Key defense frequencies
-        if gto_baselines.get("defense"):
-            defense = gto_baselines["defense"]
-            key_defense = []
-            for scenario, freq in sorted(defense.items())[:6]:
-                clean = scenario.replace("_call", " call").replace("_vs_", " vs ")
-                key_defense.append(f"{clean}: {freq}%")
-            if key_defense:
-                gto_lines.append(f"  Defense (call) frequencies: {' | '.join(key_defense)}")
-
-        gto_section = "\n".join(gto_lines)
-
-        # Calculate GTO averages for pool comparison
-        gto_avg_open = 0
-        gto_avg_3bet = 0
-        gto_avg_f3b = 0
-
-        if gto_baselines.get("opening"):
-            open_freqs = [v for k, v in gto_baselines["opening"].items() if isinstance(v, (int, float)) and "limp" not in k.lower()]
-            if open_freqs:
-                gto_avg_open = sum(open_freqs) / len(open_freqs)
-
-        if gto_baselines.get("three_bet"):
-            three_bet_freqs = list(gto_baselines["three_bet"].values())
-            if three_bet_freqs:
-                gto_avg_3bet = sum(three_bet_freqs) / len(three_bet_freqs)
-
-        if gto_baselines.get("fold_to_3bet"):
-            f3b_freqs = list(gto_baselines["fold_to_3bet"].values())
-            if f3b_freqs:
-                gto_avg_f3b = sum(f3b_freqs) / len(f3b_freqs)
-
-        # Build pool vs GTO comparison
-        pool_vs_gto_lines = [f"POOL vs GTO DEVIATION ANALYSIS ({stake_level}):"]
-
-        # PFR vs GTO opening
-        if gto_avg_open > 0:
-            pfr_diff = pool_stats['pfr'] - gto_avg_open
-            direction = "LOOSER" if pfr_diff > 0 else "TIGHTER"
-            pool_vs_gto_lines.append(f"  PFR: Pool {pool_stats['pfr']:.1f}% vs GTO avg {gto_avg_open:.1f}% → Pool is {abs(pfr_diff):.1f}% {direction}")
-
-        # 3-bet comparison
-        if gto_avg_3bet > 0:
-            three_bet_diff = pool_stats['three_bet'] - gto_avg_3bet
-            direction = "MORE AGGRESSIVE" if three_bet_diff > 0 else "MORE PASSIVE"
-            pool_vs_gto_lines.append(f"  3-bet: Pool {pool_stats['three_bet']:.1f}% vs GTO avg {gto_avg_3bet:.1f}% → Pool is {abs(three_bet_diff):.1f}% {direction}")
-
-        # F3B comparison
-        if gto_avg_f3b > 0:
-            f3b_diff = pool_stats['fold_to_3bet'] - gto_avg_f3b
-            direction = "OVERFOLDS" if f3b_diff > 0 else "UNDERFOLDS"
-            pool_vs_gto_lines.append(f"  Fold to 3-bet: Pool {pool_stats['fold_to_3bet']:.1f}% vs GTO avg {gto_avg_f3b:.1f}% → Pool {direction} by {abs(f3b_diff):.1f}%")
-
-        # VPIP-PFR gap analysis (key indicator of passive play)
-        vpip_pfr_gap = pool_stats['vpip'] - pool_stats['pfr']
-        gto_gap = 5.0  # GTO players have small gap ~5%
-        gap_diff = vpip_pfr_gap - gto_gap
-        pool_vs_gto_lines.append(f"  VPIP-PFR Gap: Pool {vpip_pfr_gap:.1f}% vs GTO ~{gto_gap}% → Pool is {gap_diff:.1f}% MORE PASSIVE (cold-calling/limping)")
-
-        pool_vs_gto_section = "\n".join(pool_vs_gto_lines)
-
-    prompt = f"""You are a professional poker coach generating a preflop exploitation strategy for a 6-max No Limit Hold'em cash game.
+    # Initial user message
+    initial_message = f"""Generate a preflop exploitation strategy for this table:
 
 TABLE INFO:
 - Stakes: {stake_level}
 - Table Softness: {table_softness}/5.0 ({table_classification})
 - Hero Position: {hero_position or "Unknown"}
-- {pool_info}
 
-{gto_section}
-
-{pool_vs_gto_section}
-
-OPPONENTS:
+OPPONENTS AT TABLE:
 {opponents_text}
 
-Generate a comprehensive PREFLOP exploitation strategy. Use the GTO reference data above as your baseline - identify how opponents deviate from GTO and exploit those deviations.
+Use the tools to gather detailed information about:
+1. Pool statistics for {stake_level}
+2. GTO reference frequencies
+3. Full stats for opponents with database data
+4. Compare each known opponent to GTO to find their leaks
 
-IMPORTANT GUIDELINES:
-- Only generate specific exploits for players with 30+ hands of data
-- For UNKNOWN players, do NOT include them in opponent_exploits
-- Compare player stats to GTO baselines to identify exploitable tendencies
-- When a player folds more than GTO, increase bluff frequency
-- When a player calls more than GTO, value bet wider and bluff less
-- When a player 3-bets less than GTO, open wider; when more, tighten opens
-
-Return a JSON object with this exact structure:
+After gathering data, return a JSON strategy with this structure:
 {{
   "general_strategy": {{
-    "overview": "2-3 sentence summary of how to approach this table, referencing key GTO deviations",
-    "opening_adjustments": ["List of 2-4 specific opening range adjustments based on GTO deviations"],
-    "three_bet_adjustments": ["List of 2-4 specific 3-bet range adjustments based on GTO deviations"],
-    "defense_adjustments": ["List of 2-3 blind defense adjustments based on GTO deviations"],
-    "key_principle": "One sentence - the most important thing to remember"
+    "overview": "2-3 sentence summary referencing specific GTO deviations you found",
+    "opening_adjustments": ["2-4 specific adjustments with hand examples"],
+    "three_bet_adjustments": ["2-4 specific adjustments with hand examples"],
+    "defense_adjustments": ["2-3 blind defense adjustments"],
+    "key_principle": "One sentence - most important thing to remember"
   }},
   "opponent_exploits": [
     {{
       "name": "PlayerName",
-      "exploit": "1-2 sentence specific exploit referencing their GTO deviation"
+      "exploit": "1-2 sentence specific exploit referencing their exact stats vs GTO"
     }}
   ],
-  "priority_actions": [
-    "Top 3 highest-EV actions to focus on this session"
-  ]
+  "priority_actions": ["Top 3 highest-EV actions for this session"]
 }}
 
-Be specific with hand examples (e.g., "3-bet A5s-A2s, K9s+" rather than "3-bet wider").
-Reference GTO deviations where possible (e.g., "Player folds 72% vs GTO 56%, so 3-bet bluff wider").
-Respond with ONLY the JSON object, no other text."""
+ONLY include opponent_exploits for players with 30+ hands of data.
+Be specific with hand examples (e.g., "3-bet A5s-A2s, K9s+" not "3-bet wider").
+Reference exact numbers from your tool queries (e.g., "Player folds 72% vs GTO 56%")."""
 
-    response_text = ""
-    try:
+    messages = [{"role": "user", "content": initial_message}]
+    full_prompt = f"System: {system_prompt}\n\nUser: {initial_message}"
+    full_response = ""
+
+    # Tool calling loop
+    max_iterations = 15
+    iteration = 0
+
+    while iteration < max_iterations:
+        iteration += 1
+        logger.info(f"Claude strategy generation iteration {iteration}")
+
         response = client.messages.create(
             model="claude-sonnet-4-20250514",
-            max_tokens=2000,
-            messages=[{"role": "user", "content": prompt}]
+            max_tokens=4000,
+            system=system_prompt,
+            tools=PREGAME_TOOLS,
+            messages=messages
         )
 
-        # Parse JSON response
-        response_text = response.content[0].text.strip()
+        # Check stop reason
+        if response.stop_reason == "end_turn":
+            # Claude is done - extract final response
+            for block in response.content:
+                if hasattr(block, 'text'):
+                    full_response += block.text
+            break
 
-        # Handle potential markdown code blocks
-        clean_response = response_text
-        if clean_response.startswith("```"):
-            clean_response = re.sub(r"^```(?:json)?\n?", "", clean_response)
-            clean_response = re.sub(r"\n?```$", "", clean_response)
+        elif response.stop_reason == "tool_use":
+            # Process tool calls
+            tool_results = []
+            assistant_content = []
+
+            for block in response.content:
+                if block.type == "tool_use":
+                    tool_name = block.name
+                    tool_input = block.input
+                    tool_id = block.id
+
+                    logger.info(f"Claude calling tool: {tool_name} with {tool_input}")
+                    full_prompt += f"\n\n[Tool Call: {tool_name}({json.dumps(tool_input)})]"
+
+                    # Execute the tool
+                    result = execute_tool(db, tool_name, tool_input, hero_nicknames)
+                    full_response += f"\n[Tool: {tool_name}] {result[:200]}..."
+
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tool_id,
+                        "content": result
+                    })
+                    assistant_content.append(block)
+                elif hasattr(block, 'text'):
+                    assistant_content.append(block)
+                    full_response += block.text
+
+            # Add assistant message with tool calls
+            messages.append({"role": "assistant", "content": assistant_content})
+            # Add tool results
+            messages.append({"role": "user", "content": tool_results})
+        else:
+            # Unexpected stop reason
+            logger.warning(f"Unexpected stop reason: {response.stop_reason}")
+            for block in response.content:
+                if hasattr(block, 'text'):
+                    full_response += block.text
+            break
+
+    logger.info(f"Strategy generation completed after {iteration} iterations")
+
+    # Parse the final JSON response
+    try:
+        # Find JSON in response
+        clean_response = full_response.strip()
+
+        # Try to extract JSON from the response
+        json_match = re.search(r'\{[\s\S]*"general_strategy"[\s\S]*\}', clean_response)
+        if json_match:
+            clean_response = json_match.group(0)
+
+        # Handle markdown code blocks
+        if "```" in clean_response:
+            clean_response = re.sub(r"```(?:json)?\n?", "", clean_response)
+            clean_response = re.sub(r"\n?```", "", clean_response)
 
         strategy = json.loads(clean_response)
         return {
             "strategy": strategy,
-            "prompt": prompt,
-            "response": response_text
+            "prompt": full_prompt,
+            "response": full_response
         }
 
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse Claude response as JSON: {e}")
-        logger.error(f"Response was: {response_text[:500]}")
-        # Return a basic fallback strategy - only exploit players with 30+ hands
+        logger.error(f"Response was: {full_response[:1000]}")
+
+        # Return fallback strategy
         return {
             "strategy": {
                 "general_strategy": {
-                    "overview": f"Table is {table_classification.lower()}. Adjust accordingly.",
-                    "opening_adjustments": ["Play standard opening ranges"],
-                    "three_bet_adjustments": ["3-bet value hands"],
-                    "defense_adjustments": ["Defend standard ranges"],
+                    "overview": f"Table is {table_classification.lower()}. Adjust accordingly based on opponent tendencies.",
+                    "opening_adjustments": ["Play standard opening ranges", "Adjust based on player types"],
+                    "three_bet_adjustments": ["3-bet value hands", "Add bluffs vs tight folders"],
+                    "defense_adjustments": ["Defend standard ranges in blinds"],
                     "key_principle": "Focus on value betting against loose players"
                 },
                 "opponent_exploits": [
-                    {"name": p["name"], "exploit": f"{p['classification']} - adjust accordingly"}
+                    {"name": p["name"], "exploit": f"{p['classification']} player - adjust accordingly"}
                     for p in opponent_profiles
                     if p.get("sample_size", 0) >= 30
                 ],
-                "priority_actions": ["Play solid preflop poker", "Observe opponent tendencies"]
+                "priority_actions": ["Play solid preflop poker", "Observe and adapt to opponent tendencies", "Value bet relentlessly vs calling stations"]
             },
-            "prompt": prompt,
-            "response": response_text or "JSON parse error"
+            "prompt": full_prompt,
+            "response": full_response or "JSON parse error"
         }
     except Exception as e:
-        logger.error(f"Error calling Claude API: {e}")
+        logger.error(f"Error in strategy generation: {e}")
         raise
 
 
@@ -1005,10 +996,7 @@ async def process_pregame_analysis(
 
     logger.info(f"Found {len(opponents)} opponents")
 
-    # Get pool stats from database
-    pool_stats = get_population_stats_from_db(db, stake_level, hero_nicknames)
-
-    # Build profiles with stats (uses actual pool data from database)
+    # Build profiles with stats (uses pool averages for unknown players)
     profiles = build_opponent_profiles(db, opponents, stake_level, hero_nicknames)
 
     # Calculate table softness
@@ -1028,19 +1016,17 @@ async def process_pregame_analysis(
                 hero_position = "BB"
             break
 
-    # Get GTO baselines from database
-    gto_baselines = get_gto_baselines(db)
-    logger.info(f"Loaded GTO baselines: {len(gto_baselines.get('opening', {}))} opening, {len(gto_baselines.get('three_bet', {}))} 3bet scenarios")
-
-    # Generate strategy with Claude
+    # Generate strategy with Claude (tool-based approach)
+    # Claude will query pool stats, GTO baselines, and detailed opponent info itself
+    logger.info("Starting tool-based strategy generation with Claude")
     ai_result = generate_strategy_with_claude(
+        db=db,
         stake_level=stake_level,
         hero_position=hero_position,
         opponent_profiles=profiles,
         table_softness=softness_score,
         table_classification=table_classification,
-        pool_stats=pool_stats,
-        gto_baselines=gto_baselines
+        hero_nicknames=hero_nicknames
     )
     strategy = ai_result["strategy"]
     ai_prompt = ai_result["prompt"]
