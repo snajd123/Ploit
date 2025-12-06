@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 def get_population_stats_from_db(db: Session, stake_level: str, hero_nicknames: List[str]) -> Dict[str, Any]:
     """
     Calculate actual population averages from database for a stake level.
+    Uses WEIGHTED averages (same as UI) - players with more hands count more.
     Excludes hero nicknames from the calculation.
     """
     stake = stake_level.upper() if stake_level else "NL4"
@@ -34,41 +35,60 @@ def get_population_stats_from_db(db: Session, stake_level: str, hero_nicknames: 
     params = {"stake_level": stake}
     if hero_lower:
         placeholders = ", ".join([f":hero_{i}" for i in range(len(hero_lower))])
-        hero_exclusion = f"AND LOWER(ps.player_name) NOT IN ({placeholders})"
+        hero_exclusion = f"AND LOWER(phs.player_name) NOT IN ({placeholders})"
         for i, name in enumerate(hero_lower):
             params[f"hero_{i}"] = name
 
+    # Use same weighted average calculation as UI (pools_endpoints.py)
     query = f"""
-        WITH player_stakes AS (
-            SELECT DISTINCT phs.player_name, rh.stake_level
+        WITH player_stake_hands AS (
+            SELECT
+                phs.player_name,
+                COUNT(*) as hands_at_stake
             FROM player_hand_summary phs
             JOIN raw_hands rh ON phs.hand_id = rh.hand_id
             WHERE rh.stake_level = :stake_level
+            {hero_exclusion}
+            GROUP BY phs.player_name
+        ),
+        player_with_stats AS (
+            SELECT
+                psh.player_name,
+                psh.hands_at_stake,
+                ps.vpip_pct,
+                ps.pfr_pct,
+                ps.three_bet_pct,
+                ps.fold_to_three_bet_pct
+            FROM player_stake_hands psh
+            JOIN player_stats ps ON psh.player_name = ps.player_name
         )
         SELECT
             COUNT(*) as player_count,
-            AVG(ps.vpip_pct) as avg_vpip,
-            AVG(ps.pfr_pct) as avg_pfr,
-            AVG(ps.three_bet_pct) as avg_3bet,
-            AVG(ps.fold_to_three_bet_pct) as avg_f3b,
-            AVG(ps.total_hands) as avg_hands
-        FROM player_stats ps
-        JOIN player_stakes pst ON ps.player_name = pst.player_name
-        WHERE ps.total_hands >= 10
-        {hero_exclusion}
+            SUM(hands_at_stake) as total_hands,
+            SUM(vpip_pct * hands_at_stake) as weighted_vpip,
+            SUM(pfr_pct * hands_at_stake) as weighted_pfr,
+            SUM(three_bet_pct * hands_at_stake) as weighted_3bet,
+            SUM(fold_to_three_bet_pct * hands_at_stake) as weighted_f3b
+        FROM player_with_stats
     """
 
     try:
         result = db.execute(text(query), params).fetchone()
 
-        if result and result.player_count and result.player_count > 5:
-            logger.info(f"Pool stats for {stake}: {result.player_count} players, VPIP={result.avg_vpip:.1f}%, PFR={result.avg_pfr:.1f}%")
+        if result and result.player_count and result.player_count > 5 and result.total_hands > 0:
+            avg_vpip = float(result.weighted_vpip) / float(result.total_hands) if result.weighted_vpip else 25.0
+            avg_pfr = float(result.weighted_pfr) / float(result.total_hands) if result.weighted_pfr else 18.0
+            avg_3bet = float(result.weighted_3bet) / float(result.total_hands) if result.weighted_3bet else 6.0
+            avg_f3b = float(result.weighted_f3b) / float(result.total_hands) if result.weighted_f3b else 55.0
+
+            logger.info(f"Pool stats for {stake}: {result.player_count} players, {result.total_hands} hands, VPIP={avg_vpip:.1f}%, PFR={avg_pfr:.1f}%")
             return {
-                "vpip": float(result.avg_vpip) if result.avg_vpip else 25.0,
-                "pfr": float(result.avg_pfr) if result.avg_pfr else 18.0,
-                "three_bet": float(result.avg_3bet) if result.avg_3bet else 6.0,
-                "fold_to_3bet": float(result.avg_f3b) if result.avg_f3b else 55.0,
+                "vpip": round(avg_vpip, 1),
+                "pfr": round(avg_pfr, 1),
+                "three_bet": round(avg_3bet, 1),
+                "fold_to_3bet": round(avg_f3b, 1),
                 "player_count": result.player_count,
+                "total_hands": result.total_hands,
                 "source": "database"
             }
     except Exception as e:
