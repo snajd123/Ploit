@@ -293,6 +293,26 @@ def _get_gto_scenario_frequency(db: Session, scenario_name: str) -> str:
                 response["opening_range_pct"] = round(opening_range_pct, 1)
                 response["note"] = f"When {position} opens ({opening_range_pct:.1f}% of hands) and faces 3-bet, they {result.action} {pct_of_opening_range}% of their opening range"
 
+    # For facing 4-bet scenarios, calculate % of 3-betting range
+    # Raw frequencies are % of ALL hands, but players need % of their 3-bet range
+    elif "_4bet_" in scenario_name and result.action in ("fold", "call", "5bet", "allin"):
+        position = result.position
+        opponent = result.opponent_position
+        # Look up this position's 3-bet frequency against this opponent
+        three_bet_scenario = f"{position}_vs_{opponent}_3bet"
+        three_bet_result = db.execute(text("""
+            SELECT gto_aggregate_freq FROM gto_scenarios
+            WHERE scenario_name = :name
+        """), {"name": three_bet_scenario}).fetchone()
+
+        if three_bet_result and three_bet_result[0]:
+            three_bet_range_pct = float(three_bet_result[0]) * 100
+            if three_bet_range_pct > 0 and raw_freq is not None:
+                pct_of_3bet_range = round((raw_freq / three_bet_range_pct) * 100, 1)
+                response["pct_of_3bet_range"] = pct_of_3bet_range
+                response["three_bet_range_pct"] = round(three_bet_range_pct, 1)
+                response["note"] = f"When {position} 3-bets vs {opponent} ({three_bet_range_pct:.1f}% of hands) and faces 4-bet, they {result.action} {pct_of_3bet_range}% of their 3-betting range"
+
     return json.dumps(response)
 
 
