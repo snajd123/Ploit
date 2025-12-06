@@ -501,25 +501,42 @@ async def import_from_email(
                 content={"detail": "No valid hand histories found in email", "hands_parsed": 0}
             )
 
-        # SINGLE HAND = PRE-GAME ANALYSIS
-        # Check successful parses, not total_hands (which counts raw text chunks including email headers)
-        if len(parse_result.hands) == 1:
-            logger.info("Single hand detected - triggering pre-game analysis")
+        # PRE-GAME ANALYSIS DETECTION
+        # Trigger pre-game if:
+        # 1. Subject contains "last 1 hand" (PokerStars hand request)
+        # 2. Subject contains "[pregame]" or "pregame:" (explicit marker)
+        # 3. Only 1 hand was parsed
+        subject_lower = subject.lower()
+        is_pregame_request = (
+            "last 1 hand" in subject_lower or
+            "[pregame]" in subject_lower or
+            subject_lower.startswith("pregame:") or
+            len(parse_result.hands) == 1
+        )
+
+        if is_pregame_request and len(parse_result.hands) >= 1:
+            # Use the LAST hand (most recent) for pre-game analysis
+            target_hand = parse_result.hands[-1]
+            logger.info(f"Pre-game request detected - using hand #{target_hand.hand_id} for analysis (subject: {subject[:50]})")
+
             from backend.services.pregame_service import process_pregame_analysis
             from backend.services.hero_detection import get_hero_nicknames
 
             hero_nicknames = list(get_hero_nicknames(db))
-            stake_level = parse_result.hands[0].stake_level if parse_result.hands else "NL4"
-            hand_number = parse_result.hands[0].hand_id if parse_result.hands else None
+            stake_level = target_hand.stake_level
+            hand_number = target_hand.hand_id
+
+            # Get the raw text for just this hand
+            hand_text = target_hand.raw_text if target_hand.raw_text else content
 
             try:
                 result = await process_pregame_analysis(
                     db=db,
-                    hand_text=content,
+                    hand_text=hand_text,
                     stake_level=stake_level,
                     hero_nicknames=hero_nicknames,
                     sender_email=sender,
-                    hand_id=None,  # Not inserted yet
+                    hand_id=None,  # Don't store hand_id - we're not importing
                     hand_number=str(hand_number) if hand_number else None
                 )
 
@@ -533,6 +550,7 @@ async def import_from_email(
                     db=db
                 )
 
+                # Return WITHOUT importing any hands
                 return JSONResponse(
                     status_code=200,
                     content={
@@ -547,8 +565,17 @@ async def import_from_email(
 
             except Exception as e:
                 logger.error(f"Pre-game analysis failed: {e}")
-                # Fall through to normal import if pre-game fails
-                logger.info("Falling back to normal import")
+                import traceback
+                logger.error(traceback.format_exc())
+                # For pre-game requests, don't fall back to import - just return error
+                return JSONResponse(
+                    status_code=200,
+                    content={
+                        "type": "pregame_error",
+                        "error": str(e),
+                        "message": "Pre-game analysis failed"
+                    }
+                )
 
         # Insert hands into database (normal bulk import)
         logger.info(f"Inserting {len(parse_result.hands)} hands from email")
