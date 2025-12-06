@@ -446,17 +446,19 @@ def generate_strategy_with_claude(
     opponents_text = "\n".join(opponent_summaries)
 
     # Pool stats info
-    pool_info = f"Pool Average ({pool_stats.get('player_count', 0)} players): VPIP {pool_stats['vpip']:.1f}% | PFR {pool_stats['pfr']:.1f}% | 3bet {pool_stats['three_bet']:.1f}%"
+    pool_info = f"Pool Average ({pool_stats.get('player_count', 0)} players): VPIP {pool_stats['vpip']:.1f}% | PFR {pool_stats['pfr']:.1f}% | 3bet {pool_stats['three_bet']:.1f}% | F3B {pool_stats['fold_to_3bet']:.1f}%"
 
     # Format GTO baselines for the prompt
     gto_section = ""
+    pool_vs_gto_section = ""
+
     if gto_baselines:
         gto_lines = ["GTO REFERENCE (from GTOWizard solver data):"]
 
         # Opening frequencies
         if gto_baselines.get("opening"):
             opens = gto_baselines["opening"]
-            gto_lines.append(f"  Opening frequencies: UTG {opens.get('UTG', 'N/A')}% | HJ {opens.get('HJ', 'N/A')}% | CO {opens.get('CO', 'N/A')}% | BTN {opens.get('BTN', 'N/A')}% | SB {opens.get('SB', 'N/A')}%")
+            gto_lines.append(f"  Opening frequencies: UTG {opens.get('UTG', 'N/A')}% | MP {opens.get('MP', 'N/A')}% | CO {opens.get('CO', 'N/A')}% | BTN {opens.get('BTN', 'N/A')}% | SB {opens.get('SB_raise', 'N/A')}%")
 
         # Key 3-bet frequencies
         if gto_baselines.get("three_bet"):
@@ -480,6 +482,55 @@ def generate_strategy_with_claude(
 
         gto_section = "\n".join(gto_lines)
 
+        # Calculate GTO averages for pool comparison
+        gto_avg_open = 0
+        gto_avg_3bet = 0
+        gto_avg_f3b = 0
+
+        if gto_baselines.get("opening"):
+            open_freqs = [v for k, v in gto_baselines["opening"].items() if isinstance(v, (int, float)) and "limp" not in k.lower()]
+            if open_freqs:
+                gto_avg_open = sum(open_freqs) / len(open_freqs)
+
+        if gto_baselines.get("three_bet"):
+            three_bet_freqs = list(gto_baselines["three_bet"].values())
+            if three_bet_freqs:
+                gto_avg_3bet = sum(three_bet_freqs) / len(three_bet_freqs)
+
+        if gto_baselines.get("fold_to_3bet"):
+            f3b_freqs = list(gto_baselines["fold_to_3bet"].values())
+            if f3b_freqs:
+                gto_avg_f3b = sum(f3b_freqs) / len(f3b_freqs)
+
+        # Build pool vs GTO comparison
+        pool_vs_gto_lines = [f"POOL vs GTO DEVIATION ANALYSIS ({stake_level}):"]
+
+        # PFR vs GTO opening
+        if gto_avg_open > 0:
+            pfr_diff = pool_stats['pfr'] - gto_avg_open
+            direction = "LOOSER" if pfr_diff > 0 else "TIGHTER"
+            pool_vs_gto_lines.append(f"  PFR: Pool {pool_stats['pfr']:.1f}% vs GTO avg {gto_avg_open:.1f}% → Pool is {abs(pfr_diff):.1f}% {direction}")
+
+        # 3-bet comparison
+        if gto_avg_3bet > 0:
+            three_bet_diff = pool_stats['three_bet'] - gto_avg_3bet
+            direction = "MORE AGGRESSIVE" if three_bet_diff > 0 else "MORE PASSIVE"
+            pool_vs_gto_lines.append(f"  3-bet: Pool {pool_stats['three_bet']:.1f}% vs GTO avg {gto_avg_3bet:.1f}% → Pool is {abs(three_bet_diff):.1f}% {direction}")
+
+        # F3B comparison
+        if gto_avg_f3b > 0:
+            f3b_diff = pool_stats['fold_to_3bet'] - gto_avg_f3b
+            direction = "OVERFOLDS" if f3b_diff > 0 else "UNDERFOLDS"
+            pool_vs_gto_lines.append(f"  Fold to 3-bet: Pool {pool_stats['fold_to_3bet']:.1f}% vs GTO avg {gto_avg_f3b:.1f}% → Pool {direction} by {abs(f3b_diff):.1f}%")
+
+        # VPIP-PFR gap analysis (key indicator of passive play)
+        vpip_pfr_gap = pool_stats['vpip'] - pool_stats['pfr']
+        gto_gap = 5.0  # GTO players have small gap ~5%
+        gap_diff = vpip_pfr_gap - gto_gap
+        pool_vs_gto_lines.append(f"  VPIP-PFR Gap: Pool {vpip_pfr_gap:.1f}% vs GTO ~{gto_gap}% → Pool is {gap_diff:.1f}% MORE PASSIVE (cold-calling/limping)")
+
+        pool_vs_gto_section = "\n".join(pool_vs_gto_lines)
+
     prompt = f"""You are a professional poker coach generating a preflop exploitation strategy for a 6-max No Limit Hold'em cash game.
 
 TABLE INFO:
@@ -489,6 +540,8 @@ TABLE INFO:
 - {pool_info}
 
 {gto_section}
+
+{pool_vs_gto_section}
 
 OPPONENTS:
 {opponents_text}
