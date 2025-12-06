@@ -159,6 +159,11 @@ def execute_tool(db: Session, tool_name: str, tool_input: Dict[str, Any], hero_n
             return json.dumps({"error": f"Unknown tool: {tool_name}"})
     except Exception as e:
         logger.error(f"Tool execution error for {tool_name}: {e}")
+        # Rollback to clear failed transaction state
+        try:
+            db.rollback()
+        except:
+            pass
         return json.dumps({"error": str(e)})
 
 

@@ -1032,6 +1032,12 @@ async def process_pregame_analysis(
     ai_prompt = ai_result["prompt"]
     ai_response = ai_result["response"]
 
+    # Ensure clean transaction state before saving (tool queries may have left it dirty)
+    try:
+        db.rollback()
+    except:
+        pass
+
     # Save to database
     strategy_id = save_pregame_strategy(
         db=db,
