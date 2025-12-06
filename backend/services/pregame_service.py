@@ -29,7 +29,16 @@ def get_population_stats_from_db(db: Session, stake_level: str, hero_nicknames: 
     stake = stake_level.upper() if stake_level else "NL4"
     hero_lower = [n.lower() for n in hero_nicknames] if hero_nicknames else []
 
-    query = """
+    # Build hero exclusion clause dynamically to avoid array parameter issues
+    hero_exclusion = ""
+    params = {"stake_level": stake}
+    if hero_lower:
+        placeholders = ", ".join([f":hero_{i}" for i in range(len(hero_lower))])
+        hero_exclusion = f"AND LOWER(ps.player_name) NOT IN ({placeholders})"
+        for i, name in enumerate(hero_lower):
+            params[f"hero_{i}"] = name
+
+    query = f"""
         WITH player_stakes AS (
             SELECT DISTINCT phs.player_name, rh.stake_level
             FROM player_hand_summary phs
@@ -45,15 +54,12 @@ def get_population_stats_from_db(db: Session, stake_level: str, hero_nicknames: 
             AVG(ps.total_hands) as avg_hands
         FROM player_stats ps
         JOIN player_stakes pst ON ps.player_name = pst.player_name
-        WHERE LOWER(ps.player_name) != ALL(:hero_nicknames)
-        AND ps.total_hands >= 10
+        WHERE ps.total_hands >= 10
+        {hero_exclusion}
     """
 
     try:
-        result = db.execute(text(query), {
-            "stake_level": stake,
-            "hero_nicknames": hero_lower
-        }).fetchone()
+        result = db.execute(text(query), params).fetchone()
 
         if result and result.player_count and result.player_count > 5:
             logger.info(f"Pool stats for {stake}: {result.player_count} players, VPIP={result.avg_vpip:.1f}%, PFR={result.avg_pfr:.1f}%")
@@ -67,6 +73,11 @@ def get_population_stats_from_db(db: Session, stake_level: str, hero_nicknames: 
             }
     except Exception as e:
         logger.error(f"Error querying pool stats: {e}")
+        # Rollback to clear failed transaction state
+        try:
+            db.rollback()
+        except:
+            pass
 
     # Fallback if no data
     logger.warning(f"No pool data for {stake}, using fallback defaults")
