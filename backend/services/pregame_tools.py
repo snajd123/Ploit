@@ -175,9 +175,6 @@ def _get_player_full_stats(db: Session, player_name: str) -> str:
             vpip_pct, pfr_pct, three_bet_pct, fold_to_three_bet_pct,
             four_bet_pct, cold_call_pct, squeeze_pct, limp_pct,
             steal_attempt_pct, fold_to_steal_pct, three_bet_vs_steal_pct,
-            cbet_flop_pct, cbet_turn_pct, cbet_river_pct,
-            fold_to_cbet_flop_pct, fold_to_cbet_turn_pct,
-            wtsd_pct, wsd_pct, wwsf_pct,
             total_profit_loss, bb_per_100
         FROM player_stats
         WHERE player_name = :name
@@ -203,16 +200,6 @@ def _get_player_full_stats(db: Session, player_name: str) -> str:
             "steal_attempt": float(result.steal_attempt_pct) if result.steal_attempt_pct else None,
             "fold_to_steal": float(result.fold_to_steal_pct) if result.fold_to_steal_pct else None,
             "three_bet_vs_steal": float(result.three_bet_vs_steal_pct) if result.three_bet_vs_steal_pct else None
-        },
-        "postflop": {
-            "cbet_flop": float(result.cbet_flop_pct) if result.cbet_flop_pct else None,
-            "cbet_turn": float(result.cbet_turn_pct) if result.cbet_turn_pct else None,
-            "cbet_river": float(result.cbet_river_pct) if result.cbet_river_pct else None,
-            "fold_to_cbet_flop": float(result.fold_to_cbet_flop_pct) if result.fold_to_cbet_flop_pct else None,
-            "fold_to_cbet_turn": float(result.fold_to_cbet_turn_pct) if result.fold_to_cbet_turn_pct else None,
-            "wtsd": float(result.wtsd_pct) if result.wtsd_pct else None,
-            "wsd": float(result.wsd_pct) if result.wsd_pct else None,
-            "wwsf": float(result.wwsf_pct) if result.wwsf_pct else None
         },
         "results": {
             "total_profit_loss": float(result.total_profit_loss) if result.total_profit_loss else None,
@@ -341,7 +328,7 @@ def _get_pool_statistics(db: Session, stake_level: str, hero_nicknames: List[str
             SELECT psh.player_name, psh.hands_at_stake,
                    ps.vpip_pct, ps.pfr_pct, ps.three_bet_pct,
                    ps.fold_to_three_bet_pct, ps.cold_call_pct, ps.limp_pct,
-                   ps.cbet_flop_pct, ps.wtsd_pct, ps.player_type
+                   ps.steal_attempt_pct, ps.fold_to_steal_pct, ps.player_type
             FROM player_stake_hands psh
             JOIN player_stats ps ON psh.player_name = ps.player_name
         )
@@ -354,8 +341,8 @@ def _get_pool_statistics(db: Session, stake_level: str, hero_nicknames: List[str
             SUM(fold_to_three_bet_pct * hands_at_stake) / NULLIF(SUM(hands_at_stake), 0) as avg_f3b,
             SUM(cold_call_pct * hands_at_stake) / NULLIF(SUM(hands_at_stake), 0) as avg_cold_call,
             SUM(limp_pct * hands_at_stake) / NULLIF(SUM(hands_at_stake), 0) as avg_limp,
-            SUM(cbet_flop_pct * hands_at_stake) / NULLIF(SUM(hands_at_stake), 0) as avg_cbet,
-            SUM(wtsd_pct * hands_at_stake) / NULLIF(SUM(hands_at_stake), 0) as avg_wtsd
+            SUM(steal_attempt_pct * hands_at_stake) / NULLIF(SUM(hands_at_stake), 0) as avg_steal,
+            SUM(fold_to_steal_pct * hands_at_stake) / NULLIF(SUM(hands_at_stake), 0) as avg_fold_to_steal
         FROM player_with_stats
     """
 
@@ -376,8 +363,8 @@ def _get_pool_statistics(db: Session, stake_level: str, hero_nicknames: List[str
             "fold_to_3bet": round(float(result.avg_f3b), 1) if result.avg_f3b else None,
             "cold_call": round(float(result.avg_cold_call), 1) if result.avg_cold_call else None,
             "limp": round(float(result.avg_limp), 1) if result.avg_limp else None,
-            "cbet_flop": round(float(result.avg_cbet), 1) if result.avg_cbet else None,
-            "wtsd": round(float(result.avg_wtsd), 1) if result.avg_wtsd else None
+            "steal_attempt": round(float(result.avg_steal), 1) if result.avg_steal else None,
+            "fold_to_steal": round(float(result.avg_fold_to_steal), 1) if result.avg_fold_to_steal else None
         }
     })
 
@@ -463,7 +450,7 @@ def _compare_player_to_gto(db: Session, player_name: str) -> str:
     # Get player stats
     player = db.execute(text("""
         SELECT vpip_pct, pfr_pct, three_bet_pct, fold_to_three_bet_pct,
-               steal_attempt_pct, fold_to_steal_pct, cbet_flop_pct, total_hands
+               steal_attempt_pct, fold_to_steal_pct, cold_call_pct, limp_pct, total_hands
         FROM player_stats WHERE player_name = :name
     """), {"name": player_name}).fetchone()
 
@@ -486,7 +473,8 @@ def _compare_player_to_gto(db: Session, player_name: str) -> str:
         "three_bet": 8,
         "fold_to_3bet": 55,
         "steal": 40,  # BTN + CO + SB
-        "cbet_flop": 65
+        "cold_call": 5,  # GTO cold calls rarely
+        "limp": 0  # GTO doesn't open limp
     }
 
     deviations = []
@@ -535,15 +523,26 @@ def _compare_player_to_gto(db: Session, player_name: str) -> str:
                 "leak": "Overfolds to 3-bets (bluff more)" if diff > 0 else "Underfolds (value bet wider)"
             })
 
-    if player.cbet_flop_pct:
-        diff = float(player.cbet_flop_pct) - gto_approx["cbet_flop"]
-        if abs(diff) > 10:
+    if player.cold_call_pct:
+        diff = float(player.cold_call_pct) - gto_approx["cold_call"]
+        if abs(diff) > 5:
             deviations.append({
-                "stat": "Flop C-bet",
-                "player": round(float(player.cbet_flop_pct), 1),
-                "gto_approx": gto_approx["cbet_flop"],
+                "stat": "Cold Call",
+                "player": round(float(player.cold_call_pct), 1),
+                "gto_approx": gto_approx["cold_call"],
                 "deviation": round(diff, 1),
-                "leak": "C-bets too much (raise/float more)" if diff > 0 else "C-bets too little (can stab more)"
+                "leak": "Cold calls too much (3-bet or fold more)" if diff > 0 else "Cold calls correctly"
+            })
+
+    if player.limp_pct:
+        diff = float(player.limp_pct) - gto_approx["limp"]
+        if diff > 3:
+            deviations.append({
+                "stat": "Limp",
+                "player": round(float(player.limp_pct), 1),
+                "gto_approx": gto_approx["limp"],
+                "deviation": round(diff, 1),
+                "leak": "Limps too much (raise or fold instead)"
             })
 
     return json.dumps({
