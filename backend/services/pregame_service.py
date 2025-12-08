@@ -191,6 +191,7 @@ def pre_gather_strategy_data(
     data = {
         "pool_stats": None,
         "gto_scenarios": {},
+        "gto_baselines": {},  # Aggregate GTO baselines for comparison
         "opponent_details": [],
         "opponent_gto_comparisons": []
     }
@@ -203,7 +204,54 @@ def pre_gather_strategy_data(
         logger.error(f"Error getting pool stats: {e}")
         db.rollback()
 
-    # 2. Key GTO scenarios - opening ranges and common spots
+    # 2. Calculate aggregate GTO baselines from database
+    try:
+        # GTO VPIP/PFR: Average of all opening ranges
+        open_result = db.execute(text("""
+            SELECT AVG(gto_aggregate_freq) as avg_open
+            FROM gto_scenarios WHERE action = 'open' AND gto_aggregate_freq IS NOT NULL
+        """)).fetchone()
+        if open_result and open_result.avg_open:
+            data["gto_baselines"]["vpip"] = round(float(open_result.avg_open) * 100, 1)
+            data["gto_baselines"]["pfr"] = data["gto_baselines"]["vpip"]
+
+        # GTO 3-bet: Average of all 3-bet scenarios
+        three_bet_result = db.execute(text("""
+            SELECT AVG(gto_aggregate_freq) as avg_3bet
+            FROM gto_scenarios WHERE action = '3bet' AND gto_aggregate_freq IS NOT NULL
+        """)).fetchone()
+        if three_bet_result and three_bet_result.avg_3bet:
+            data["gto_baselines"]["three_bet"] = round(float(three_bet_result.avg_3bet) * 100, 1)
+
+        # GTO Fold to 3-bet: Calculate as % of opening range
+        fold_3bet_result = db.execute(text("""
+            SELECT AVG(g1.gto_aggregate_freq) as avg_fold, AVG(g2.gto_aggregate_freq) as avg_open
+            FROM gto_scenarios g1
+            JOIN gto_scenarios g2 ON g2.scenario_name = g1.position || '_open'
+            WHERE g1.action = 'fold' AND g1.category = 'facing_3bet'
+            AND g1.gto_aggregate_freq IS NOT NULL AND g2.gto_aggregate_freq IS NOT NULL
+        """)).fetchone()
+        if fold_3bet_result and fold_3bet_result.avg_fold and fold_3bet_result.avg_open:
+            gto_fold_pct = (float(fold_3bet_result.avg_fold) / float(fold_3bet_result.avg_open)) * 100
+            data["gto_baselines"]["fold_to_3bet"] = round(gto_fold_pct, 1)
+
+        # GTO Cold Call
+        cold_call_result = db.execute(text("""
+            SELECT AVG(gto_aggregate_freq) as avg_cc
+            FROM gto_scenarios WHERE action = 'call' AND category = 'defense' AND gto_aggregate_freq IS NOT NULL
+        """)).fetchone()
+        if cold_call_result and cold_call_result.avg_cc:
+            data["gto_baselines"]["cold_call"] = round(float(cold_call_result.avg_cc) * 100, 1)
+
+        logger.info(f"GTO baselines calculated: {data['gto_baselines']}")
+    except Exception as e:
+        logger.error(f"Error calculating GTO baselines: {e}")
+        try:
+            db.rollback()
+        except:
+            pass
+
+    # 3. Key GTO scenarios - opening ranges and common spots
     key_scenarios = [
         # Opening ranges
         "UTG_open", "MP_open", "HJ_open", "CO_open", "BTN_open", "SB_open",
@@ -605,18 +653,26 @@ def generate_strategy_with_claude(
             if comp.get("significant_deviations"):
                 leaks_text += f"\n{comp['player_name']} LEAKS ({comp.get('exploitability', 'Unknown')} exploitability):"
                 for dev in comp["significant_deviations"]:
-                    leaks_text += f"\n  - {dev['stat']}: {dev['player']}% vs GTO {dev['gto_approx']}% → {dev['leak']}"
+                    gto_val = dev.get('gto_baseline', dev.get('gto_approx', 'N/A'))
+                    leaks_text += f"\n  - {dev['stat']}: {dev['player']}% vs GTO {gto_val}% → {dev['leak']}"
+
+    # Format GTO baselines section
+    gto_baselines_text = ""
+    if gathered_data.get("gto_baselines"):
+        gb = gathered_data["gto_baselines"]
+        gto_baselines_text = f"""VPIP: {gb.get('vpip', 'N/A')}% | PFR: {gb.get('pfr', 'N/A')}%
+3-bet: {gb.get('three_bet', 'N/A')}% | Fold to 3-bet: {gb.get('fold_to_3bet', 'N/A')}%
+Cold Call: {gb.get('cold_call', 'N/A')}%"""
 
     # System prompt
     system_prompt = """You are a professional poker coach generating a preflop exploitation strategy for a 6-max No Limit Hold'em cash game.
 
-You have been provided with comprehensive data including:
-- Pool statistics for this stake level
-- GTO reference frequencies for key scenarios
-- Detailed stats for known opponents
-- Pre-computed GTO deviation analysis showing each player's leaks
+CRITICAL: You must ONLY use data provided in the prompt. Do NOT make up statistics or reference numbers not shown.
+- Only compare pool/player stats to the GTO BASELINES provided
+- If a GTO baseline is not provided for a stat, do NOT claim a deviation exists
+- Every number you cite must come directly from the data sections below
 
-Use this data to generate specific, actionable exploits. Be precise with hand examples and reference exact numbers."""
+Generate specific, actionable exploits based solely on the provided data."""
 
     # Single comprehensive prompt with ALL data
     user_message = f"""Generate a preflop exploitation strategy for this table:
@@ -632,20 +688,23 @@ Hero Position: {hero_position or "Unknown"}
 === POOL STATISTICS ({stake_level}) ===
 {pool_text}
 
-=== GTO REFERENCE FREQUENCIES ===
-{gto_text if gto_text else "No GTO data available"}
+=== GTO BASELINES (from database) ===
+{gto_baselines_text if gto_baselines_text else "No GTO baselines available - do not make GTO comparisons"}
+
+=== GTO SCENARIO FREQUENCIES ===
+{gto_text if gto_text else "No GTO scenario data available"}
 
 === DETAILED OPPONENT STATS ===
 {detailed_opponents_text if detailed_opponents_text else "No detailed stats available"}
 
-=== OPPONENT LEAKS (vs GTO) ===
+=== OPPONENT LEAKS (vs GTO baselines) ===
 {leaks_text if leaks_text else "No significant leaks detected"}
 
 === INSTRUCTIONS ===
-Based on the data above, return a JSON strategy with this exact structure:
+Based ONLY on the data above, return a JSON strategy with this exact structure:
 {{
   "general_strategy": {{
-    "overview": "2-3 sentence summary referencing specific GTO deviations found",
+    "overview": "2-3 sentence summary - ONLY reference deviations shown in the data above",
     "opening_adjustments": ["2-4 specific adjustments with hand examples"],
     "three_bet_adjustments": ["2-4 specific adjustments with hand examples"],
     "defense_adjustments": ["2-3 blind defense adjustments"],
@@ -654,15 +713,17 @@ Based on the data above, return a JSON strategy with this exact structure:
   "opponent_exploits": [
     {{
       "name": "PlayerName",
-      "exploit": "1-2 sentence specific exploit referencing their exact stats vs GTO"
+      "exploit": "1-2 sentence specific exploit - cite exact numbers from the data above"
     }}
   ],
   "priority_actions": ["Top 3 highest-EV actions for this session"]
 }}
 
-ONLY include opponent_exploits for players with 30+ hands of data.
-Be specific with hand examples (e.g., "3-bet A5s-A2s, K9s+" not "3-bet wider").
-Reference exact numbers (e.g., "Player folds 72% vs GTO 56%").
+RULES:
+- ONLY include opponent_exploits for players with 30+ hands of data
+- ONLY cite numbers that appear in the data sections above
+- Do NOT make GTO comparisons unless GTO baselines are provided
+- Be specific with hand examples (e.g., "3-bet A5s-A2s, K9s+")
 
 Return ONLY the JSON object, no other text."""
 

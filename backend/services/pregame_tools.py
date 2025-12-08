@@ -491,7 +491,7 @@ def _get_player_type_distribution(db: Session, stake_level: str) -> str:
 
 
 def _compare_player_to_gto(db: Session, player_name: str) -> str:
-    """Compare player stats to GTO baselines."""
+    """Compare player stats to GTO baselines calculated from actual database data."""
     # Get player stats
     player = db.execute(text("""
         SELECT vpip_pct, pfr_pct, three_bet_pct, fold_to_three_bet_pct,
@@ -502,90 +502,132 @@ def _compare_player_to_gto(db: Session, player_name: str) -> str:
     if not player:
         return json.dumps({"error": f"Player '{player_name}' not found"})
 
-    # Get GTO baselines
-    gto_scenarios = db.execute(text("""
-        SELECT scenario_name, gto_aggregate_freq
+    # Calculate GTO baselines from ACTUAL database data (not hardcoded)
+    gto_baselines = {}
+
+    # GTO VPIP: Average of all opening ranges
+    open_result = db.execute(text("""
+        SELECT AVG(gto_aggregate_freq) as avg_open
         FROM gto_scenarios
-        WHERE scenario_name IN ('BTN_open', 'CO_open', 'BB_vs_BTN_fold', 'BB_vs_BTN_3bet')
-    """)).fetchall()
+        WHERE action = 'open' AND gto_aggregate_freq IS NOT NULL
+    """)).fetchone()
+    if open_result and open_result.avg_open:
+        gto_baselines["vpip"] = round(float(open_result.avg_open) * 100, 1)
 
-    gto_baselines = {r.scenario_name: float(r.gto_aggregate_freq) * 100 for r in gto_scenarios}
+    # GTO PFR: Same as VPIP for GTO (no limping)
+    gto_baselines["pfr"] = gto_baselines.get("vpip")
 
-    # GTO approximations for common stats
-    gto_approx = {
-        "vpip": 22,  # Approximate GTO VPIP for 6-max
-        "pfr": 18,
-        "three_bet": 8,
-        "fold_to_3bet": 55,
-        "steal": 40,  # BTN + CO + SB
-        "cold_call": 5,  # GTO cold calls rarely
-        "limp": 0  # GTO doesn't open limp
-    }
+    # GTO 3-bet: Average of all 3-bet scenarios
+    three_bet_result = db.execute(text("""
+        SELECT AVG(gto_aggregate_freq) as avg_3bet
+        FROM gto_scenarios
+        WHERE action = '3bet' AND gto_aggregate_freq IS NOT NULL
+    """)).fetchone()
+    if three_bet_result and three_bet_result.avg_3bet:
+        gto_baselines["three_bet"] = round(float(three_bet_result.avg_3bet) * 100, 1)
+
+    # GTO Fold to 3-bet: Calculate as % of opening range from fold scenarios
+    # Get average fold frequency and average opening frequency
+    fold_3bet_result = db.execute(text("""
+        SELECT
+            AVG(g1.gto_aggregate_freq) as avg_fold,
+            AVG(g2.gto_aggregate_freq) as avg_open
+        FROM gto_scenarios g1
+        JOIN gto_scenarios g2 ON g2.scenario_name = g1.position || '_open'
+        WHERE g1.action = 'fold'
+        AND g1.category = 'facing_3bet'
+        AND g1.gto_aggregate_freq IS NOT NULL
+        AND g2.gto_aggregate_freq IS NOT NULL
+    """)).fetchone()
+    if fold_3bet_result and fold_3bet_result.avg_fold and fold_3bet_result.avg_open:
+        # Convert to % of opening range
+        gto_fold_pct_of_opens = (float(fold_3bet_result.avg_fold) / float(fold_3bet_result.avg_open)) * 100
+        gto_baselines["fold_to_3bet"] = round(gto_fold_pct_of_opens, 1)
+
+    # GTO Cold Call: Very low in GTO
+    cold_call_result = db.execute(text("""
+        SELECT AVG(gto_aggregate_freq) as avg_cc
+        FROM gto_scenarios
+        WHERE action = 'call' AND category = 'defense' AND gto_aggregate_freq IS NOT NULL
+    """)).fetchone()
+    if cold_call_result and cold_call_result.avg_cc:
+        gto_baselines["cold_call"] = round(float(cold_call_result.avg_cc) * 100, 1)
+
+    # GTO Limp: Should be 0 or near 0
+    limp_result = db.execute(text("""
+        SELECT AVG(gto_aggregate_freq) as avg_limp
+        FROM gto_scenarios
+        WHERE action = 'limp' AND gto_aggregate_freq IS NOT NULL
+    """)).fetchone()
+    if limp_result and limp_result.avg_limp:
+        gto_baselines["limp"] = round(float(limp_result.avg_limp) * 100, 1)
+    else:
+        gto_baselines["limp"] = 0  # GTO doesn't limp
 
     deviations = []
 
-    if player.vpip_pct:
-        diff = float(player.vpip_pct) - gto_approx["vpip"]
+    if player.vpip_pct and gto_baselines.get("vpip"):
+        diff = float(player.vpip_pct) - gto_baselines["vpip"]
         if abs(diff) > 5:
             deviations.append({
                 "stat": "VPIP",
                 "player": round(float(player.vpip_pct), 1),
-                "gto_approx": gto_approx["vpip"],
+                "gto_baseline": gto_baselines["vpip"],
                 "deviation": round(diff, 1),
                 "leak": "Plays too loose" if diff > 0 else "Plays too tight"
             })
 
-    if player.pfr_pct:
-        diff = float(player.pfr_pct) - gto_approx["pfr"]
+    if player.pfr_pct and gto_baselines.get("pfr"):
+        diff = float(player.pfr_pct) - gto_baselines["pfr"]
         if abs(diff) > 4:
             deviations.append({
                 "stat": "PFR",
                 "player": round(float(player.pfr_pct), 1),
-                "gto_approx": gto_approx["pfr"],
+                "gto_baseline": gto_baselines["pfr"],
                 "deviation": round(diff, 1),
                 "leak": "Too aggressive preflop" if diff > 0 else "Too passive preflop"
             })
 
-    if player.three_bet_pct:
-        diff = float(player.three_bet_pct) - gto_approx["three_bet"]
+    if player.three_bet_pct and gto_baselines.get("three_bet"):
+        diff = float(player.three_bet_pct) - gto_baselines["three_bet"]
         if abs(diff) > 3:
             deviations.append({
                 "stat": "3-bet",
                 "player": round(float(player.three_bet_pct), 1),
-                "gto_approx": gto_approx["three_bet"],
+                "gto_baseline": gto_baselines["three_bet"],
                 "deviation": round(diff, 1),
-                "leak": "3-bets too much" if diff > 0 else "3-bets too little (exploitable)"
+                "leak": "3-bets too much" if diff > 0 else "3-bets too little"
             })
 
-    if player.fold_to_three_bet_pct:
-        diff = float(player.fold_to_three_bet_pct) - gto_approx["fold_to_3bet"]
+    if player.fold_to_three_bet_pct and gto_baselines.get("fold_to_3bet"):
+        diff = float(player.fold_to_three_bet_pct) - gto_baselines["fold_to_3bet"]
         if abs(diff) > 8:
             deviations.append({
                 "stat": "Fold to 3-bet",
                 "player": round(float(player.fold_to_three_bet_pct), 1),
-                "gto_approx": gto_approx["fold_to_3bet"],
+                "gto_baseline": gto_baselines["fold_to_3bet"],
                 "deviation": round(diff, 1),
-                "leak": "Overfolds to 3-bets (bluff more)" if diff > 0 else "Underfolds (value bet wider)"
+                "leak": "Overfolds to 3-bets" if diff > 0 else "Underfolds to 3-bets"
             })
 
-    if player.cold_call_pct:
-        diff = float(player.cold_call_pct) - gto_approx["cold_call"]
+    if player.cold_call_pct and gto_baselines.get("cold_call"):
+        diff = float(player.cold_call_pct) - gto_baselines["cold_call"]
         if abs(diff) > 5:
             deviations.append({
                 "stat": "Cold Call",
                 "player": round(float(player.cold_call_pct), 1),
-                "gto_approx": gto_approx["cold_call"],
+                "gto_baseline": gto_baselines["cold_call"],
                 "deviation": round(diff, 1),
-                "leak": "Cold calls too much (3-bet or fold more)" if diff > 0 else "Cold calls correctly"
+                "leak": "Cold calls too much" if diff > 0 else "Cold calls appropriately"
             })
 
-    if player.limp_pct:
-        diff = float(player.limp_pct) - gto_approx["limp"]
+    if player.limp_pct and gto_baselines.get("limp") is not None:
+        diff = float(player.limp_pct) - gto_baselines["limp"]
         if diff > 3:
             deviations.append({
                 "stat": "Limp",
                 "player": round(float(player.limp_pct), 1),
-                "gto_approx": gto_approx["limp"],
+                "gto_baseline": gto_baselines["limp"],
                 "deviation": round(diff, 1),
                 "leak": "Limps too much (raise or fold instead)"
             })
@@ -593,6 +635,7 @@ def _compare_player_to_gto(db: Session, player_name: str) -> str:
     return json.dumps({
         "player_name": player_name,
         "total_hands": player.total_hands,
+        "gto_baselines_used": gto_baselines,
         "significant_deviations": deviations,
         "deviation_count": len(deviations),
         "exploitability": "High" if len(deviations) >= 3 else "Medium" if len(deviations) >= 1 else "Low"
