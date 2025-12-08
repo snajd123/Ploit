@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Calendar, Clock, TrendingUp, TrendingDown, Target, AlertTriangle, LineChart, MessageSquare } from 'lucide-react';
+import { ArrowLeft, Calendar, Clock, TrendingUp, TrendingDown, Target, AlertTriangle, LineChart, MessageSquare, Layers } from 'lucide-react';
 import LeakProgressView from '../components/LeakProgressView';
 import PreflopMistakesView from '../components/PreflopMistakesView';
 import GTOScoreView from '../components/GTOScoreView';
+import SessionSegmentsView from '../components/SessionSegmentsView';
 import DebriefModal from '../components/DebriefModal';
 
-type SessionTab = 'overview' | 'mistakes' | 'leaks';
+type SessionTab = 'overview' | 'mistakes' | 'leaks' | 'segments';
 
 const TAB_CONFIG: { id: SessionTab; label: string; icon: React.ReactNode }[] = [
   { id: 'overview', label: 'Overview', icon: <Target size={16} /> },
+  { id: 'segments', label: 'Strategy Goals', icon: <Layers size={16} /> },
   { id: 'mistakes', label: 'Mistakes', icon: <AlertTriangle size={16} /> },
   { id: 'leaks', label: 'Leak Progress', icon: <LineChart size={16} /> },
 ];
@@ -199,6 +201,12 @@ const SessionDetail: React.FC = () => {
       {activeTab === 'leaks' && (
         <div className="bg-white rounded-lg shadow-sm p-6">
           <LeakProgressView sessionId={parseInt(sessionId || '0')} />
+        </div>
+      )}
+
+      {activeTab === 'segments' && (
+        <div className="bg-white rounded-lg shadow-sm p-6">
+          <SessionSegmentsView sessionId={parseInt(sessionId || '0')} />
         </div>
       )}
 

@@ -1102,3 +1102,48 @@ export interface DetectAllSessionsResponse {
   total_sessions_created: number;
   sessions_by_player: Record<string, DetectedSession[]>;
 }
+
+// Session Segments (Strategy-based breakdown)
+export interface LeakReminder {
+  leak_id: string;
+  description: string;
+  session_goal: string;
+  current_value: number;
+  target_value: number;
+  gto_value: number;
+}
+
+export interface LeakProgress {
+  leak_id: string;
+  description: string;
+  session_goal: string;
+  baseline_value: number;
+  target_value: number;
+  gto_value: number;
+  actual_value: number | null;
+  sample_size: number;
+  improved: boolean | null;
+  hit_target: boolean | null;
+}
+
+export interface SessionSegment {
+  strategy_id: number | null;
+  strategy_time: string | null;
+  softness_score: number | null;
+  table_classification: string | null;
+  hands_count: number;
+  segment_start: string | null;
+  segment_end: string | null;
+  segment_profit: number;
+  has_strategy: boolean;
+  leak_reminders: LeakReminder[];
+  leak_progress: LeakProgress[];
+}
+
+export interface SessionSegmentsResponse {
+  session_id: number;
+  player_name: string;
+  total_segments: number;
+  segments_with_strategy: number;
+  segments: SessionSegment[];
+}

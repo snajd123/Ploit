@@ -360,6 +360,14 @@ class ApiClient {
     return response.data;
   }
 
+  // Get session segments (strategy-based breakdown)
+  async getSessionSegments(sessionId: number): Promise<SessionSegmentsResponse> {
+    const response = await this.client.get<SessionSegmentsResponse>(
+      `/api/sessions/${sessionId}/segments`
+    );
+    return response.data;
+  }
+
   // Aggregate endpoints for multiple sessions
   async getAggregatePositionalPL(sessionIds: number[]): Promise<PositionalPLResponse> {
     const response = await this.client.post<PositionalPLResponse>(
