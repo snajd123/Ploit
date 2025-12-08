@@ -680,7 +680,7 @@ Generate specific, actionable exploits based solely on the provided data."""
 === TABLE INFO ===
 Stakes: {stake_level}
 Table Softness: {table_softness}/5.0 ({table_classification})
-Hero Position: {hero_position or "Unknown"}
+Hero Positions: ALL (hero will play from every position during the session)
 
 === OPPONENTS AT TABLE ===
 {opponents_text}
@@ -1166,26 +1166,15 @@ async def process_pregame_analysis(
     softness_score, table_classification = calculate_table_softness(profiles)
     logger.info(f"Table softness: {softness_score} ({table_classification})")
 
-    # Detect hero position (if in hand)
-    hero_position = None
-    for hero in hero_nicknames:
-        if hero.lower() in hand_text.lower():
-            # Try to find hero's position
-            sb_match = re.search(rf"{re.escape(hero)}: posts small blind", hand_text, re.I)
-            bb_match = re.search(rf"{re.escape(hero)}: posts big blind", hand_text, re.I)
-            if sb_match:
-                hero_position = "SB"
-            elif bb_match:
-                hero_position = "BB"
-            break
+    # NOTE: Hero plays from ALL positions during the session.
+    # The hand is only used to identify opponents at the table, not hero's position.
 
-    # Generate strategy with Claude (tool-based approach)
-    # Claude will query pool stats, GTO baselines, and detailed opponent info itself
-    logger.info("Starting tool-based strategy generation with Claude")
+    # Generate strategy with Claude (single-shot approach)
+    logger.info("Starting single-shot strategy generation with Claude")
     ai_result = generate_strategy_with_claude(
         db=db,
         stake_level=stake_level,
-        hero_position=hero_position,
+        hero_position=None,  # Hero plays all positions
         opponent_profiles=profiles,
         table_softness=softness_score,
         table_classification=table_classification,
