@@ -5,7 +5,7 @@ import {
   AlertCircle, Info, ExternalLink, Zap
 } from 'lucide-react';
 import HandReplayModal from './HandReplayModal';
-import api from '../services/api';
+import { api } from '../services/api';
 import type { HandReplayResponse } from '../types';
 
 interface DebriefModalProps {
