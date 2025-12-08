@@ -469,14 +469,17 @@ def find_missed_opportunities(
 def get_session_strategy(db: Session, session_id: int) -> Optional[Dict[str, Any]]:
     """Get pre-game strategy that was generated for this session (if any).
 
-    Links strategy to session by checking if the strategy's hand_id belongs to this session.
+    Links strategy to session by checking if the strategy's hand_number matches
+    any hand_id in this session. The hand_number is stored as the PokerStars
+    hand number (e.g., "258818991022") which matches raw_hands.hand_id.
     """
-    # Find strategy where the hand_id is in this session
+    # Find strategy where the hand_number matches a hand in this session
+    # Try hand_number first (stored as string of the PokerStars hand number)
     strategy_result = db.execute(text("""
         SELECT ps.id, ps.created_at, ps.strategy, ps.opponents,
-               ps.table_classification, ps.softness_score, ps.hand_id
+               ps.table_classification, ps.softness_score, ps.hand_number
         FROM pregame_strategies ps
-        JOIN raw_hands rh ON ps.hand_id = rh.hand_id
+        JOIN raw_hands rh ON ps.hand_number::bigint = rh.hand_id
         WHERE rh.session_id = :session_id
         ORDER BY ps.created_at DESC
         LIMIT 1
