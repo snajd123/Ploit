@@ -200,21 +200,13 @@ def get_session_gto_mistakes(db: Session, session_id: int, limit: int = 10) -> L
 
         biggest_mistakes = analysis.get("biggest_mistakes", [])
 
-        # Get hand numbers for the mistakes
-        hand_ids = [m.get("hand_id") for m in biggest_mistakes if m.get("hand_id")]
-        hand_numbers = {}
-        if hand_ids:
-            result = db.execute(text("""
-                SELECT hand_id, hand_number FROM raw_hands WHERE hand_id = ANY(:hand_ids)
-            """), {"hand_ids": hand_ids}).fetchall()
-            hand_numbers = {row.hand_id: row.hand_number for row in result}
-
         # Map to expected format
         mistakes = []
         for m in biggest_mistakes[:limit]:
+            hand_id = m.get("hand_id")
             mistakes.append({
-                "hand_id": m.get("hand_id"),
-                "hand_number": hand_numbers.get(m.get("hand_id"), "Unknown"),
+                "hand_id": hand_id,
+                "hand_number": str(hand_id) if hand_id else "Unknown",
                 "scenario": m.get("scenario", ""),
                 "hero_action": m.get("action_taken", ""),
                 "gto_action": m.get("gto_action", ""),
@@ -387,9 +379,8 @@ def find_missed_opportunities(
         if stats.get("fold_to_3bet") and stats["fold_to_3bet"] > gto_f3b + 15:
             # Find hands where hero called vs this opponent's open instead of 3-betting
             hands = db.execute(text("""
-                SELECT phs.hand_id, rh.hand_number
+                SELECT phs.hand_id
                 FROM player_hand_summary phs
-                JOIN raw_hands rh ON phs.hand_id = rh.hand_id
                 WHERE phs.session_id = :session_id
                 AND phs.player_name = :hero_name
                 AND phs.cold_call = true
@@ -405,7 +396,7 @@ def find_missed_opportunities(
             for hand in hands:
                 missed.append({
                     "hand_id": hand.hand_id,
-                    "hand_number": hand.hand_number,
+                    "hand_number": str(hand.hand_id),
                     "opponent": opp_name,
                     "opportunity": "3-bet bluff",
                     "opponent_tendency": f"Folds {stats['fold_to_3bet']:.1f}% to 3-bet (GTO: {gto_f3b}%)",
