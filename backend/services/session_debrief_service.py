@@ -767,6 +767,9 @@ Return ONLY valid JSON."""
         if hasattr(block, 'text'):
             response_text += block.text
 
+    # Build full prompt for debug output
+    full_prompt = f"System: {system_prompt}\n\nUser: {user_message}"
+
     # Parse JSON response
     try:
         # Clean markdown if present
@@ -778,16 +781,27 @@ Return ONLY valid JSON."""
         clean_response = clean_response.strip()
 
         ai_analysis = json.loads(clean_response)
-        return ai_analysis
+        # Return analysis with debug info
+        return {
+            "analysis": ai_analysis,
+            "ai_prompt": full_prompt,
+            "ai_response": response_text
+        }
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse AI response: {e}")
         logger.error(f"Response: {response_text[:500]}")
         return {
-            "executive_summary": "Session analysis completed. Review the detailed stats below.",
-            "went_well": ["Session completed"],
-            "areas_for_improvement": ["Review hand histories for specific spots"],
-            "opponent_insights": [],
-            "study_recommendations": ["Continue tracking your play"]
+            "analysis": {
+                "executive_summary": "Session analysis completed. Review the detailed stats below.",
+                "went_well": ["Session completed"],
+                "areas_for_improvement": ["Review hand histories for specific spots"],
+                "opponent_insights": [],
+                "strategy_execution": None,
+                "leak_progress_summary": None,
+                "study_recommendations": ["Continue tracking your play"]
+            },
+            "ai_prompt": full_prompt,
+            "ai_response": response_text
         }
 
 
@@ -825,7 +839,7 @@ def generate_session_debrief(db: Session, session_id: int) -> Dict[str, Any]:
     leak_progress = analyze_leak_progress(hero_stats, lifetime_leaks, gto_baselines) if lifetime_leaks else []
 
     # 9. Generate AI debrief with all data
-    ai_analysis = generate_ai_debrief(
+    ai_result = generate_ai_debrief(
         session_meta=session_meta,
         hero_stats=hero_stats,
         gto_baselines=gto_baselines,
@@ -853,7 +867,11 @@ def generate_session_debrief(db: Session, session_id: int) -> Dict[str, Any]:
         ],
         "pregame_strategy": pregame_strategy,
         "leak_progress": leak_progress,
-        "ai_debrief": ai_analysis,
+        "ai_debrief": ai_result.get("analysis", {}),
+        "ai_debug": {
+            "prompt": ai_result.get("ai_prompt", ""),
+            "response": ai_result.get("ai_response", "")
+        },
         "disclaimers": {
             "session_sample": f"Based on {session_meta['total_hands']} hands. Session stats have high variance.",
             "gto_comparison": "GTO baselines assume 100bb stacks and standard 6-max play.",
@@ -906,7 +924,7 @@ def generate_multi_session_debrief(db: Session, session_ids: List[int]) -> Dict[
     gto_baselines = get_gto_baselines(db)
 
     # Generate combined AI debrief
-    ai_analysis = generate_ai_debrief(
+    ai_result = generate_ai_debrief(
         session_meta=combined_meta,
         hero_stats={},  # TODO: Aggregate hero stats
         gto_baselines=gto_baselines,
@@ -924,7 +942,11 @@ def generate_multi_session_debrief(db: Session, session_ids: List[int]) -> Dict[
             "mistake_count": len(all_mistakes)
         },
         "opponents": [opp for opp in all_opponents.values() if opp["db_total_hands"] >= 50],
-        "ai_debrief": ai_analysis,
+        "ai_debrief": ai_result.get("analysis", {}),
+        "ai_debug": {
+            "prompt": ai_result.get("ai_prompt", ""),
+            "response": ai_result.get("ai_response", "")
+        },
         "disclaimers": {
             "combined_analysis": f"Combined analysis of {len(session_ids)} sessions ({total_hands} hands).",
             "gto_comparison": "GTO baselines assume 100bb stacks and standard 6-max play."

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   X, Loader2, MessageSquare, TrendingUp, TrendingDown, Target,
   AlertTriangle, CheckCircle, Users, BookOpen, ChevronDown, ChevronRight,
-  AlertCircle, Info, ExternalLink, Zap, ClipboardCheck, Activity
+  AlertCircle, Info, ExternalLink, Zap, ClipboardCheck, Activity, Code
 } from 'lucide-react';
 import HandReplayModal from './HandReplayModal';
 import { api } from '../services/api';
@@ -101,6 +101,10 @@ interface Debrief {
     leak_progress_summary: string | null;
     study_recommendations: string[];
   };
+  ai_debug?: {
+    prompt: string;
+    response: string;
+  };
   disclaimers: Record<string, string | null>;
 }
 
@@ -162,6 +166,7 @@ const DebriefModal: React.FC<DebriefModalProps> = ({ isOpen, onClose, sessionId,
   );
   const [replayData, setReplayData] = useState<HandReplayResponse | null>(null);
   const [loadingReplay, setLoadingReplay] = useState(false);
+  const [showAiDebug, setShowAiDebug] = useState(false);
 
   const handleViewHand = async (handId: number) => {
     setLoadingReplay(true);
@@ -347,13 +352,13 @@ const DebriefModal: React.FC<DebriefModalProps> = ({ isOpen, onClose, sessionId,
                 )}
 
                 {/* Strategy Execution */}
-                {debrief.pregame_strategy && (
-                  <CollapsibleSection
-                    title="Strategy Execution"
-                    icon={<ClipboardCheck size={18} className="text-cyan-600" />}
-                    isExpanded={expandedSections.has('strategy')}
-                    onToggle={() => toggleSection('strategy')}
-                  >
+                <CollapsibleSection
+                  title="Strategy Execution"
+                  icon={<ClipboardCheck size={18} className="text-cyan-600" />}
+                  isExpanded={expandedSections.has('strategy')}
+                  onToggle={() => toggleSection('strategy')}
+                >
+                  {debrief.pregame_strategy ? (
                     <div className="space-y-3">
                       <div className="bg-cyan-50 rounded-lg p-3 border border-cyan-200">
                         <div className="flex items-center justify-between mb-2">
@@ -386,8 +391,18 @@ const DebriefModal: React.FC<DebriefModalProps> = ({ isOpen, onClose, sessionId,
                         </div>
                       )}
                     </div>
-                  </CollapsibleSection>
-                )}
+                  ) : (
+                    <div className="bg-gray-50 rounded-lg p-4 border border-gray-200 text-center">
+                      <ClipboardCheck size={24} className="mx-auto text-gray-400 mb-2" />
+                      <p className="text-sm text-gray-600">
+                        No pre-game strategy was generated for this session.
+                      </p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        To get strategy execution analysis, email a hand history to your import address before starting a session.
+                      </p>
+                    </div>
+                  )}
+                </CollapsibleSection>
 
                 {/* Leak Progress */}
                 {debrief.leak_progress?.length > 0 && (
@@ -585,6 +600,17 @@ const DebriefModal: React.FC<DebriefModalProps> = ({ isOpen, onClose, sessionId,
                     </div>
                   </div>
                 </div>
+
+                {/* View AI Prompt button */}
+                <div className="flex justify-center pt-2">
+                  <button
+                    onClick={() => setShowAiDebug(true)}
+                    className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors text-sm"
+                  >
+                    <Code size={16} />
+                    <span>View AI Prompt</span>
+                  </button>
+                </div>
               </>
             )}
           </div>
@@ -597,6 +623,50 @@ const DebriefModal: React.FC<DebriefModalProps> = ({ isOpen, onClose, sessionId,
           data={replayData}
           onClose={() => setReplayData(null)}
         />
+      )}
+
+      {/* AI Debug Modal */}
+      {showAiDebug && debrief && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+              <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <Code className="w-5 h-5 text-purple-500" />
+                <span>AI Prompt & Response</span>
+              </h2>
+              <button
+                onClick={() => setShowAiDebug(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X size={20} className="text-gray-500" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-6 space-y-6">
+              {/* Prompt */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">Prompt Sent to Claude</h3>
+                <pre className="bg-gray-900 text-gray-100 p-4 rounded-xl text-sm overflow-x-auto whitespace-pre-wrap font-mono">
+                  {debrief.ai_debug?.prompt || 'No prompt data available'}
+                </pre>
+              </div>
+              {/* Response */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">Claude's Response</h3>
+                <pre className="bg-gray-900 text-green-400 p-4 rounded-xl text-sm overflow-x-auto whitespace-pre-wrap font-mono">
+                  {debrief.ai_debug?.response || 'No response data available'}
+                </pre>
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
+              <button
+                onClick={() => setShowAiDebug(false)}
+                className="w-full py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
