@@ -25,6 +25,7 @@ from .pregame_tools import (
     _get_pool_statistics,
     _compare_player_to_gto
 )
+from .session_debrief_service import get_hero_lifetime_priority_leaks
 
 logger = logging.getLogger(__name__)
 
@@ -187,13 +188,20 @@ def pre_gather_strategy_data(
     """
     Pre-gather ALL data needed for strategy generation in one go.
     This eliminates the need for Claude to make multiple tool calls.
+
+    Includes:
+    - Pool statistics for the stake level
+    - GTO baselines and key scenarios
+    - Full stats and GTO comparisons for opponents
+    - Hero's own priority leaks for self-improvement focus
     """
     data = {
         "pool_stats": None,
         "gto_scenarios": {},
         "gto_baselines": {},  # Aggregate GTO baselines for comparison
         "opponent_details": [],
-        "opponent_gto_comparisons": []
+        "opponent_gto_comparisons": [],
+        "hero_leaks": []  # Hero's own leaks to work on
     }
 
     # 1. Pool statistics
@@ -311,6 +319,44 @@ def pre_gather_strategy_data(
                     db.rollback()
                 except:
                     pass
+
+    # 4. Hero's own priority leaks (for self-improvement focus)
+    data["hero_leaks"] = []
+    if hero_nicknames:
+        try:
+            hero_name = hero_nicknames[0]  # Use primary nickname
+            all_leaks = get_hero_lifetime_priority_leaks(db, hero_name)
+
+            # Filter to top 5 most actionable leaks:
+            # - Must be moderate or major severity
+            # - Must have sufficient sample size (50+)
+            priority_leaks = [
+                {
+                    "scenario_id": leak.get("scenario_id"),
+                    "display_name": leak.get("display_name"),
+                    "category": leak.get("category"),
+                    "position": leak.get("position"),
+                    "action": leak.get("action"),
+                    "current_value": round(leak.get("overall_value", 0), 1),
+                    "gto_value": round(leak.get("gto_value", 0), 1),
+                    "deviation": round(leak.get("overall_deviation", 0), 1),
+                    "leak_direction": leak.get("leak_direction"),
+                    "leak_severity": leak.get("leak_severity"),
+                    "sample_size": leak.get("overall_sample", 0)
+                }
+                for leak in all_leaks
+                if leak.get("leak_severity") in ["moderate", "major"]
+                and leak.get("overall_sample", 0) >= 50
+            ][:5]
+
+            data["hero_leaks"] = priority_leaks
+            logger.info(f"Found {len(priority_leaks)} priority leaks for hero")
+        except Exception as e:
+            logger.error(f"Error fetching hero leaks: {e}")
+            try:
+                db.rollback()
+            except:
+                pass
 
     return data
 
@@ -656,6 +702,15 @@ def generate_strategy_with_claude(
                     gto_val = dev.get('gto_baseline', dev.get('gto_approx', 'N/A'))
                     leaks_text += f"\n  - {dev['stat']}: {dev['player']}% vs GTO {gto_val}% → {dev['leak']}"
 
+    # Format hero's own leaks
+    hero_leaks_text = ""
+    if gathered_data.get("hero_leaks"):
+        hero_leaks_text = "Based on your lifetime stats, focus on these areas:\n"
+        for leak in gathered_data["hero_leaks"]:
+            direction = leak.get("leak_direction", "").replace("_", " ")
+            hero_leaks_text += f"  - {leak['display_name']}: You play {leak['current_value']}% vs GTO {leak['gto_value']}% ({direction})\n"
+            hero_leaks_text += f"    Severity: {leak['leak_severity'].upper()} | Sample: {leak['sample_size']} hands\n"
+
     # Format GTO baselines section
     gto_baselines_text = ""
     if gathered_data.get("gto_baselines"):
@@ -671,6 +726,11 @@ CRITICAL: You must ONLY use data provided in the prompt. Do NOT make up statisti
 - Only compare pool/player stats to the GTO BASELINES provided
 - If a GTO baseline is not provided for a stat, do NOT claim a deviation exists
 - Every number you cite must come directly from the data sections below
+
+HERO IMPROVEMENT: If the player has their own leaks listed in "YOUR OWN LEAKS TO WORK ON":
+- Include leak_reminders in your response with specific session goals
+- Set realistic targets (move partway toward GTO, not all the way)
+- Consider if any opponent exploits conflict with fixing own leaks
 
 Generate specific, actionable exploits based solely on the provided data."""
 
@@ -700,6 +760,9 @@ Hero Positions: ALL (hero will play from every position during the session)
 === OPPONENT LEAKS (vs GTO baselines) ===
 {leaks_text if leaks_text else "No significant leaks detected"}
 
+=== YOUR OWN LEAKS TO WORK ON ===
+{hero_leaks_text if hero_leaks_text else "No significant leaks identified in your play"}
+
 === INSTRUCTIONS ===
 Based ONLY on the data above, return a JSON strategy with this exact structure:
 {{
@@ -716,6 +779,16 @@ Based ONLY on the data above, return a JSON strategy with this exact structure:
       "exploit": "1-2 sentence specific exploit - cite exact numbers from the data above"
     }}
   ],
+  "leak_reminders": [
+    {{
+      "leak_id": "scenario_id from YOUR OWN LEAKS section",
+      "description": "Short description of the leak",
+      "session_goal": "Specific target for this session (e.g., 'Defend BB at 45% instead of 38%')",
+      "current_value": 38.0,
+      "target_value": 45.0,
+      "gto_value": 48.0
+    }}
+  ],
   "priority_actions": ["Top 3 highest-EV actions for this session"]
 }}
 
@@ -724,6 +797,8 @@ RULES:
 - ONLY cite numbers that appear in the data sections above
 - Do NOT make GTO comparisons unless GTO baselines are provided
 - Be specific with hand examples (e.g., "3-bet A5s-A2s, K9s+")
+- Include leak_reminders ONLY if YOUR OWN LEAKS section has data
+- For leak_reminders, set target_value between current_value and gto_value (realistic improvement)
 
 Return ONLY the JSON object, no other text."""
 
