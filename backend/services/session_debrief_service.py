@@ -504,110 +504,293 @@ def get_session_strategy(db: Session, session_id: int) -> Optional[Dict[str, Any
         return None
 
 
-def get_hero_lifetime_leaks(db: Session, hero_name: str) -> List[Dict[str, Any]]:
-    """Get hero's lifetime leak analysis from player_stats."""
-    # Get player stats from database
-    stats_result = db.execute(text("""
-        SELECT *
-        FROM player_stats
-        WHERE player_name = :hero_name
-    """), {"hero_name": hero_name}).fetchone()
+def get_hero_lifetime_priority_leaks(db: Session, hero_name: str) -> List[Dict[str, Any]]:
+    """
+    Get hero's lifetime priority leaks using the same scenario-based analysis as My Game.
+    This returns the same data structure as the My Game GTO Analysis priority_leaks.
+    """
+    from backend.services.priority_scoring import build_priority_leaks_from_gto_analysis
 
-    if not stats_result:
-        return []
+    hero_nicknames = [hero_name.lower()]
 
-    # Convert to dict for StatsCalculator
-    stats = {
-        "player_name": stats_result.player_name,
-        "total_hands": stats_result.total_hands,
-        "vpip_pct": float(stats_result.vpip_pct) if stats_result.vpip_pct else None,
-        "pfr_pct": float(stats_result.pfr_pct) if stats_result.pfr_pct else None,
-        "three_bet_pct": float(stats_result.three_bet_pct) if stats_result.three_bet_pct else None,
-        "fold_to_three_bet_pct": float(stats_result.fold_to_three_bet_pct) if stats_result.fold_to_three_bet_pct else None,
-        "cold_call_pct": float(stats_result.cold_call_pct) if stats_result.cold_call_pct else None,
-        "limp_pct": float(stats_result.limp_pct) if stats_result.limp_pct else None,
-        "steal_attempt_pct": float(stats_result.steal_attempt_pct) if stats_result.steal_attempt_pct else None,
-        "fold_to_steal_pct": float(stats_result.fold_to_steal_pct) if stats_result.fold_to_steal_pct else None,
-        # Sample counts for confidence
-        "vpip_hands": stats_result.total_hands,
-        "pfr_hands": stats_result.total_hands,
-        "three_bet_opportunities": getattr(stats_result, 'three_bet_opportunities', None),
-        "facing_three_bet_opportunities": getattr(stats_result, 'facing_three_bet_opportunities', None),
-    }
+    # Get GTO frequencies for scenarios
+    gto_opening_result = db.execute(text("""
+        SELECT position, SUM(gto_aggregate_freq) as gto_aggregate_freq
+        FROM gto_scenarios WHERE category = 'opening'
+        GROUP BY position
+    """))
+    gto_opening = {row[0]: float(row[1]) * 100 if row[1] else 0 for row in gto_opening_result}
 
-    try:
-        calculator = StatsCalculator(stats)
-        leak_analysis = calculator.get_leak_analysis()
-        return leak_analysis.get("leaks", [])
-    except Exception as e:
-        logger.error(f"Error calculating leaks: {e}")
-        return []
+    gto_defense_result = db.execute(text("""
+        SELECT position, action, AVG(gto_aggregate_freq) * 100 as avg_freq
+        FROM gto_scenarios
+        WHERE category = 'defense' AND action IN ('call', '3bet')
+        GROUP BY position, action
+    """))
+    gto_defense = {}
+    for row in gto_defense_result:
+        pos, action, freq = row[0], row[1], float(row[2]) if row[2] else 0
+        if pos not in gto_defense:
+            gto_defense[pos] = {}
+        gto_defense[pos][action] = freq
+
+    gto_f3bet_result = db.execute(text("""
+        SELECT position, action, AVG(gto_aggregate_freq) * 100 as avg_freq
+        FROM gto_scenarios
+        WHERE category = 'facing_3bet' AND action IN ('fold', 'call', '4bet')
+        GROUP BY position, action
+    """))
+    gto_f3bet = {}
+    for row in gto_f3bet_result:
+        pos, action, freq = row[0], row[1], float(row[2]) if row[2] else 0
+        if pos not in gto_f3bet:
+            gto_f3bet[pos] = {}
+        gto_f3bet[pos][action] = freq
+
+    # Build GTO data structure similar to My Game
+    gto_data = {"opening_ranges": [], "defense_vs_open": [], "facing_3bet": []}
+
+    # 1. Opening ranges
+    opening_result = db.execute(text("""
+        SELECT position,
+            COUNT(*) FILTER (WHERE pot_unopened = true) as rfi_opportunities,
+            ROUND(100.0 * COUNT(*) FILTER (WHERE pfr = true AND pot_unopened = true) /
+                NULLIF(COUNT(*) FILTER (WHERE pot_unopened = true), 0), 1) as player_open_pct
+        FROM player_hand_summary
+        WHERE LOWER(player_name) = ANY(:nicknames) AND position IS NOT NULL AND position NOT IN ('BB')
+        GROUP BY position HAVING COUNT(*) FILTER (WHERE pot_unopened = true) >= 10
+    """), {"nicknames": hero_nicknames})
+
+    for row in opening_result:
+        pos = row[0]
+        player_freq = float(row[2]) if row[2] else 0
+        gto_freq = gto_opening.get(pos, 0)
+        gto_data["opening_ranges"].append({
+            'position': pos,
+            'total_hands': row[1],
+            'player_frequency': player_freq,
+            'gto_frequency': round(gto_freq, 1),
+            'frequency_diff': round(player_freq - gto_freq, 1),
+        })
+
+    # 2. Defense vs opens
+    defense_result = db.execute(text("""
+        SELECT position,
+            COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false) as faced_open,
+            COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND vpip = false) as folded,
+            COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND vpip = true AND pfr = false) as called,
+            COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND made_three_bet = true) as three_bets,
+            ROUND(100.0 * COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND vpip = false) /
+                NULLIF(COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false), 0), 1) as fold_pct,
+            ROUND(100.0 * COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND vpip = true AND pfr = false) /
+                NULLIF(COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false), 0), 1) as call_pct,
+            ROUND(100.0 * COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND made_three_bet = true) /
+                NULLIF(COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false), 0), 1) as three_bet_pct
+        FROM player_hand_summary
+        WHERE LOWER(player_name) = ANY(:nicknames) AND position IN ('BB', 'SB', 'BTN', 'CO', 'MP')
+        GROUP BY position HAVING COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false) >= 5
+    """), {"nicknames": hero_nicknames})
+
+    for row in defense_result:
+        pos = row[0]
+        fold_freq = float(row[5]) if row[5] else 0
+        call_freq = float(row[6]) if row[6] else 0
+        threebet_freq = float(row[7]) if row[7] else 0
+        gto_call = gto_defense.get(pos, {}).get('call', 15)
+        gto_3bet = gto_defense.get(pos, {}).get('3bet', 8)
+        gto_fold = 100 - gto_call - gto_3bet
+
+        gto_data["defense_vs_open"].append({
+            'position': pos,
+            'sample_size': row[1],
+            'fold_count': row[2], 'call_count': row[3], '3bet_count': row[4],
+            'player_fold': round(fold_freq, 1), 'player_call': round(call_freq, 1), 'player_3bet': round(threebet_freq, 1),
+            'gto_fold': round(gto_fold, 1), 'gto_call': round(gto_call, 1), 'gto_3bet': round(gto_3bet, 1),
+            'fold_diff': round(fold_freq - gto_fold, 1),
+            'call_diff': round(call_freq - gto_call, 1),
+            '3bet_diff': round(threebet_freq - gto_3bet, 1),
+        })
+
+    # 3. Facing 3-bet
+    f3bet_result = db.execute(text("""
+        SELECT position,
+            COUNT(*) FILTER (WHERE faced_three_bet = true AND pfr = true) as faced_3bet,
+            COUNT(*) FILTER (WHERE folded_to_three_bet = true AND pfr = true) as folded,
+            COUNT(*) FILTER (WHERE called_three_bet = true AND pfr = true) as called,
+            COUNT(*) FILTER (WHERE four_bet = true AND pfr = true) as four_bet,
+            ROUND(100.0 * COUNT(*) FILTER (WHERE folded_to_three_bet = true AND pfr = true) /
+                NULLIF(COUNT(*) FILTER (WHERE faced_three_bet = true AND pfr = true), 0), 1) as fold_pct,
+            ROUND(100.0 * COUNT(*) FILTER (WHERE called_three_bet = true AND pfr = true) /
+                NULLIF(COUNT(*) FILTER (WHERE faced_three_bet = true AND pfr = true), 0), 1) as call_pct,
+            ROUND(100.0 * COUNT(*) FILTER (WHERE four_bet = true AND pfr = true) /
+                NULLIF(COUNT(*) FILTER (WHERE faced_three_bet = true AND pfr = true), 0), 1) as four_bet_pct
+        FROM player_hand_summary
+        WHERE LOWER(player_name) = ANY(:nicknames) AND position IS NOT NULL
+        GROUP BY position HAVING COUNT(*) FILTER (WHERE faced_three_bet = true AND pfr = true) >= 5
+    """), {"nicknames": hero_nicknames})
+
+    for row in f3bet_result:
+        pos = row[0]
+        fold = float(row[5]) if row[5] else 0
+        call = float(row[6]) if row[6] else 0
+        four_bet = float(row[7]) if row[7] else 0
+        gto_fold = gto_f3bet.get(pos, {}).get('fold', 55)
+        gto_call = gto_f3bet.get(pos, {}).get('call', 35)
+        gto_4bet = gto_f3bet.get(pos, {}).get('4bet', 10)
+
+        gto_data["facing_3bet"].append({
+            'position': pos,
+            'sample_size': row[1],
+            'fold_count': row[2], 'call_count': row[3], '4bet_count': row[4],
+            'player_fold': round(fold, 1), 'player_call': round(call, 1), 'player_4bet': round(four_bet, 1),
+            'gto_fold': round(gto_fold, 1), 'gto_call': round(gto_call, 1), 'gto_4bet': round(gto_4bet, 1),
+            'fold_diff': round(fold - gto_fold, 1),
+            'call_diff': round(call - gto_call, 1),
+            '4bet_diff': round(four_bet - gto_4bet, 1),
+        })
+
+    return build_priority_leaks_from_gto_analysis(gto_data)
+
+
+def get_session_scenario_stats(db: Session, session_id: int, hero_name: str) -> Dict[str, Dict[str, float]]:
+    """
+    Get session-specific stats for each scenario (opening, defense, facing_3bet).
+    Returns a dict keyed by scenario_id with session values.
+    """
+    session_stats = {}
+
+    # 1. Opening ranges by position
+    opening_result = db.execute(text("""
+        SELECT position,
+            COUNT(*) FILTER (WHERE pot_unopened = true) as rfi_opportunities,
+            ROUND(100.0 * COUNT(*) FILTER (WHERE pfr = true AND pot_unopened = true) /
+                NULLIF(COUNT(*) FILTER (WHERE pot_unopened = true), 0), 1) as player_open_pct
+        FROM player_hand_summary
+        WHERE session_id = :session_id AND player_name = :hero_name
+        AND position IS NOT NULL AND position NOT IN ('BB')
+        GROUP BY position
+    """), {"session_id": session_id, "hero_name": hero_name})
+
+    for row in opening_result:
+        pos, sample, value = row[0], row[1] or 0, float(row[2]) if row[2] else 0
+        session_stats[f"opening_{pos}"] = {"value": value, "sample": sample}
+
+    # 2. Defense vs opens by position
+    defense_result = db.execute(text("""
+        SELECT position,
+            COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false) as faced_open,
+            ROUND(100.0 * COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND vpip = false) /
+                NULLIF(COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false), 0), 1) as fold_pct,
+            ROUND(100.0 * COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND vpip = true AND pfr = false) /
+                NULLIF(COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false), 0), 1) as call_pct,
+            ROUND(100.0 * COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND made_three_bet = true) /
+                NULLIF(COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false), 0), 1) as three_bet_pct
+        FROM player_hand_summary
+        WHERE session_id = :session_id AND player_name = :hero_name
+        AND position IN ('BB', 'SB', 'BTN', 'CO', 'MP')
+        GROUP BY position
+    """), {"session_id": session_id, "hero_name": hero_name})
+
+    for row in defense_result:
+        pos = row[0]
+        sample = row[1] or 0
+        session_stats[f"defense_{pos}_fold"] = {"value": float(row[2]) if row[2] else 0, "sample": sample}
+        session_stats[f"defense_{pos}_call"] = {"value": float(row[3]) if row[3] else 0, "sample": sample}
+        session_stats[f"defense_{pos}_3bet"] = {"value": float(row[4]) if row[4] else 0, "sample": sample}
+
+    # 3. Facing 3-bet by position
+    f3bet_result = db.execute(text("""
+        SELECT position,
+            COUNT(*) FILTER (WHERE faced_three_bet = true AND pfr = true) as faced_3bet,
+            ROUND(100.0 * COUNT(*) FILTER (WHERE folded_to_three_bet = true AND pfr = true) /
+                NULLIF(COUNT(*) FILTER (WHERE faced_three_bet = true AND pfr = true), 0), 1) as fold_pct,
+            ROUND(100.0 * COUNT(*) FILTER (WHERE called_three_bet = true AND pfr = true) /
+                NULLIF(COUNT(*) FILTER (WHERE faced_three_bet = true AND pfr = true), 0), 1) as call_pct,
+            ROUND(100.0 * COUNT(*) FILTER (WHERE four_bet = true AND pfr = true) /
+                NULLIF(COUNT(*) FILTER (WHERE faced_three_bet = true AND pfr = true), 0), 1) as four_bet_pct
+        FROM player_hand_summary
+        WHERE session_id = :session_id AND player_name = :hero_name AND position IS NOT NULL
+        GROUP BY position
+    """), {"session_id": session_id, "hero_name": hero_name})
+
+    for row in f3bet_result:
+        pos = row[0]
+        sample = row[1] or 0
+        session_stats[f"facing_3bet_{pos}_fold"] = {"value": float(row[2]) if row[2] else 0, "sample": sample}
+        session_stats[f"facing_3bet_{pos}_call"] = {"value": float(row[3]) if row[3] else 0, "sample": sample}
+        session_stats[f"facing_3bet_{pos}_4bet"] = {"value": float(row[4]) if row[4] else 0, "sample": sample}
+
+    return session_stats
 
 
 def analyze_leak_progress(
-    hero_stats: Dict[str, Any],
-    lifetime_leaks: List[Dict[str, Any]],
-    gto_baselines: Dict[str, Any]
+    db: Session,
+    session_id: int,
+    hero_name: str,
+    lifetime_priority_leaks: List[Dict[str, Any]]
 ) -> List[Dict[str, Any]]:
-    """Compare session stats to lifetime leaks to see if player improved."""
+    """
+    Compare session performance to lifetime priority leaks from GTO analysis.
+    Uses the same scenario-based analysis as My Game.
+    """
+    if not lifetime_priority_leaks:
+        return []
+
+    # Get session-specific scenario stats
+    session_stats = get_session_scenario_stats(db, session_id, hero_name)
+
     progress = []
 
-    # Map leak stat names to hero_stats keys
-    stat_mapping = {
-        "vpip": "vpip",
-        "pfr": "pfr",
-        "three_bet": "three_bet",
-        "fold_to_three_bet": "fold_to_3bet",
-        "four_bet": "four_bet",
-        "cold_call": "cold_call",
-        "limp": "limp",
-    }
+    # Compare each lifetime priority leak to session performance
+    for leak in lifetime_priority_leaks[:10]:  # Top 10 priority leaks
+        scenario_id = leak.get("scenario_id", "")
+        session_data = session_stats.get(scenario_id)
 
-    for leak in lifetime_leaks[:5]:  # Top 5 leaks only
-        stat_name = leak.get("stat", "")
-
-        # Find matching session stat key
-        session_stat_key = stat_mapping.get(stat_name)
-        if not session_stat_key or session_stat_key not in hero_stats:
+        if not session_data or session_data["sample"] < 1:
+            # No session data for this scenario
             continue
 
-        session_stat = hero_stats[session_stat_key]
-        if not isinstance(session_stat, dict):
-            continue
+        session_value = session_data["value"]
+        session_sample = session_data["sample"]
+        lifetime_value = leak.get("overall_value", 0)
+        gto_value = leak.get("gto_value", 0)
+        leak_direction = leak.get("leak_direction", "")  # "too_high", "too_low", "too_loose", "too_tight"
 
-        session_value = session_stat.get("value", 0)
-        session_sample = session_stat.get("sample", 0)
+        # Determine if session shows improvement (closer to GTO than lifetime)
+        session_deviation = abs(session_value - gto_value)
+        lifetime_deviation = abs(lifetime_value - gto_value)
+        closer_to_gto = session_deviation < lifetime_deviation
 
-        # Get lifetime value and GTO from the leak object
-        lifetime_value = leak.get("player_value", 0)
-        gto_value = leak.get("gto_baseline", gto_baselines.get(session_stat_key, 0))
-        leak_direction = leak.get("direction", "unknown")  # "high" or "low"
-
-        # Calculate if session shows improvement (closer to GTO)
-        if leak_direction == "high":
+        # Determine if going in the right direction based on leak type
+        if leak_direction in ["too_high", "too_loose"]:
             # Player was doing something too much - lower is better
             improved = session_value < lifetime_value
-            closer_to_gto = abs(session_value - gto_value) < abs(lifetime_value - gto_value)
-        elif leak_direction == "low":
+        elif leak_direction in ["too_low", "too_tight"]:
             # Player was doing something too little - higher is better
             improved = session_value > lifetime_value
-            closer_to_gto = abs(session_value - gto_value) < abs(lifetime_value - gto_value)
         else:
-            improved = False
-            closer_to_gto = False
+            improved = closer_to_gto
 
         progress.append({
-            "leak_name": stat_name.replace("_", " ").title(),
-            "leak_description": leak.get("tendency", ""),
+            "scenario_id": scenario_id,
+            "leak_name": leak.get("display_name", scenario_id),
+            "category": leak.get("category", ""),
+            "position": leak.get("position", ""),
+            "action": leak.get("action", ""),
             "lifetime_value": lifetime_value,
             "session_value": session_value,
             "gto_value": gto_value,
             "session_sample": session_sample,
+            "lifetime_sample": leak.get("overall_sample", 0),
             "improved": improved,
             "closer_to_gto": closer_to_gto,
-            "severity": leak.get("severity", "minor"),
-            "direction": leak_direction
+            "severity": leak.get("leak_severity", "moderate"),
+            "direction": leak_direction,
+            "priority_score": leak.get("priority_score", 0)
         })
+
+    # Sort by priority score (highest first)
+    progress.sort(key=lambda x: x.get("priority_score", 0), reverse=True)
 
     return progress
 
@@ -834,9 +1017,9 @@ def generate_session_debrief(db: Session, session_id: int) -> Dict[str, Any]:
     # 7. Get pre-game strategy if one was generated for this session
     pregame_strategy = get_session_strategy(db, session_id)
 
-    # 8. Get hero's lifetime leaks and compare to session
-    lifetime_leaks = get_hero_lifetime_leaks(db, hero_name) if hero_name else []
-    leak_progress = analyze_leak_progress(hero_stats, lifetime_leaks, gto_baselines) if lifetime_leaks else []
+    # 8. Get lifetime priority leaks and analyze session progress (scenario-based)
+    lifetime_priority_leaks = get_hero_lifetime_priority_leaks(db, hero_name) if hero_name else []
+    leak_progress = analyze_leak_progress(db, session_id, hero_name, lifetime_priority_leaks) if lifetime_priority_leaks else []
 
     # 9. Generate AI debrief with all data
     ai_result = generate_ai_debrief(

@@ -77,16 +77,21 @@ interface Debrief {
     priority_actions: string[];
   } | null;
   leak_progress: Array<{
+    scenario_id: string;
     leak_name: string;
-    leak_description: string;
+    category: string;
+    position: string;
+    action: string;
     lifetime_value: number;
     session_value: number;
     gto_value: number;
     session_sample: number;
+    lifetime_sample: number;
     improved: boolean;
     closer_to_gto: boolean;
     severity: string;
     direction: string;
+    priority_score: number;
   }>;
   ai_debrief: {
     executive_summary: string;
@@ -431,26 +436,61 @@ const DebriefModal: React.FC<DebriefModalProps> = ({ isOpen, onClose, sessionId,
                           }`}
                         >
                           <div className="flex items-center justify-between mb-1">
-                            <span className={`font-medium ${leak.improved ? 'text-green-800' : 'text-amber-800'}`}>
-                              {leak.leak_name}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className={`font-medium ${leak.improved ? 'text-green-800' : 'text-amber-800'}`}>
+                                {leak.leak_name}
+                              </span>
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">
+                                {leak.category === 'opening' ? 'Opening' :
+                                 leak.category === 'defense' ? 'Defense' :
+                                 leak.category === 'facing_3bet' ? 'vs 3-Bet' :
+                                 leak.category === 'facing_4bet' ? 'vs 4-Bet' : leak.category}
+                              </span>
+                            </div>
                             <span className={`text-xs px-2 py-0.5 rounded-full ${
                               leak.improved
                                 ? 'bg-green-200 text-green-800'
                                 : 'bg-amber-200 text-amber-800'
                             }`}>
-                              {leak.improved ? 'Improved' : 'Needs Work'}
+                              {leak.improved ? '✓ Improved' : 'Needs Work'}
                             </span>
                           </div>
-                          <div className="text-sm text-gray-600">
-                            <span>Session: <strong>{leak.session_value.toFixed(1)}%</strong></span>
-                            <span className="mx-2">|</span>
-                            <span>Lifetime: {leak.lifetime_value.toFixed(1)}%</span>
-                            <span className="mx-2">|</span>
-                            <span>GTO: {leak.gto_value.toFixed(1)}%</span>
+                          <div className="flex items-center gap-4 mt-2 text-sm">
+                            <div className="flex-1">
+                              <div className="flex items-center justify-between text-gray-600 mb-1">
+                                <span>Session</span>
+                                <span className={`font-semibold ${leak.improved ? 'text-green-700' : 'text-amber-700'}`}>
+                                  {leak.session_value.toFixed(1)}%
+                                </span>
+                              </div>
+                              <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full ${leak.improved ? 'bg-green-500' : 'bg-amber-500'}`}
+                                  style={{ width: `${Math.min(leak.session_value, 100)}%` }}
+                                />
+                              </div>
+                            </div>
+                            <div className="text-center text-gray-400">→</div>
+                            <div className="flex-1">
+                              <div className="flex items-center justify-between text-gray-600 mb-1">
+                                <span>Lifetime</span>
+                                <span className="font-medium">{leak.lifetime_value.toFixed(1)}%</span>
+                              </div>
+                              <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                                <div className="h-full bg-gray-400 rounded-full" style={{ width: `${Math.min(leak.lifetime_value, 100)}%` }} />
+                              </div>
+                            </div>
+                            <div className="text-center text-blue-400">|</div>
+                            <div className="text-center">
+                              <div className="text-gray-500 text-xs">GTO</div>
+                              <div className="font-medium text-blue-600">{leak.gto_value.toFixed(1)}%</div>
+                            </div>
                           </div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            ({leak.session_sample} opportunities this session)
+                          <div className="text-xs text-gray-500 mt-2 flex justify-between">
+                            <span>{leak.session_sample} session opportunities</span>
+                            <span className={`${leak.severity === 'major' ? 'text-red-600' : 'text-amber-600'}`}>
+                              {leak.severity === 'major' ? '🔴 Major' : '🟡 Moderate'} leak
+                            </span>
                           </div>
                         </div>
                       ))}
