@@ -1031,6 +1031,242 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
 
 
 # ============================================================================
+# SESSION SEGMENTS ENDPOINT - Strategy-based session breakdown
+# ============================================================================
+
+@router.get("/{session_id}/segments")
+def get_session_segments(session_id: int, db: Session = Depends(get_db)):
+    """
+    Get session broken down by strategy segments.
+
+    A segment is a group of hands played under the same pre-game strategy.
+    This enables tracking leak progress against specific strategy goals.
+
+    Returns:
+    - List of segments with strategy info and hand counts
+    - Leak progress for each segment (comparing against strategy's leak_reminders)
+    - Hands without strategy are grouped into a "No Strategy" segment
+    """
+    # Get session info
+    session_query = text("""
+        SELECT session_id, player_name, total_hands
+        FROM sessions
+        WHERE session_id = :session_id
+    """)
+    session_result = db.execute(session_query, {"session_id": session_id})
+    session = session_result.first()
+
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    player_name = session._mapping["player_name"]
+
+    # Get segments grouped by strategy_id
+    segments_query = text("""
+        SELECT
+            phs.strategy_id,
+            ps.created_at as strategy_time,
+            ps.strategy,
+            ps.softness_score,
+            ps.table_classification,
+            COUNT(DISTINCT phs.hand_id) as hands_count,
+            MIN(rh.timestamp) as segment_start,
+            MAX(rh.timestamp) as segment_end,
+            SUM(phs.profit_loss) as segment_profit
+        FROM player_hand_summary phs
+        JOIN raw_hands rh ON phs.hand_id = rh.hand_id
+        LEFT JOIN pregame_strategies ps ON phs.strategy_id = ps.id
+        WHERE phs.session_id = :session_id
+        AND LOWER(phs.player_name) = LOWER(:player_name)
+        GROUP BY phs.strategy_id, ps.created_at, ps.strategy, ps.softness_score, ps.table_classification
+        ORDER BY segment_start
+    """)
+    segments_result = db.execute(segments_query, {
+        "session_id": session_id,
+        "player_name": player_name
+    }).fetchall()
+
+    segments = []
+    for row in segments_result:
+        strategy_id = row[0]
+        strategy_json = row[2]
+        hands_count = row[5]
+
+        segment = {
+            "strategy_id": strategy_id,
+            "strategy_time": row[1].isoformat() if row[1] else None,
+            "softness_score": float(row[3]) if row[3] else None,
+            "table_classification": row[4],
+            "hands_count": hands_count,
+            "segment_start": row[6].isoformat() if row[6] else None,
+            "segment_end": row[7].isoformat() if row[7] else None,
+            "segment_profit": float(row[8]) if row[8] else 0,
+            "has_strategy": strategy_id is not None,
+            "leak_reminders": [],
+            "leak_progress": []
+        }
+
+        # Extract leak_reminders from strategy if present
+        if strategy_json and isinstance(strategy_json, dict):
+            segment["leak_reminders"] = strategy_json.get("leak_reminders", [])
+
+            # Calculate leak progress for this segment
+            if segment["leak_reminders"] and hands_count >= 5:
+                segment["leak_progress"] = _calculate_segment_leak_progress(
+                    db, session_id, player_name, strategy_id, segment["leak_reminders"]
+                )
+
+        segments.append(segment)
+
+    return {
+        "session_id": session_id,
+        "player_name": player_name,
+        "total_segments": len(segments),
+        "segments_with_strategy": len([s for s in segments if s["has_strategy"]]),
+        "segments": segments
+    }
+
+
+def _calculate_segment_leak_progress(
+    db: Session,
+    session_id: int,
+    player_name: str,
+    strategy_id: int,
+    leak_reminders: List[Dict]
+) -> List[Dict]:
+    """
+    Calculate actual performance vs strategy goals for a segment.
+
+    Compares the hands played under this strategy against the
+    leak_reminders/goals set in that strategy.
+    """
+    progress = []
+
+    for reminder in leak_reminders:
+        leak_id = reminder.get("leak_id", "")
+        current_value = reminder.get("current_value", 0)
+        target_value = reminder.get("target_value", 0)
+        gto_value = reminder.get("gto_value", 0)
+
+        # Parse leak_id to determine what stat to calculate
+        # Format: "opening_BTN", "defense_BB_fold", "facing_3bet_CO_fold"
+        parts = leak_id.split("_")
+        category = parts[0] if parts else ""
+        position = parts[1] if len(parts) > 1 else ""
+        action = parts[2] if len(parts) > 2 else ""
+
+        actual_value = None
+        sample_size = 0
+
+        # Calculate actual value based on category
+        if category == "opening":
+            # RFI calculation
+            result = db.execute(text("""
+                SELECT
+                    COUNT(*) FILTER (WHERE pot_unopened = true) as opportunities,
+                    COUNT(*) FILTER (WHERE pot_unopened = true AND pfr = true) as opened
+                FROM player_hand_summary
+                WHERE session_id = :session_id
+                AND strategy_id = :strategy_id
+                AND LOWER(player_name) = LOWER(:player_name)
+                AND position = :position
+            """), {
+                "session_id": session_id,
+                "strategy_id": strategy_id,
+                "player_name": player_name,
+                "position": position
+            }).fetchone()
+
+            if result and result[0] and result[0] > 0:
+                sample_size = result[0]
+                actual_value = (result[1] / result[0]) * 100
+
+        elif category == "defense":
+            # Defense vs opens
+            result = db.execute(text("""
+                SELECT
+                    COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false) as opportunities,
+                    COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND vpip = false) as folded,
+                    COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND vpip = true AND pfr = false) as called,
+                    COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND made_three_bet = true) as three_bet
+                FROM player_hand_summary
+                WHERE session_id = :session_id
+                AND strategy_id = :strategy_id
+                AND LOWER(player_name) = LOWER(:player_name)
+                AND position = :position
+            """), {
+                "session_id": session_id,
+                "strategy_id": strategy_id,
+                "player_name": player_name,
+                "position": position
+            }).fetchone()
+
+            if result and result[0] and result[0] > 0:
+                sample_size = result[0]
+                if action == "fold":
+                    actual_value = (result[1] / result[0]) * 100
+                elif action == "call":
+                    actual_value = (result[2] / result[0]) * 100
+                elif action == "3bet":
+                    actual_value = (result[3] / result[0]) * 100
+
+        elif category == "facing" and len(parts) > 1 and parts[1] == "3bet":
+            # Facing 3-bet
+            position = parts[2] if len(parts) > 2 else ""
+            action = parts[3] if len(parts) > 3 else ""
+
+            result = db.execute(text("""
+                SELECT
+                    COUNT(*) FILTER (WHERE faced_three_bet = true AND pfr = true) as opportunities,
+                    COUNT(*) FILTER (WHERE folded_to_three_bet = true AND pfr = true) as folded,
+                    COUNT(*) FILTER (WHERE called_three_bet = true AND pfr = true) as called,
+                    COUNT(*) FILTER (WHERE four_bet = true AND pfr = true) as four_bet
+                FROM player_hand_summary
+                WHERE session_id = :session_id
+                AND strategy_id = :strategy_id
+                AND LOWER(player_name) = LOWER(:player_name)
+                AND position = :position
+            """), {
+                "session_id": session_id,
+                "strategy_id": strategy_id,
+                "player_name": player_name,
+                "position": position
+            }).fetchone()
+
+            if result and result[0] and result[0] > 0:
+                sample_size = result[0]
+                if action == "fold":
+                    actual_value = (result[1] / result[0]) * 100
+                elif action == "call":
+                    actual_value = (result[2] / result[0]) * 100
+                elif action == "4bet":
+                    actual_value = (result[3] / result[0]) * 100
+
+        # Determine if improved
+        improved = None
+        if actual_value is not None and sample_size >= 3:
+            # Improved means moved closer to target
+            distance_before = abs(current_value - target_value)
+            distance_after = abs(actual_value - target_value)
+            improved = distance_after < distance_before
+
+        progress.append({
+            "leak_id": leak_id,
+            "description": reminder.get("description", ""),
+            "session_goal": reminder.get("session_goal", ""),
+            "baseline_value": current_value,
+            "target_value": target_value,
+            "gto_value": gto_value,
+            "actual_value": round(actual_value, 1) if actual_value is not None else None,
+            "sample_size": sample_size,
+            "improved": improved,
+            "hit_target": actual_value is not None and abs(actual_value - target_value) <= 3 if sample_size >= 3 else None
+        })
+
+    return progress
+
+
+# ============================================================================
 # GROUP ANALYSIS ENDPOINT - Analyze multiple sessions with trends
 # ============================================================================
 
