@@ -557,41 +557,38 @@ def analyze_leak_progress(
         "vpip": "vpip",
         "pfr": "pfr",
         "three_bet": "three_bet",
-        "fold_to_3bet": "fold_to_3bet",
+        "fold_to_three_bet": "fold_to_3bet",
+        "four_bet": "four_bet",
         "cold_call": "cold_call",
         "limp": "limp",
     }
 
     for leak in lifetime_leaks[:5]:  # Top 5 leaks only
-        stat_name = leak.get("stat", "").lower().replace("-", "_").replace(" ", "_")
+        stat_name = leak.get("stat", "")
 
-        # Find matching session stat
-        session_stat_key = None
-        for key, mapped in stat_mapping.items():
-            if key in stat_name or stat_name in key:
-                session_stat_key = mapped
-                break
-
+        # Find matching session stat key
+        session_stat_key = stat_mapping.get(stat_name)
         if not session_stat_key or session_stat_key not in hero_stats:
             continue
 
         session_stat = hero_stats[session_stat_key]
-        if isinstance(session_stat, dict):
-            session_value = session_stat.get("value", 0)
-            session_sample = session_stat.get("sample", 0)
-        else:
+        if not isinstance(session_stat, dict):
             continue
 
-        lifetime_value = leak.get("hero_value", leak.get("value", 0))
-        gto_value = leak.get("gto_value", gto_baselines.get(session_stat_key, 0))
-        leak_direction = leak.get("direction", "unknown")  # "too_high" or "too_low"
+        session_value = session_stat.get("value", 0)
+        session_sample = session_stat.get("sample", 0)
 
-        # Calculate if session shows improvement
-        if leak_direction == "too_high":
+        # Get lifetime value and GTO from the leak object
+        lifetime_value = leak.get("player_value", 0)
+        gto_value = leak.get("gto_baseline", gto_baselines.get(session_stat_key, 0))
+        leak_direction = leak.get("direction", "unknown")  # "high" or "low"
+
+        # Calculate if session shows improvement (closer to GTO)
+        if leak_direction == "high":
             # Player was doing something too much - lower is better
             improved = session_value < lifetime_value
             closer_to_gto = abs(session_value - gto_value) < abs(lifetime_value - gto_value)
-        elif leak_direction == "too_low":
+        elif leak_direction == "low":
             # Player was doing something too little - higher is better
             improved = session_value > lifetime_value
             closer_to_gto = abs(session_value - gto_value) < abs(lifetime_value - gto_value)
@@ -600,8 +597,8 @@ def analyze_leak_progress(
             closer_to_gto = False
 
         progress.append({
-            "leak_name": leak.get("name", stat_name),
-            "leak_description": leak.get("description", ""),
+            "leak_name": stat_name.replace("_", " ").title(),
+            "leak_description": leak.get("tendency", ""),
             "lifetime_value": lifetime_value,
             "session_value": session_value,
             "gto_value": gto_value,
