@@ -112,24 +112,34 @@ def get_session_metadata(db: Session, session_id: int) -> Optional[Dict[str, Any
 
 def get_hero_session_stats(db: Session, session_id: int) -> Dict[str, Any]:
     """Calculate hero's preflop stats for this session with sample sizes."""
+    # Get hero name from session
+    session_result = db.execute(text("""
+        SELECT player_name FROM sessions WHERE session_id = :session_id
+    """), {"session_id": session_id}).fetchone()
+
+    if not session_result:
+        return {"error": "Session not found"}
+
+    hero_name = session_result.player_name
+
     result = db.execute(text("""
         SELECT
             COUNT(*) as total_hands,
             SUM(CASE WHEN vpip THEN 1 ELSE 0 END) as vpip_count,
             SUM(CASE WHEN pfr THEN 1 ELSE 0 END) as pfr_count,
-            SUM(CASE WHEN three_bet THEN 1 ELSE 0 END) as three_bet_count,
+            SUM(CASE WHEN made_three_bet THEN 1 ELSE 0 END) as three_bet_count,
             SUM(CASE WHEN three_bet_opportunity THEN 1 ELSE 0 END) as three_bet_opps,
-            SUM(CASE WHEN fold_to_three_bet THEN 1 ELSE 0 END) as fold_to_3bet_count,
-            SUM(CASE WHEN facing_three_bet THEN 1 ELSE 0 END) as facing_3bet_opps,
+            SUM(CASE WHEN folded_to_three_bet THEN 1 ELSE 0 END) as fold_to_3bet_count,
+            SUM(CASE WHEN faced_three_bet THEN 1 ELSE 0 END) as facing_3bet_opps,
             SUM(CASE WHEN cold_call THEN 1 ELSE 0 END) as cold_call_count,
-            SUM(CASE WHEN cold_call_opportunity THEN 1 ELSE 0 END) as cold_call_opps,
+            SUM(CASE WHEN faced_raise AND NOT pfr THEN 1 ELSE 0 END) as cold_call_opps,
             SUM(CASE WHEN limp THEN 1 ELSE 0 END) as limp_count,
-            SUM(CASE WHEN open_opportunity THEN 1 ELSE 0 END) as open_opps,
+            SUM(CASE WHEN pot_unopened THEN 1 ELSE 0 END) as open_opps,
             SUM(CASE WHEN four_bet THEN 1 ELSE 0 END) as four_bet_count,
-            SUM(CASE WHEN four_bet_opportunity THEN 1 ELSE 0 END) as four_bet_opps
+            SUM(CASE WHEN faced_three_bet THEN 1 ELSE 0 END) as four_bet_opps
         FROM player_hand_summary
-        WHERE session_id = :session_id AND is_hero = true
-    """), {"session_id": session_id}).fetchone()
+        WHERE session_id = :session_id AND player_name = :hero_name
+    """), {"session_id": session_id, "hero_name": hero_name}).fetchone()
 
     if not result or not result.total_hands:
         return {"error": "No hands found for session"}
@@ -213,12 +223,22 @@ def get_session_gto_mistakes(db: Session, session_id: int, limit: int = 10) -> L
 
 def get_session_opponents(db: Session, session_id: int) -> List[Dict[str, Any]]:
     """Get opponents from this session with their database stats."""
-    # First get unique opponents from session
+    # Get hero name from session
+    session_result = db.execute(text("""
+        SELECT player_name FROM sessions WHERE session_id = :session_id
+    """), {"session_id": session_id}).fetchone()
+
+    if not session_result:
+        return []
+
+    hero_name = session_result.player_name
+
+    # Get unique opponents from session (excluding hero)
     session_opponents = db.execute(text("""
         SELECT DISTINCT player_name
         FROM player_hand_summary
-        WHERE session_id = :session_id AND is_hero = false
-    """), {"session_id": session_id}).fetchall()
+        WHERE session_id = :session_id AND player_name != :hero_name
+    """), {"session_id": session_id, "hero_name": hero_name}).fetchall()
 
     opponents = []
     for row in session_opponents:
@@ -330,6 +350,16 @@ def find_missed_opportunities(
     """Find spots where hero played GTO but could have exploited."""
     missed = []
 
+    # Get hero name from session
+    session_result = db.execute(text("""
+        SELECT player_name FROM sessions WHERE session_id = :session_id
+    """), {"session_id": session_id}).fetchone()
+
+    if not session_result:
+        return missed
+
+    hero_name = session_result.player_name
+
     # Find opponents with exploitable tendencies (100+ hands)
     exploitable_opponents = {
         opp["name"]: opp for opp in opponents
@@ -352,7 +382,7 @@ def find_missed_opportunities(
                 FROM player_hand_summary phs
                 JOIN raw_hands rh ON phs.hand_id = rh.hand_id
                 WHERE phs.session_id = :session_id
-                AND phs.is_hero = true
+                AND phs.player_name = :hero_name
                 AND phs.cold_call = true
                 AND EXISTS (
                     SELECT 1 FROM player_hand_summary opp
@@ -361,7 +391,7 @@ def find_missed_opportunities(
                     AND opp.pfr = true
                 )
                 LIMIT 3
-            """), {"session_id": session_id, "opp_name": opp_name}).fetchall()
+            """), {"session_id": session_id, "hero_name": hero_name, "opp_name": opp_name}).fetchall()
 
             for hand in hands:
                 missed.append({
