@@ -654,9 +654,11 @@ def get_hero_lifetime_priority_leaks(db: Session, hero_name: str) -> List[Dict[s
             '4bet_diff': round(four_bet - gto_4bet, 1),
         })
 
-    # Build priority leaks with lower thresholds for debrief (min 20 samples instead of 100)
-    # This allows us to show leak progress even with smaller sample sizes
-    DEBRIEF_MIN_SAMPLE = 20
+    # Build priority leaks with lower thresholds for debrief
+    # Lower sample (15 instead of 100) and deviation (5% instead of 8%) thresholds
+    # This allows showing progress on borderline leaks, not just major ones
+    DEBRIEF_MIN_SAMPLE = 15
+    DEBRIEF_LEAK_THRESHOLD = 5  # 5% deviation to be considered a leak (vs 8% in My Game)
 
     def get_confidence(sample: int) -> str:
         if sample < DEBRIEF_MIN_SAMPLE:
@@ -668,6 +670,9 @@ def get_hero_lifetime_priority_leaks(db: Session, hero_name: str) -> List[Dict[s
         else:
             return "high"
 
+    def is_leak_for_debrief(deviation: float) -> bool:
+        return abs(deviation) >= DEBRIEF_LEAK_THRESHOLD
+
     scenarios = []
 
     # 1. Opening ranges
@@ -676,7 +681,7 @@ def get_hero_lifetime_priority_leaks(db: Session, hero_name: str) -> List[Dict[s
         deviation = r.get('frequency_diff', 0)
         sample = r.get('total_hands', 0)
         severity = get_leak_severity(deviation)
-        is_leak = severity != 'none'
+        is_leak = is_leak_for_debrief(deviation)  # Use lower threshold for debrief
 
         scenario = {
             'scenario_id': f"opening_{pos}",
@@ -689,8 +694,8 @@ def get_hero_lifetime_priority_leaks(db: Session, hero_name: str) -> List[Dict[s
             'overall_deviation': deviation,
             'gto_value': r.get('gto_frequency', 0),
             'is_leak': is_leak,
-            'leak_severity': severity,
-            'leak_direction': 'too_loose' if deviation > 8 else 'too_tight' if deviation < -8 else None,
+            'leak_severity': severity if severity != 'none' else 'minor',  # At least minor if is_leak
+            'leak_direction': 'too_loose' if deviation > DEBRIEF_LEAK_THRESHOLD else 'too_tight' if deviation < -DEBRIEF_LEAK_THRESHOLD else None,
             'confidence_level': get_confidence(sample),
             'ev_weight': get_leak_weight(f"opening_{pos}"),
         }
@@ -709,6 +714,7 @@ def get_hero_lifetime_priority_leaks(db: Session, hero_name: str) -> List[Dict[s
         ]:
             deviation = r.get(diff_key, 0)
             severity = get_leak_severity(deviation)
+            is_leak = is_leak_for_debrief(deviation)  # Use lower threshold for debrief
             scenario = {
                 'scenario_id': f"defense_{pos}_{action}",
                 'category': 'defense',
@@ -719,9 +725,9 @@ def get_hero_lifetime_priority_leaks(db: Session, hero_name: str) -> List[Dict[s
                 'overall_sample': total_sample,
                 'overall_deviation': deviation,
                 'gto_value': r.get(gto_key, 0),
-                'is_leak': severity != 'none',
-                'leak_severity': severity,
-                'leak_direction': 'too_high' if deviation > 8 else 'too_low' if deviation < -8 else None,
+                'is_leak': is_leak,
+                'leak_severity': severity if severity != 'none' else 'minor',  # At least minor if is_leak
+                'leak_direction': 'too_high' if deviation > DEBRIEF_LEAK_THRESHOLD else 'too_low' if deviation < -DEBRIEF_LEAK_THRESHOLD else None,
                 'confidence_level': get_confidence(total_sample),
                 'ev_weight': get_leak_weight(f"defense_{pos}_{action}"),
             }
@@ -740,6 +746,7 @@ def get_hero_lifetime_priority_leaks(db: Session, hero_name: str) -> List[Dict[s
         ]:
             deviation = r.get(diff_key, 0)
             severity = get_leak_severity(deviation)
+            is_leak = is_leak_for_debrief(deviation)  # Use lower threshold for debrief
             scenario = {
                 'scenario_id': f"facing_3bet_{pos}_{action}",
                 'category': 'facing_3bet',
@@ -750,9 +757,9 @@ def get_hero_lifetime_priority_leaks(db: Session, hero_name: str) -> List[Dict[s
                 'overall_sample': total_sample,
                 'overall_deviation': deviation,
                 'gto_value': r.get(gto_key, 0),
-                'is_leak': severity != 'none',
-                'leak_severity': severity,
-                'leak_direction': 'too_high' if deviation > 8 else 'too_low' if deviation < -8 else None,
+                'is_leak': is_leak,
+                'leak_severity': severity if severity != 'none' else 'minor',  # At least minor if is_leak
+                'leak_direction': 'too_high' if deviation > DEBRIEF_LEAK_THRESHOLD else 'too_low' if deviation < -DEBRIEF_LEAK_THRESHOLD else None,
                 'confidence_level': get_confidence(total_sample),
                 'ev_weight': get_leak_weight(f"facing_3bet_{pos}_{action}"),
             }
