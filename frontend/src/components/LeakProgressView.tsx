@@ -13,36 +13,6 @@ interface LeakProgressViewProps {
   sessionId: number;
 }
 
-// Progress indicator showing session value relative to GTO and lifetime
-const ProgressIndicator: React.FC<{
-  sessionValue: number | null;
-  lifetimeValue: number;
-  gtoValue: number;
-  improved: boolean;
-}> = ({ sessionValue, lifetimeValue, gtoValue, improved }) => {
-  if (sessionValue === null) return null;
-
-  const sessionDiff = Math.abs(sessionValue - gtoValue);
-  const lifetimeDiff = Math.abs(lifetimeValue - gtoValue);
-  const closerToGTO = sessionDiff < lifetimeDiff;
-
-  return (
-    <div className="flex items-center gap-2">
-      {closerToGTO ? (
-        <div className="flex items-center gap-1 text-emerald-600">
-          <TrendingUp size={16} />
-          <span className="text-xs font-medium">Closer to GTO</span>
-        </div>
-      ) : (
-        <div className="flex items-center gap-1 text-rose-600">
-          <TrendingDown size={16} />
-          <span className="text-xs font-medium">Further from GTO</span>
-        </div>
-      )}
-    </div>
-  );
-};
-
 // Single leak item - clean, minimal design
 const LeakItem: React.FC<{
   scenario: ScenarioComparison;
