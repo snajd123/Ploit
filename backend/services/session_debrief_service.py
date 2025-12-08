@@ -874,8 +874,9 @@ def analyze_leak_progress(
 
     progress = []
 
-    # Compare each lifetime priority leak to session performance
-    for leak in lifetime_priority_leaks[:10]:  # Top 10 priority leaks
+    # Compare ALL lifetime priority leaks to session performance
+    # (don't limit to top 10 - include all leaks where session data exists)
+    for leak in lifetime_priority_leaks:
         scenario_id = leak.get("scenario_id", "")
         session_data = session_stats.get(scenario_id)
 
