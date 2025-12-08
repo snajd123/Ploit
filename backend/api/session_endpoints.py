@@ -533,15 +533,14 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
     player_name = session._mapping["player_name"]
     session_hands = session._mapping["total_hands"]
 
-    # Get ALL hero nicknames for "overall" stats
+    # Get ALL hero nicknames for "overall" stats (lowercase for case-insensitive matching)
     # This allows comparing session vs ALL hands across all hero accounts
     hero_nicknames = get_hero_nicknames(db)
-    # Convert to list for SQL IN clause, preserving original case from database
-    hero_names_result = db.execute(text("SELECT nickname FROM hero_nicknames"))
-    hero_names_list = [row[0] for row in hero_names_result]
-    if not hero_names_list:
-        # Fallback to just this session's player_name
-        hero_names_list = [player_name]
+    if hero_nicknames:
+        hero_names_list = list(hero_nicknames)  # Already lowercase from get_hero_nicknames
+    else:
+        # Fallback to just this session's player_name (lowercased)
+        hero_names_list = [player_name.lower()]
 
     # Determine overall confidence
     if session_hands < 100:
@@ -572,7 +571,7 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
             COUNT(*) FILTER (WHERE pot_unopened = true) as opportunities,
             COUNT(*) FILTER (WHERE pfr = true AND pot_unopened = true) as opened
         FROM player_hand_summary
-        WHERE player_name = ANY(:hero_names)
+        WHERE LOWER(player_name) = ANY(:hero_names)
         AND position IS NOT NULL
         AND position NOT IN ('BB')
         GROUP BY position
@@ -702,7 +701,7 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
             COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND vpip = true AND pfr = false) as called,
             COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND made_three_bet = true) as three_bets
         FROM player_hand_summary
-        WHERE player_name = ANY(:hero_names)
+        WHERE LOWER(player_name) = ANY(:hero_names)
         AND position IN ('BB', 'SB', 'BTN', 'CO', 'MP')
         GROUP BY position
         HAVING COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false) >= 5
@@ -854,7 +853,7 @@ def get_session_leak_comparison(session_id: int, db: Session = Depends(get_db)):
             COUNT(*) FILTER (WHERE called_three_bet = true AND pfr = true) as called,
             COUNT(*) FILTER (WHERE four_bet = true AND pfr = true) as four_bet
         FROM player_hand_summary
-        WHERE player_name = ANY(:hero_names)
+        WHERE LOWER(player_name) = ANY(:hero_names)
         AND position IS NOT NULL
         GROUP BY position
         HAVING COUNT(*) FILTER (WHERE faced_three_bet = true AND pfr = true) >= 5
