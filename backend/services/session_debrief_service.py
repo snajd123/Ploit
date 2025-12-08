@@ -467,36 +467,20 @@ def find_missed_opportunities(
 
 
 def get_session_strategy(db: Session, session_id: int) -> Optional[Dict[str, Any]]:
-    """Get pre-game strategy that was generated for this session (if any)."""
-    # Get session info to find matching strategy
-    session_result = db.execute(text("""
-        SELECT player_name, table_stakes, start_time
-        FROM sessions WHERE session_id = :session_id
-    """), {"session_id": session_id}).fetchone()
+    """Get pre-game strategy that was generated for this session (if any).
 
-    if not session_result:
-        return None
-
-    hero_name = session_result.player_name
-    stake_level = session_result.table_stakes
-    session_start = session_result.start_time
-
-    # Look for strategy generated within 24 hours before session start
+    Links strategy to session by checking if the strategy's hand_id belongs to this session.
+    """
+    # Find strategy where the hand_id is in this session
     strategy_result = db.execute(text("""
-        SELECT id, created_at, strategy, opponents, table_classification, softness_score
-        FROM pregame_strategies
-        WHERE hero_nickname = :hero_name
-        AND (stake_level = :stake_level OR stake_level IS NULL)
-        AND created_at >= :earliest
-        AND created_at <= :latest
-        ORDER BY created_at DESC
+        SELECT ps.id, ps.created_at, ps.strategy, ps.opponents,
+               ps.table_classification, ps.softness_score, ps.hand_id
+        FROM pregame_strategies ps
+        JOIN raw_hands rh ON ps.hand_id = rh.hand_id
+        WHERE rh.session_id = :session_id
+        ORDER BY ps.created_at DESC
         LIMIT 1
-    """), {
-        "hero_name": hero_name,
-        "stake_level": stake_level,
-        "earliest": session_start - timedelta(hours=24),
-        "latest": session_start + timedelta(hours=1)  # Allow 1 hour buffer after session start
-    }).fetchone()
+    """), {"session_id": session_id}).fetchone()
 
     if not strategy_result:
         return None
