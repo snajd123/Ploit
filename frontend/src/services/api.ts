@@ -43,6 +43,7 @@ import type {
   PreGameStrategyDetail,
   QuickLookupResponse,
   DetectAllSessionsResponse,
+  SessionSegmentsResponse,
 } from '../types';
 
 class ApiClient {

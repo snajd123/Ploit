@@ -507,6 +507,168 @@ def get_session_strategy(db: Session, session_id: int) -> Optional[Dict[str, Any
         return None
 
 
+def get_strategy_goal_progress(db: Session, session_id: int, hero_name: str) -> List[Dict[str, Any]]:
+    """
+    Calculate how well the player executed against their strategy goals (leak_reminders).
+
+    This compares actual session performance against the targets set in pre-game strategies.
+    Returns progress for ALL strategies used during this session.
+    """
+    # Get all strategies that have hands played under them in this session
+    strategies_result = db.execute(text("""
+        SELECT DISTINCT ps.id, ps.strategy, ps.created_at
+        FROM pregame_strategies ps
+        JOIN player_hand_summary phs ON phs.strategy_id = ps.id
+        WHERE phs.session_id = :session_id
+        AND LOWER(phs.player_name) = LOWER(:hero_name)
+        ORDER BY ps.created_at
+    """), {"session_id": session_id, "hero_name": hero_name}).fetchall()
+
+    if not strategies_result:
+        return []
+
+    all_progress = []
+
+    for strategy_row in strategies_result:
+        strategy_id = strategy_row[0]
+        strategy_json = strategy_row[1]
+
+        try:
+            strategy_data = json.loads(strategy_json) if isinstance(strategy_json, str) else strategy_json
+            leak_reminders = strategy_data.get("leak_reminders", [])
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+        if not leak_reminders:
+            continue
+
+        # Calculate actual performance for each leak reminder
+        for reminder in leak_reminders:
+            leak_id = reminder.get("leak_id", "")
+            baseline_value = reminder.get("current_value", 0)
+            target_value = reminder.get("target_value", 0)
+            gto_value = reminder.get("gto_value", 0)
+
+            # Parse leak_id: "opening_BTN", "defense_BB_fold", "facing_3bet_CO_fold"
+            parts = leak_id.split("_")
+            category = parts[0] if parts else ""
+
+            actual_value = None
+            sample_size = 0
+
+            if category == "opening":
+                position = parts[1] if len(parts) > 1 else ""
+                result = db.execute(text("""
+                    SELECT
+                        COUNT(*) FILTER (WHERE pot_unopened = true) as opportunities,
+                        COUNT(*) FILTER (WHERE pot_unopened = true AND pfr = true) as opened
+                    FROM player_hand_summary
+                    WHERE session_id = :session_id
+                    AND strategy_id = :strategy_id
+                    AND LOWER(player_name) = LOWER(:hero_name)
+                    AND position = :position
+                """), {
+                    "session_id": session_id,
+                    "strategy_id": strategy_id,
+                    "hero_name": hero_name,
+                    "position": position
+                }).fetchone()
+
+                if result and result[0] and result[0] > 0:
+                    sample_size = result[0]
+                    actual_value = (result[1] / result[0]) * 100
+
+            elif category == "defense":
+                position = parts[1] if len(parts) > 1 else ""
+                action = parts[2] if len(parts) > 2 else ""
+
+                result = db.execute(text("""
+                    SELECT
+                        COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false) as opportunities,
+                        COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND vpip = false) as folded,
+                        COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND vpip = true AND pfr = false) as called,
+                        COUNT(*) FILTER (WHERE faced_raise = true AND faced_three_bet = false AND made_three_bet = true) as three_bet
+                    FROM player_hand_summary
+                    WHERE session_id = :session_id
+                    AND strategy_id = :strategy_id
+                    AND LOWER(player_name) = LOWER(:hero_name)
+                    AND position = :position
+                """), {
+                    "session_id": session_id,
+                    "strategy_id": strategy_id,
+                    "hero_name": hero_name,
+                    "position": position
+                }).fetchone()
+
+                if result and result[0] and result[0] > 0:
+                    sample_size = result[0]
+                    if action == "fold":
+                        actual_value = (result[1] / result[0]) * 100
+                    elif action == "call":
+                        actual_value = (result[2] / result[0]) * 100
+                    elif action == "3bet":
+                        actual_value = (result[3] / result[0]) * 100
+
+            elif category == "facing" and len(parts) > 1 and parts[1] == "3bet":
+                position = parts[2] if len(parts) > 2 else ""
+                action = parts[3] if len(parts) > 3 else ""
+
+                result = db.execute(text("""
+                    SELECT
+                        COUNT(*) FILTER (WHERE faced_three_bet = true AND pfr = true) as opportunities,
+                        COUNT(*) FILTER (WHERE folded_to_three_bet = true AND pfr = true) as folded,
+                        COUNT(*) FILTER (WHERE called_three_bet = true AND pfr = true) as called,
+                        COUNT(*) FILTER (WHERE four_bet = true AND pfr = true) as four_bet
+                    FROM player_hand_summary
+                    WHERE session_id = :session_id
+                    AND strategy_id = :strategy_id
+                    AND LOWER(player_name) = LOWER(:hero_name)
+                    AND position = :position
+                """), {
+                    "session_id": session_id,
+                    "strategy_id": strategy_id,
+                    "hero_name": hero_name,
+                    "position": position
+                }).fetchone()
+
+                if result and result[0] and result[0] > 0:
+                    sample_size = result[0]
+                    if action == "fold":
+                        actual_value = (result[1] / result[0]) * 100
+                    elif action == "call":
+                        actual_value = (result[2] / result[0]) * 100
+                    elif action == "4bet":
+                        actual_value = (result[3] / result[0]) * 100
+
+            # Determine improvement
+            improved = None
+            hit_target = None
+            if actual_value is not None and sample_size >= 3:
+                # Improved = moved closer to target
+                distance_before = abs(baseline_value - target_value)
+                distance_after = abs(actual_value - target_value)
+                improved = distance_after < distance_before
+                # Hit target = within 3% of target
+                hit_target = abs(actual_value - target_value) <= 3
+
+            if sample_size > 0:  # Only include if we have any data
+                all_progress.append({
+                    "leak_id": leak_id,
+                    "description": reminder.get("description", ""),
+                    "session_goal": reminder.get("session_goal", ""),
+                    "baseline_value": baseline_value,
+                    "target_value": target_value,
+                    "gto_value": gto_value,
+                    "actual_value": round(actual_value, 1) if actual_value is not None else None,
+                    "sample_size": sample_size,
+                    "improved": improved,
+                    "hit_target": hit_target,
+                    "strategy_id": strategy_id
+                })
+
+    return all_progress
+
+
 def get_hero_lifetime_priority_leaks(db: Session, hero_name: str) -> List[Dict[str, Any]]:
     """
     Get hero's lifetime priority leaks using the same scenario-based analysis as My Game.
@@ -940,7 +1102,8 @@ def generate_ai_debrief(
     opponents: List[Dict[str, Any]],
     missed_opportunities: List[Dict[str, Any]],
     pregame_strategy: Optional[Dict[str, Any]] = None,
-    leak_progress: Optional[List[Dict[str, Any]]] = None
+    leak_progress: Optional[List[Dict[str, Any]]] = None,
+    strategy_goal_progress: Optional[List[Dict[str, Any]]] = None
 ) -> Dict[str, Any]:
     """Generate AI debrief using single-shot approach with all data."""
     client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
@@ -1021,6 +1184,32 @@ Opponent Exploits Recommended:
                 for l in not_improved:
                     leak_progress_text += f"  - {l['leak_name']}: Session {l['session_value']:.1f}% vs Lifetime {l['lifetime_value']:.1f}% (GTO: {l['gto_value']:.1f}%)\n"
 
+    # Format strategy goal progress (vs pre-game strategy targets)
+    strategy_goal_text = ""
+    if strategy_goal_progress:
+        goals_hit = [g for g in strategy_goal_progress if g.get("hit_target")]
+        goals_improved = [g for g in strategy_goal_progress if g.get("improved") and not g.get("hit_target")]
+        goals_missed = [g for g in strategy_goal_progress if not g.get("improved") and g.get("actual_value") is not None]
+
+        if goals_hit or goals_improved or goals_missed:
+            strategy_goal_text = "\n=== STRATEGY GOAL EXECUTION ===\n"
+            strategy_goal_text += "These are the specific targets you set before the session:\n\n"
+
+            if goals_hit:
+                strategy_goal_text += "GOALS HIT (within 3% of target):\n"
+                for g in goals_hit:
+                    strategy_goal_text += f"  - {g['description']}: {g['actual_value']:.1f}% (Target: {g['target_value']:.1f}%, {g['sample_size']} samples)\n"
+
+            if goals_improved:
+                strategy_goal_text += "IMPROVED (moved toward target):\n"
+                for g in goals_improved:
+                    strategy_goal_text += f"  - {g['description']}: {g['actual_value']:.1f}% vs Baseline {g['baseline_value']:.1f}% (Target: {g['target_value']:.1f}%, {g['sample_size']} samples)\n"
+
+            if goals_missed:
+                strategy_goal_text += "MISSED (did not improve toward target):\n"
+                for g in goals_missed:
+                    strategy_goal_text += f"  - {g['description']}: {g['actual_value']:.1f}% vs Baseline {g['baseline_value']:.1f}% (Target: {g['target_value']:.1f}%, {g['sample_size']} samples)\n"
+
     system_prompt = """You are a professional poker coach providing a session debrief.
 
 CRITICAL RULES:
@@ -1032,6 +1221,7 @@ CRITICAL RULES:
 6. Be encouraging but honest about limitations
 7. If a pre-game strategy was provided, comment on how well it was executed
 8. If leak progress data is provided, acknowledge improvements and areas still needing work
+9. If strategy goal execution data is provided, assess how well the player met their pre-session targets
 
 Format your response as JSON with these exact keys:
 {
@@ -1040,6 +1230,7 @@ Format your response as JSON with these exact keys:
   "areas_for_improvement": ["list of 2-3 areas to work on with specific numbers"],
   "opponent_insights": [{"name": "...", "tendency": "...", "recommendation": "..."}],
   "strategy_execution": "If strategy was provided, brief assessment of execution. Otherwise null.",
+  "strategy_goals_summary": "If strategy goal execution data was provided, brief summary of goals hit/improved/missed. Otherwise null.",
   "leak_progress_summary": "If leak data was provided, brief summary of progress. Otherwise null.",
   "study_recommendations": ["1-3 actionable study items"]
 }"""
@@ -1066,11 +1257,12 @@ Stakes: {session_meta['stake_level']}
 
 === MISSED EXPLOIT OPPORTUNITIES ===
 {missed_text if missed_text else "No clear missed opportunities identified"}
-{strategy_text}{leak_progress_text}
+{strategy_text}{strategy_goal_text}{leak_progress_text}
 === INSTRUCTIONS ===
 Generate a constructive debrief. For EVERY number you cite, it must appear in the data above.
 Note sample size limitations honestly. Do not claim patterns without sufficient data.
 If strategy execution data is available, assess how well the strategy was followed.
+If strategy goal execution data is available, assess how well the player met their pre-session targets.
 If leak progress data is available, acknowledge improvements and remaining work.
 Return ONLY valid JSON."""
 
@@ -1158,7 +1350,10 @@ def generate_session_debrief(db: Session, session_id: int) -> Dict[str, Any]:
     lifetime_priority_leaks = get_hero_lifetime_priority_leaks(db, hero_name) if hero_name else []
     leak_progress = analyze_leak_progress(db, session_id, hero_name, lifetime_priority_leaks) if lifetime_priority_leaks else []
 
-    # 9. Generate AI debrief with all data
+    # 9. Get strategy goal progress (comparing session performance to pre-game strategy targets)
+    strategy_goal_progress = get_strategy_goal_progress(db, session_id, hero_name) if hero_name else []
+
+    # 10. Generate AI debrief with all data
     ai_result = generate_ai_debrief(
         session_meta=session_meta,
         hero_stats=hero_stats,
@@ -1167,10 +1362,11 @@ def generate_session_debrief(db: Session, session_id: int) -> Dict[str, Any]:
         opponents=opponents,
         missed_opportunities=missed_opportunities,
         pregame_strategy=pregame_strategy,
-        leak_progress=leak_progress
+        leak_progress=leak_progress,
+        strategy_goal_progress=strategy_goal_progress
     )
 
-    # 10. Compile final response
+    # 11. Compile final response
     return {
         "session_summary": session_meta,
         "gto_analysis": {
@@ -1187,6 +1383,7 @@ def generate_session_debrief(db: Session, session_id: int) -> Dict[str, Any]:
         ],
         "pregame_strategy": pregame_strategy,
         "leak_progress": leak_progress,
+        "strategy_goal_progress": strategy_goal_progress,
         "ai_debrief": ai_result.get("analysis", {}),
         "ai_debug": {
             "prompt": ai_result.get("ai_prompt", ""),
@@ -1197,7 +1394,8 @@ def generate_session_debrief(db: Session, session_id: int) -> Dict[str, Any]:
             "gto_comparison": "GTO baselines assume 100bb stacks and standard 6-max play.",
             "opponent_confidence": "Opponent reads require 100+ hands for moderate confidence, 300+ for high confidence.",
             "strategy_note": "Strategy execution assessment is qualitative based on session actions." if pregame_strategy else None,
-            "leak_note": "Leak progress comparison uses lifetime stats as baseline." if leak_progress else None
+            "leak_note": "Leak progress comparison uses lifetime stats as baseline." if leak_progress else None,
+            "strategy_goals_note": "Strategy goal progress compares session performance to pre-game targets." if strategy_goal_progress else None
         }
     }
 

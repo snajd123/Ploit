@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Target, Clock, TrendingUp, TrendingDown, CheckCircle2,
-  XCircle, AlertCircle, Loader2, ChevronDown, ChevronUp
+  AlertCircle, Loader2, ChevronDown, ChevronUp
 } from 'lucide-react';
 import type { SessionSegmentsResponse, SessionSegment, LeakProgress } from '../types';
 import { api } from '../services/api';

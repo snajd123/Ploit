@@ -93,6 +93,19 @@ interface Debrief {
     direction: string;
     priority_score: number;
   }>;
+  strategy_goal_progress: Array<{
+    leak_id: string;
+    description: string;
+    session_goal: string;
+    baseline_value: number;
+    target_value: number;
+    gto_value: number;
+    actual_value: number | null;
+    sample_size: number;
+    improved: boolean | null;
+    hit_target: boolean | null;
+    strategy_id: number;
+  }>;
   ai_debrief: {
     executive_summary: string;
     went_well: string[];
@@ -103,6 +116,7 @@ interface Debrief {
       recommendation: string;
     }>;
     strategy_execution: string | null;
+    strategy_goals_summary: string | null;
     leak_progress_summary: string | null;
     study_recommendations: string[];
   };
@@ -408,6 +422,87 @@ const DebriefModal: React.FC<DebriefModalProps> = ({ isOpen, onClose, sessionId,
                     </div>
                   )}
                 </CollapsibleSection>
+
+                {/* Strategy Goal Progress */}
+                {debrief.strategy_goal_progress?.length > 0 && (
+                  <CollapsibleSection
+                    title="Strategy Goals"
+                    icon={<Target size={18} className="text-emerald-600" />}
+                    isExpanded={expandedSections.has('strategyGoals')}
+                    onToggle={() => toggleSection('strategyGoals')}
+                    badge={
+                      <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                        {debrief.strategy_goal_progress.filter(g => g.hit_target).length}/{debrief.strategy_goal_progress.filter(g => g.actual_value !== null).length} hit
+                      </span>
+                    }
+                  >
+                    <div className="space-y-3">
+                      {debrief.ai_debrief.strategy_goals_summary && (
+                        <p className="text-sm text-gray-700 mb-3">{debrief.ai_debrief.strategy_goals_summary}</p>
+                      )}
+                      {debrief.strategy_goal_progress.filter(g => g.actual_value !== null).map((goal, i) => (
+                        <div
+                          key={i}
+                          className={`rounded-lg p-3 border ${
+                            goal.hit_target
+                              ? 'bg-emerald-50 border-emerald-200'
+                              : goal.improved
+                              ? 'bg-blue-50 border-blue-200'
+                              : 'bg-amber-50 border-amber-200'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-2">
+                              <span className={`font-medium ${
+                                goal.hit_target ? 'text-emerald-800' : goal.improved ? 'text-blue-800' : 'text-amber-800'
+                              }`}>
+                                {goal.description}
+                              </span>
+                            </div>
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${
+                              goal.hit_target
+                                ? 'bg-emerald-200 text-emerald-800'
+                                : goal.improved
+                                ? 'bg-blue-200 text-blue-800'
+                                : 'bg-amber-200 text-amber-800'
+                            }`}>
+                              {goal.hit_target ? '✓ Hit Target' : goal.improved ? '↗ Improved' : 'Needs Work'}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-600 mb-2">{goal.session_goal}</p>
+                          <div className="flex items-center gap-4 mt-2 text-sm">
+                            <div className="text-center">
+                              <div className="text-gray-500 text-xs">Baseline</div>
+                              <div className="font-medium text-gray-600">{goal.baseline_value.toFixed(1)}%</div>
+                            </div>
+                            <div className="text-gray-400">→</div>
+                            <div className="text-center">
+                              <div className={`text-xs ${goal.hit_target ? 'text-emerald-600' : goal.improved ? 'text-blue-600' : 'text-amber-600'}`}>
+                                Actual
+                              </div>
+                              <div className={`font-bold ${goal.hit_target ? 'text-emerald-700' : goal.improved ? 'text-blue-700' : 'text-amber-700'}`}>
+                                {goal.actual_value?.toFixed(1)}%
+                              </div>
+                            </div>
+                            <div className="text-gray-400">|</div>
+                            <div className="text-center">
+                              <div className="text-gray-500 text-xs">Target</div>
+                              <div className="font-medium text-gray-600">{goal.target_value.toFixed(1)}%</div>
+                            </div>
+                            <div className="text-emerald-400">|</div>
+                            <div className="text-center">
+                              <div className="text-emerald-500 text-xs">GTO</div>
+                              <div className="font-medium text-emerald-600">{goal.gto_value.toFixed(1)}%</div>
+                            </div>
+                          </div>
+                          <div className="text-xs text-gray-500 mt-2">
+                            {goal.sample_size} opportunities
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CollapsibleSection>
+                )}
 
                 {/* Leak Progress */}
                 {debrief.leak_progress?.length > 0 && (
