@@ -515,8 +515,15 @@ def get_hero_lifetime_priority_leaks(db: Session, hero_name: str) -> List[Dict[s
     from backend.services.priority_scoring import (
         get_leak_severity, get_leak_weight, calculate_priority_score
     )
+    from backend.services.hero_detection import get_hero_nicknames
 
-    hero_nicknames = [hero_name.lower()]
+    # Use ALL configured hero nicknames (same as My Game), not just session player_name
+    configured_nicknames = get_hero_nicknames(db)
+    if configured_nicknames:
+        hero_nicknames = list(configured_nicknames)
+    else:
+        # Fallback to session player_name if no nicknames configured
+        hero_nicknames = [hero_name.lower()]
 
     # Get GTO frequencies for scenarios
     gto_opening_result = db.execute(text("""
