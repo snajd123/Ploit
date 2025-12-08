@@ -122,6 +122,9 @@ class PlayerHandSummary(Base):
     won_hand = Column(Boolean, default=False)
     profit_loss = Column(DECIMAL(10, 2))
 
+    # Strategy tracking - which pre-game strategy was active for this hand
+    strategy_id = Column(Integer)
+
     created_at = Column(TIMESTAMP, default=func.current_timestamp())
 
     def __repr__(self) -> str:

@@ -162,9 +162,12 @@ class DatabaseService:
                 )
                 self.session.add(hand_action)
 
-            # Insert player hand summaries with board categorization
+            # Find the active strategy for this hand's timestamp
+            strategy_id = self._get_active_strategy_id(hand.timestamp)
+
+            # Insert player hand summaries with board categorization and strategy
             for player_name, flags in hand.player_flags.items():
-                summary = self._flags_to_summary(hand.hand_id, flags, board_data['board_analysis'])
+                summary = self._flags_to_summary(hand.hand_id, flags, board_data['board_analysis'], strategy_id)
                 self.session.add(summary)
 
             self.session.commit()
@@ -217,7 +220,35 @@ class DatabaseService:
         logger.info(f"Batch insert complete: {result['hands_inserted']} inserted, {result['hands_failed']} failed")
         return result
 
-    def _flags_to_summary(self, hand_id: int, flags: PlayerHandSummaryFlags, board_analysis=None) -> PlayerHandSummary:
+    def _get_active_strategy_id(self, timestamp) -> Optional[int]:
+        """
+        Find the most recent strategy that was created BEFORE the given timestamp.
+
+        Args:
+            timestamp: Hand timestamp to check against
+
+        Returns:
+            Strategy ID or None if no strategy exists before this timestamp
+        """
+        if timestamp is None:
+            return None
+
+        try:
+            result = self.session.execute(
+                text("""
+                    SELECT id FROM pregame_strategies
+                    WHERE created_at <= :timestamp
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                """),
+                {"timestamp": timestamp}
+            ).fetchone()
+            return result[0] if result else None
+        except Exception as e:
+            logger.warning(f"Error finding active strategy: {e}")
+            return None
+
+    def _flags_to_summary(self, hand_id: int, flags: PlayerHandSummaryFlags, board_analysis=None, strategy_id=None) -> PlayerHandSummary:
         """
         Convert PlayerHandSummaryFlags to PlayerHandSummary database model.
 
@@ -225,6 +256,7 @@ class DatabaseService:
             hand_id: Hand ID
             flags: PlayerHandSummaryFlags object
             board_analysis: Optional BoardAnalysis object (unused in preflop-only mode)
+            strategy_id: Optional strategy ID that was active when this hand was played
 
         Returns:
             PlayerHandSummary ORM object with preflop stats only
@@ -265,6 +297,8 @@ class DatabaseService:
             went_to_showdown=flags.went_to_showdown,
             won_hand=flags.won_hand,
             profit_loss=flags.profit_loss,
+            # Strategy tracking
+            strategy_id=strategy_id,
         )
 
     # ========================================
