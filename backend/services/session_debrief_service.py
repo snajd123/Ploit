@@ -14,6 +14,8 @@ import logging
 import anthropic
 import os
 
+from backend.services.hero_gto_analyzer import HeroGTOAnalyzer
+
 logger = logging.getLogger(__name__)
 
 # Confidence tiers based on sample size
@@ -191,34 +193,41 @@ def get_hero_session_stats(db: Session, session_id: int) -> Dict[str, Any]:
 
 
 def get_session_gto_mistakes(db: Session, session_id: int, limit: int = 10) -> List[Dict[str, Any]]:
-    """Get pre-analyzed GTO mistakes from hero_gto_mistakes table."""
-    result = db.execute(text("""
-        SELECT
-            m.hand_id, m.scenario, m.hero_action, m.gto_action,
-            m.gto_frequency, m.ev_loss_bb, m.severity, m.explanation,
-            rh.hand_number
-        FROM hero_gto_mistakes m
-        JOIN raw_hands rh ON m.hand_id = rh.hand_id
-        WHERE rh.session_id = :session_id
-        ORDER BY m.ev_loss_bb DESC
-        LIMIT :limit
-    """), {"session_id": session_id, "limit": limit}).fetchall()
+    """Get GTO mistakes by running the analyzer."""
+    try:
+        analyzer = HeroGTOAnalyzer(db)
+        analysis = analyzer.analyze_session(session_id)
 
-    mistakes = []
-    for row in result:
-        mistakes.append({
-            "hand_id": row.hand_id,
-            "hand_number": row.hand_number,
-            "scenario": row.scenario,
-            "hero_action": row.hero_action,
-            "gto_action": row.gto_action,
-            "gto_frequency": float(row.gto_frequency) if row.gto_frequency else None,
-            "ev_loss_bb": float(row.ev_loss_bb) if row.ev_loss_bb else 0,
-            "severity": row.severity,
-            "explanation": row.explanation
-        })
+        biggest_mistakes = analysis.get("biggest_mistakes", [])
 
-    return mistakes
+        # Get hand numbers for the mistakes
+        hand_ids = [m.get("hand_id") for m in biggest_mistakes if m.get("hand_id")]
+        hand_numbers = {}
+        if hand_ids:
+            result = db.execute(text("""
+                SELECT hand_id, hand_number FROM raw_hands WHERE hand_id = ANY(:hand_ids)
+            """), {"hand_ids": hand_ids}).fetchall()
+            hand_numbers = {row.hand_id: row.hand_number for row in result}
+
+        # Map to expected format
+        mistakes = []
+        for m in biggest_mistakes[:limit]:
+            mistakes.append({
+                "hand_id": m.get("hand_id"),
+                "hand_number": hand_numbers.get(m.get("hand_id"), "Unknown"),
+                "scenario": m.get("scenario", ""),
+                "hero_action": m.get("action_taken", ""),
+                "gto_action": m.get("gto_action", ""),
+                "gto_frequency": m.get("gto_frequency"),
+                "ev_loss_bb": m.get("ev_loss_bb", 0),
+                "severity": m.get("mistake_severity", ""),
+                "explanation": f"{m.get('hero_hand', '')} from {m.get('position', '')}"
+            })
+
+        return mistakes
+    except Exception as e:
+        logger.error(f"Error analyzing GTO mistakes: {e}")
+        return []
 
 
 def get_session_opponents(db: Session, session_id: int) -> List[Dict[str, Any]]:
