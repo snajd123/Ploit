@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Calendar, Clock, TrendingUp, TrendingDown, Target, AlertTriangle, LineChart, MessageSquare } from 'lucide-react';
 import LeakProgressView from '../components/LeakProgressView';
-import PositionalPLView from '../components/PositionalPLView';
 import PreflopMistakesView from '../components/PreflopMistakesView';
 import GTOScoreView from '../components/GTOScoreView';
 import DebriefModal from '../components/DebriefModal';
@@ -186,17 +185,9 @@ const SessionDetail: React.FC = () => {
 
       {/* Tab Content */}
       {activeTab === 'overview' && (
-        <>
-          {/* GTO Deviation Score */}
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            <GTOScoreView sessionId={parseInt(sessionId || '0')} />
-          </div>
-
-          {/* Positional P/L Breakdown */}
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            <PositionalPLView sessionId={parseInt(sessionId || '0')} />
-          </div>
-        </>
+        <div className="bg-white rounded-lg shadow-sm p-6">
+          <GTOScoreView sessionId={parseInt(sessionId || '0')} />
+        </div>
       )}
 
       {activeTab === 'mistakes' && (
