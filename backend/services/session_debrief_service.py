@@ -508,8 +508,13 @@ def get_hero_lifetime_priority_leaks(db: Session, hero_name: str) -> List[Dict[s
     """
     Get hero's lifetime priority leaks using the same scenario-based analysis as My Game.
     This returns the same data structure as the My Game GTO Analysis priority_leaks.
+
+    Uses lower sample thresholds than My Game since we're comparing session trends,
+    not making absolute claims about leaks.
     """
-    from backend.services.priority_scoring import build_priority_leaks_from_gto_analysis
+    from backend.services.priority_scoring import (
+        get_leak_severity, get_leak_weight, calculate_priority_score
+    )
 
     hero_nicknames = [hero_name.lower()]
 
@@ -649,7 +654,121 @@ def get_hero_lifetime_priority_leaks(db: Session, hero_name: str) -> List[Dict[s
             '4bet_diff': round(four_bet - gto_4bet, 1),
         })
 
-    return build_priority_leaks_from_gto_analysis(gto_data)
+    # Build priority leaks with lower thresholds for debrief (min 20 samples instead of 100)
+    # This allows us to show leak progress even with smaller sample sizes
+    DEBRIEF_MIN_SAMPLE = 20
+
+    def get_confidence(sample: int) -> str:
+        if sample < DEBRIEF_MIN_SAMPLE:
+            return "insufficient"
+        elif sample < 50:
+            return "low"
+        elif sample < 100:
+            return "moderate"
+        else:
+            return "high"
+
+    scenarios = []
+
+    # 1. Opening ranges
+    for r in gto_data.get('opening_ranges', []):
+        pos = r.get('position', '')
+        deviation = r.get('frequency_diff', 0)
+        sample = r.get('total_hands', 0)
+        severity = get_leak_severity(deviation)
+        is_leak = severity != 'none'
+
+        scenario = {
+            'scenario_id': f"opening_{pos}",
+            'category': 'opening',
+            'position': pos,
+            'action': 'open',
+            'display_name': f"{pos} Open (RFI)",
+            'overall_value': r.get('player_frequency', 0),
+            'overall_sample': sample,
+            'overall_deviation': deviation,
+            'gto_value': r.get('gto_frequency', 0),
+            'is_leak': is_leak,
+            'leak_severity': severity,
+            'leak_direction': 'too_loose' if deviation > 8 else 'too_tight' if deviation < -8 else None,
+            'confidence_level': get_confidence(sample),
+            'ev_weight': get_leak_weight(f"opening_{pos}"),
+        }
+        scenario['priority_score'] = calculate_priority_score(scenario)
+        scenarios.append(scenario)
+
+    # 2. Defense vs opens
+    for r in gto_data.get('defense_vs_open', []):
+        pos = r.get('position', '')
+        total_sample = r.get('sample_size', 0)
+
+        for action, player_key, gto_key, diff_key in [
+            ('fold', 'player_fold', 'gto_fold', 'fold_diff'),
+            ('call', 'player_call', 'gto_call', 'call_diff'),
+            ('3bet', 'player_3bet', 'gto_3bet', '3bet_diff'),
+        ]:
+            deviation = r.get(diff_key, 0)
+            severity = get_leak_severity(deviation)
+            scenario = {
+                'scenario_id': f"defense_{pos}_{action}",
+                'category': 'defense',
+                'position': pos,
+                'action': action,
+                'display_name': f"{action.capitalize()} in {pos}",
+                'overall_value': r.get(player_key, 0),
+                'overall_sample': total_sample,
+                'overall_deviation': deviation,
+                'gto_value': r.get(gto_key, 0),
+                'is_leak': severity != 'none',
+                'leak_severity': severity,
+                'leak_direction': 'too_high' if deviation > 8 else 'too_low' if deviation < -8 else None,
+                'confidence_level': get_confidence(total_sample),
+                'ev_weight': get_leak_weight(f"defense_{pos}_{action}"),
+            }
+            scenario['priority_score'] = calculate_priority_score(scenario)
+            scenarios.append(scenario)
+
+    # 3. Facing 3-bet
+    for r in gto_data.get('facing_3bet', []):
+        pos = r.get('position', '')
+        total_sample = r.get('sample_size', 0)
+
+        for action, player_key, gto_key, diff_key in [
+            ('fold', 'player_fold', 'gto_fold', 'fold_diff'),
+            ('call', 'player_call', 'gto_call', 'call_diff'),
+            ('4bet', 'player_4bet', 'gto_4bet', '4bet_diff'),
+        ]:
+            deviation = r.get(diff_key, 0)
+            severity = get_leak_severity(deviation)
+            scenario = {
+                'scenario_id': f"facing_3bet_{pos}_{action}",
+                'category': 'facing_3bet',
+                'position': pos,
+                'action': action,
+                'display_name': f"{action.capitalize()} 3-Bet in {pos}",
+                'overall_value': r.get(player_key, 0),
+                'overall_sample': total_sample,
+                'overall_deviation': deviation,
+                'gto_value': r.get(gto_key, 0),
+                'is_leak': severity != 'none',
+                'leak_severity': severity,
+                'leak_direction': 'too_high' if deviation > 8 else 'too_low' if deviation < -8 else None,
+                'confidence_level': get_confidence(total_sample),
+                'ev_weight': get_leak_weight(f"facing_3bet_{pos}_{action}"),
+            }
+            scenario['priority_score'] = calculate_priority_score(scenario)
+            scenarios.append(scenario)
+
+    # Filter to leaks only and sort by priority
+    leaks_only = [
+        s for s in scenarios
+        if s.get('is_leak')
+        and s.get('priority_score', 0) > 0
+        and s.get('confidence_level') != 'insufficient'
+    ]
+    priority_leaks = sorted(leaks_only, key=lambda x: x.get('priority_score', 0), reverse=True)
+
+    return priority_leaks
 
 
 def get_session_scenario_stats(db: Session, session_id: int, hero_name: str) -> Dict[str, Dict[str, float]]:
