@@ -238,6 +238,7 @@ class DatabaseService:
             pfr=flags.pfr,
             limp=flags.limp,
             faced_raise=flags.faced_raise,
+            pot_unopened=flags.pot_unopened,
             three_bet_opportunity=flags.three_bet_opportunity,
             faced_three_bet=flags.faced_three_bet,
             folded_to_three_bet=flags.folded_to_three_bet,
@@ -319,6 +320,7 @@ class DatabaseService:
                     summary.pfr = flags.pfr
                     summary.limp = flags.limp
                     summary.faced_raise = flags.faced_raise
+                    summary.pot_unopened = flags.pot_unopened
                     summary.three_bet_opportunity = flags.three_bet_opportunity
                     summary.faced_three_bet = flags.faced_three_bet
                     summary.folded_to_three_bet = flags.folded_to_three_bet
