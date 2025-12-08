@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  TrendingDown, CheckCircle, AlertTriangle, Minus,
-  ChevronDown, ChevronRight, AlertCircle, Loader2
+  TrendingUp, TrendingDown, Target, ChevronDown, ChevronUp,
+  AlertCircle, Loader2, ArrowRight, CheckCircle2, XCircle
 } from 'lucide-react';
 import type {
   SessionLeakComparisonResponse,
   ScenarioComparison,
-  ImprovementStatus
 } from '../types';
 import { api } from '../services/api';
 
@@ -14,233 +13,248 @@ interface LeakProgressViewProps {
   sessionId: number;
 }
 
-// Status badge component
-const StatusBadge: React.FC<{ status: ImprovementStatus | null }> = ({ status }) => {
-  if (!status) return null;
-
-  const config = {
-    improved: { icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-100', label: 'Improved' },
-    same: { icon: Minus, color: 'text-gray-600', bg: 'bg-gray-100', label: 'Same' },
-    worse: { icon: TrendingDown, color: 'text-red-600', bg: 'bg-red-100', label: 'Worse' },
-    overcorrected: { icon: AlertTriangle, color: 'text-orange-600', bg: 'bg-orange-100', label: 'Overcorrected' }
-  };
-
-  const { icon: Icon, color, bg, label } = config[status];
-
-  return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${bg} ${color}`}>
-      <Icon size={12} />
-      {label}
-    </span>
-  );
-};
-
-// Severity badge
-const SeverityBadge: React.FC<{ severity: string }> = ({ severity }) => {
-  const colors: Record<string, string> = {
-    none: 'bg-gray-100 text-gray-600',
-    minor: 'bg-yellow-100 text-yellow-700',
-    moderate: 'bg-orange-100 text-orange-700',
-    major: 'bg-red-100 text-red-700'
-  };
-
-  return (
-    <span className={`px-2 py-0.5 text-xs font-medium rounded ${colors[severity] || colors.none}`}>
-      {severity.toUpperCase()}
-    </span>
-  );
-};
-
-// Spectrum visualization component
-const SpectrumBar: React.FC<{
-  gtoValue: number;
-  overallValue: number;
+// Progress indicator showing session value relative to GTO and lifetime
+const ProgressIndicator: React.FC<{
   sessionValue: number | null;
-  leakDirection: string | null;
-}> = ({ gtoValue, overallValue, sessionValue, leakDirection }) => {
-  // Determine the range for the spectrum
-  const min = Math.min(0, gtoValue - 30, overallValue - 10, (sessionValue || overallValue) - 10);
-  const max = Math.max(100, gtoValue + 30, overallValue + 10, (sessionValue || overallValue) + 10);
-  const range = max - min;
+  lifetimeValue: number;
+  gtoValue: number;
+  improved: boolean;
+}> = ({ sessionValue, lifetimeValue, gtoValue, improved }) => {
+  if (sessionValue === null) return null;
 
-  const getPosition = (value: number) => ((value - min) / range) * 100;
-
-  const gtoPos = getPosition(gtoValue);
-  const overallPos = getPosition(overallValue);
-  const sessionPos = sessionValue !== null ? getPosition(sessionValue) : null;
-
-  // GTO zone is +/- 5%
-  const gtoZoneLeft = getPosition(gtoValue - 5);
-  const gtoZoneRight = getPosition(gtoValue + 5);
-  const gtoZoneWidth = gtoZoneRight - gtoZoneLeft;
+  const sessionDiff = Math.abs(sessionValue - gtoValue);
+  const lifetimeDiff = Math.abs(lifetimeValue - gtoValue);
+  const closerToGTO = sessionDiff < lifetimeDiff;
 
   return (
-    <div className="relative h-10 w-full">
-      {/* Base bar */}
-      <div className="absolute top-4 left-0 right-0 h-2 bg-gray-200 rounded-full" />
-
-      {/* GTO zone */}
-      <div
-        className="absolute top-4 h-2 bg-green-200 rounded-full"
-        style={{ left: `${gtoZoneLeft}%`, width: `${gtoZoneWidth}%` }}
-      />
-
-      {/* GTO marker */}
-      <div
-        className="absolute top-3 w-0.5 h-4 bg-green-600"
-        style={{ left: `${gtoPos}%` }}
-      />
-      <div
-        className="absolute top-0 text-[10px] text-green-700 font-medium transform -translate-x-1/2"
-        style={{ left: `${gtoPos}%` }}
-      >
-        GTO {gtoValue.toFixed(0)}%
-      </div>
-
-      {/* Overall marker (hollow circle) */}
-      <div
-        className="absolute top-3.5 w-3 h-3 rounded-full border-2 border-gray-500 bg-white transform -translate-x-1/2"
-        style={{ left: `${overallPos}%` }}
-        title={`Overall: ${overallValue.toFixed(1)}%`}
-      />
-
-      {/* Session marker (filled circle) */}
-      {sessionPos !== null && (
-        <div
-          className="absolute top-3.5 w-3 h-3 rounded-full bg-blue-600 transform -translate-x-1/2"
-          style={{ left: `${sessionPos}%` }}
-          title={`Session: ${sessionValue?.toFixed(1)}%`}
-        />
+    <div className="flex items-center gap-2">
+      {closerToGTO ? (
+        <div className="flex items-center gap-1 text-emerald-600">
+          <TrendingUp size={16} />
+          <span className="text-xs font-medium">Closer to GTO</span>
+        </div>
+      ) : (
+        <div className="flex items-center gap-1 text-rose-600">
+          <TrendingDown size={16} />
+          <span className="text-xs font-medium">Further from GTO</span>
+        </div>
       )}
-
-      {/* Labels at bottom */}
-      <div className="absolute top-7 left-0 text-[10px] text-gray-400">
-        {leakDirection === 'too_tight' || leakDirection === 'too_low' ? 'Too Tight/Low' : '0%'}
-      </div>
-      <div className="absolute top-7 right-0 text-[10px] text-gray-400">
-        {leakDirection === 'too_loose' || leakDirection === 'too_high' ? 'Too Loose/High' : '100%'}
-      </div>
     </div>
   );
 };
 
-// Scenario card component
-const ScenarioCard: React.FC<{ scenario: ScenarioComparison }> = ({ scenario }) => {
-  const hasSessionData = scenario.session_sample > 0;
+// Single leak item - clean, minimal design
+const LeakItem: React.FC<{
+  scenario: ScenarioComparison;
+  showSessionData: boolean;
+}> = ({ scenario, showSessionData }) => {
+  const hasSession = scenario.session_sample > 0 && scenario.session_value !== null;
+
+  // Calculate if session is closer to GTO
+  const sessionDiff = hasSession ? Math.abs((scenario.session_value || 0) - scenario.gto_value) : null;
+  const lifetimeDiff = Math.abs(scenario.overall_value - scenario.gto_value);
+  const isImproved = sessionDiff !== null && sessionDiff < lifetimeDiff;
+
+  // Direction indicator
+  const getDirectionLabel = () => {
+    if (!scenario.leak_direction) return null;
+    if (scenario.leak_direction === 'too_high' || scenario.leak_direction === 'too_loose') {
+      return <span className="text-xs text-rose-600 font-medium">Too High</span>;
+    }
+    return <span className="text-xs text-amber-600 font-medium">Too Low</span>;
+  };
 
   return (
-    <div className={`p-3 rounded-lg border ${scenario.is_leak ? 'border-red-200 bg-red-50' : 'border-green-200 bg-green-50'}`}>
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <span className="font-medium text-gray-900 text-sm">{scenario.display_name}</span>
-          {scenario.is_leak ? (
-            <SeverityBadge severity={scenario.leak_severity} />
-          ) : (
-            <span className="px-2 py-0.5 text-xs font-medium rounded bg-green-100 text-green-700">OK</span>
-          )}
+    <div className="group">
+      <div className="flex items-center justify-between py-3 px-4 hover:bg-slate-50 rounded-lg transition-colors">
+        {/* Left: Scenario name and direction */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-slate-800 truncate">
+              {scenario.display_name}
+            </span>
+            {getDirectionLabel()}
+          </div>
+          <div className="text-xs text-slate-500 mt-0.5">
+            {scenario.overall_sample} lifetime samples
+          </div>
         </div>
-        {scenario.is_leak && hasSessionData && (
-          <StatusBadge status={scenario.improvement_status} />
-        )}
-      </div>
 
-      {/* Always show the spectrum bar */}
-      <SpectrumBar
-        gtoValue={scenario.gto_value}
-        overallValue={scenario.overall_value}
-        sessionValue={scenario.session_value}
-        leakDirection={scenario.leak_direction}
-      />
+        {/* Center: Values comparison */}
+        <div className="flex items-center gap-6 px-4">
+          {/* Lifetime value */}
+          <div className="text-center min-w-[60px]">
+            <div className="text-sm font-semibold text-slate-600">
+              {scenario.overall_value.toFixed(1)}%
+            </div>
+            <div className="text-[10px] text-slate-400 uppercase tracking-wide">
+              Lifetime
+            </div>
+          </div>
 
-      <div className="mt-3 flex items-center justify-between text-xs">
-        <div className="flex items-center gap-3">
-          <span className="text-gray-500">
-            <span className="inline-block w-2 h-2 rounded-full border border-gray-500 mr-1" />
-            Overall: <span className="font-medium text-gray-700">{scenario.overall_value.toFixed(1)}%</span>
-          </span>
-          {hasSessionData && (
-            <span className="text-gray-500">
-              <span className="inline-block w-2 h-2 rounded-full bg-blue-600 mr-1" />
-              Session: <span className="font-medium text-blue-700">{scenario.session_value?.toFixed(1)}%</span>
+          {/* Arrow */}
+          {hasSession && showSessionData && (
+            <>
+              <ArrowRight size={16} className="text-slate-300" />
+
+              {/* Session value */}
+              <div className="text-center min-w-[60px]">
+                <div className={`text-sm font-semibold ${isImproved ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  {scenario.session_value?.toFixed(1)}%
+                </div>
+                <div className="text-[10px] text-slate-400 uppercase tracking-wide">
+                  Session
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* GTO target */}
+          <div className="text-center min-w-[60px] pl-4 border-l border-slate-200">
+            <div className="text-sm font-semibold text-emerald-600">
+              {scenario.gto_value.toFixed(1)}%
+            </div>
+            <div className="text-[10px] text-slate-400 uppercase tracking-wide">
+              GTO
+            </div>
+          </div>
+        </div>
+
+        {/* Right: Status */}
+        <div className="w-24 text-right">
+          {hasSession && showSessionData ? (
+            isImproved ? (
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
+                <CheckCircle2 size={12} />
+                Improved
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-rose-600 bg-rose-50 px-2 py-1 rounded-full">
+                <XCircle size={12} />
+                Regressed
+              </span>
+            )
+          ) : (
+            <span className="text-xs text-slate-400">
+              {scenario.session_sample} obs
             </span>
           )}
-          <span className="text-gray-500">
-            GTO: <span className="font-medium text-green-700">{scenario.gto_value.toFixed(1)}%</span>
-          </span>
         </div>
-        <span className={`${scenario.confidence_level === 'insufficient' ? 'text-orange-500' : 'text-gray-400'}`}>
-          {scenario.session_sample} obs ({scenario.confidence_level})
-        </span>
       </div>
-
-      {scenario.is_leak && scenario.overcorrected && (
-        <div className="mt-2 text-xs text-orange-600 bg-orange-50 p-2 rounded flex items-start gap-1">
-          <AlertTriangle size={12} className="mt-0.5 flex-shrink-0" />
-          <span>
-            Went from {scenario.leak_direction === 'too_high' || scenario.leak_direction === 'too_loose' ? 'too high' : 'too low'}
-            {' '}({scenario.overall_value.toFixed(0)}%) to opposite side ({scenario.session_value?.toFixed(0)}%)
-          </span>
-        </div>
-      )}
     </div>
   );
 };
 
-// Collapsible category section
+// Category section with cleaner accordion
 const CategorySection: React.FC<{
   title: string;
+  icon: React.ReactNode;
   scenarios: ScenarioComparison[];
   defaultExpanded?: boolean;
-}> = ({ title, scenarios, defaultExpanded = true }) => {
+}> = ({ title, icon, scenarios, defaultExpanded = false }) => {
   const [expanded, setExpanded] = useState(defaultExpanded);
 
-  const leaksCount = scenarios.filter(s => s.is_leak).length;
-  const improvedCount = scenarios.filter(s => s.is_leak && s.improvement_status === 'improved').length;
+  const leaksWithSession = scenarios.filter(s => s.is_leak && s.session_sample > 0);
+  const improvedCount = leaksWithSession.filter(s => {
+    const sessionDiff = Math.abs((s.session_value || 0) - s.gto_value);
+    const lifetimeDiff = Math.abs(s.overall_value - s.gto_value);
+    return sessionDiff < lifetimeDiff;
+  }).length;
+
+  const totalLeaks = scenarios.filter(s => s.is_leak).length;
+
+  if (scenarios.length === 0) return null;
 
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden">
+    <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between p-3 bg-gray-50 hover:bg-gray-100 transition-colors"
+        className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors"
       >
-        <div className="flex items-center gap-2">
-          {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-          <span className="font-medium text-gray-800">{title}</span>
-          {leaksCount > 0 && (
-            <span className="text-xs text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full">
-              {improvedCount}/{leaksCount} improved
-            </span>
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-slate-100 rounded-lg text-slate-600">
+            {icon}
+          </div>
+          <div className="text-left">
+            <div className="font-semibold text-slate-800">{title}</div>
+            <div className="text-xs text-slate-500">
+              {scenarios.length} scenarios tracked
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-4">
+          {totalLeaks > 0 && (
+            <div className="text-right">
+              <div className="text-sm font-semibold text-slate-700">
+                {improvedCount}/{leaksWithSession.length}
+              </div>
+              <div className="text-xs text-slate-500">improved</div>
+            </div>
+          )}
+          {expanded ? (
+            <ChevronUp size={20} className="text-slate-400" />
+          ) : (
+            <ChevronDown size={20} className="text-slate-400" />
           )}
         </div>
       </button>
+
       {expanded && (
-        <div className="p-3 space-y-2 bg-white">
-          {scenarios.map(scenario => (
-            <ScenarioCard key={scenario.scenario_id} scenario={scenario} />
-          ))}
+        <div className="border-t border-slate-100">
+          {/* Leaks first */}
+          {scenarios.filter(s => s.is_leak).length > 0 && (
+            <div className="divide-y divide-slate-100">
+              {scenarios
+                .filter(s => s.is_leak)
+                .sort((a, b) => {
+                  // Sort by session sample (those with data first)
+                  if (a.session_sample > 0 && b.session_sample === 0) return -1;
+                  if (a.session_sample === 0 && b.session_sample > 0) return 1;
+                  return 0;
+                })
+                .map(scenario => (
+                  <LeakItem
+                    key={scenario.scenario_id}
+                    scenario={scenario}
+                    showSessionData={true}
+                  />
+                ))}
+            </div>
+          )}
+
+          {/* Non-leaks collapsed */}
+          {scenarios.filter(s => !s.is_leak).length > 0 && (
+            <div className="px-4 py-3 bg-slate-50 border-t border-slate-100">
+              <div className="text-xs text-slate-500 flex items-center gap-1">
+                <CheckCircle2 size={12} className="text-emerald-500" />
+                {scenarios.filter(s => !s.is_leak).length} scenarios within GTO range
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 };
 
-// Grade display component
-const GradeDisplay: React.FC<{ grade: string; score: number }> = ({ grade, score }) => {
-  const gradeColors: Record<string, string> = {
-    A: 'text-green-600 bg-green-100 border-green-300',
-    B: 'text-blue-600 bg-blue-100 border-blue-300',
-    C: 'text-yellow-600 bg-yellow-100 border-yellow-300',
-    D: 'text-orange-600 bg-orange-100 border-orange-300',
-    F: 'text-red-600 bg-red-100 border-red-300'
-  };
-
-  return (
-    <div className={`flex flex-col items-center justify-center p-4 rounded-lg border ${gradeColors[grade] || gradeColors.C}`}>
-      <span className="text-3xl font-bold">{grade}</span>
-      <span className="text-sm opacity-75">Score: {score.toFixed(0)}</span>
+// Summary card
+const SummaryCard: React.FC<{
+  icon: React.ReactNode;
+  label: string;
+  value: number;
+  color: string;
+}> = ({ icon, label, value, color }) => (
+  <div className={`flex items-center gap-3 p-4 rounded-xl ${color}`}>
+    <div className="p-2 bg-white/50 rounded-lg">
+      {icon}
     </div>
-  );
-};
+    <div>
+      <div className="text-2xl font-bold">{value}</div>
+      <div className="text-xs opacity-75">{label}</div>
+    </div>
+  </div>
+);
 
 const LeakProgressView: React.FC<LeakProgressViewProps> = ({ sessionId }) => {
   const [data, setData] = useState<SessionLeakComparisonResponse | null>(null);
@@ -265,127 +279,133 @@ const LeakProgressView: React.FC<LeakProgressViewProps> = ({ sessionId }) => {
     fetchData();
   }, [sessionId]);
 
-  // Group scenarios by category, filtering out those with 0 observations
+  // Group scenarios by category
   const groupedScenarios = useMemo(() => {
     if (!data) return { opening: [], defense: [], facing_3bet: [] };
 
-    // Only show scenarios that have session data (session_sample > 0)
-    const hasSessionData = (s: ScenarioComparison) => s.session_sample > 0;
-
     return {
-      opening: data.scenarios.filter(s => s.category === 'opening' && hasSessionData(s)),
-      defense: data.scenarios.filter(s => s.category === 'defense' && hasSessionData(s)),
-      facing_3bet: data.scenarios.filter(s => s.category === 'facing_3bet' && hasSessionData(s))
+      opening: data.scenarios.filter(s => s.category === 'opening'),
+      defense: data.scenarios.filter(s => s.category === 'defense'),
+      facing_3bet: data.scenarios.filter(s => s.category === 'facing_3bet')
     };
   }, [data]);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="animate-spin text-blue-600 mr-2" size={24} />
-        <span className="text-gray-600">Loading leak comparison...</span>
+      <div className="flex flex-col items-center justify-center py-16">
+        <Loader2 className="animate-spin text-slate-400 mb-3" size={32} />
+        <span className="text-slate-500">Analyzing session leaks...</span>
       </div>
     );
   }
 
   if (error || !data) {
     return (
-      <div className="text-center py-12">
-        <AlertCircle className="mx-auto mb-3 text-red-500" size={40} />
-        <p className="text-red-600">{error || 'No data available'}</p>
+      <div className="text-center py-16">
+        <AlertCircle className="mx-auto mb-3 text-rose-400" size={40} />
+        <p className="text-rose-600 font-medium">{error || 'No data available'}</p>
       </div>
     );
   }
 
   const { summary } = data;
+  const totalWithSession = data.scenarios.filter(s => s.session_sample > 0 && s.is_leak).length;
 
   return (
-    <div className="space-y-4">
-      {/* Header with summary */}
-      <div className="flex items-start gap-4 p-4 bg-gradient-to-r from-blue-50 to-white rounded-lg border border-blue-200">
-        <GradeDisplay grade={summary.session_grade} score={summary.overall_improvement_score} />
-
-        <div className="flex-1">
-          <h3 className="font-semibold text-gray-900 mb-2">Session Leak Progress</h3>
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            <div className="flex items-center gap-2">
-              <CheckCircle size={14} className="text-green-600" />
-              <span className="text-gray-600">
-                <span className="font-medium text-gray-900">{summary.scenarios_improved}</span> improved
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Minus size={14} className="text-gray-500" />
-              <span className="text-gray-600">
-                <span className="font-medium text-gray-900">{summary.scenarios_same}</span> same
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <TrendingDown size={14} className="text-red-600" />
-              <span className="text-gray-600">
-                <span className="font-medium text-gray-900">{summary.scenarios_worse}</span> worse
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <AlertTriangle size={14} className="text-orange-600" />
-              <span className="text-gray-600">
-                <span className="font-medium text-gray-900">{summary.scenarios_overcorrected}</span> overcorrected
-              </span>
-            </div>
-          </div>
-          <p className="text-xs text-gray-500 mt-2">
-            {summary.scenarios_with_leaks} scenarios with leaks identified (out of {summary.total_scenarios} total)
-          </p>
-        </div>
-
-        <div className="text-right text-sm text-gray-500">
-          <div>{data.session_hands} hands</div>
-          <div className={`${data.confidence === 'low' ? 'text-orange-500' : ''}`}>
-            {data.confidence} confidence
-          </div>
-        </div>
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h2 className="text-xl font-bold text-slate-800">Leak Progress</h2>
+        <p className="text-sm text-slate-500 mt-1">
+          Comparing this session's play against your lifetime tendencies
+        </p>
       </div>
 
-      {/* Legend */}
-      <div className="flex items-center gap-4 text-xs text-gray-500 px-2">
-        <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full border border-gray-500" /> Overall
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-blue-600" /> This Session
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="w-4 h-2 bg-green-200 rounded" /> GTO Zone
-        </span>
+      {/* Summary Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <SummaryCard
+          icon={<TrendingUp size={18} className="text-emerald-600" />}
+          label="Improved"
+          value={summary.scenarios_improved}
+          color="bg-emerald-50 text-emerald-700"
+        />
+        <SummaryCard
+          icon={<TrendingDown size={18} className="text-rose-600" />}
+          label="Regressed"
+          value={summary.scenarios_worse}
+          color="bg-rose-50 text-rose-700"
+        />
+        <SummaryCard
+          icon={<Target size={18} className="text-slate-600" />}
+          label="Total Leaks"
+          value={summary.scenarios_with_leaks}
+          color="bg-slate-100 text-slate-700"
+        />
+        <SummaryCard
+          icon={<AlertCircle size={18} className="text-amber-600" />}
+          label="Overcorrected"
+          value={summary.scenarios_overcorrected}
+          color="bg-amber-50 text-amber-700"
+        />
       </div>
 
-      {/* Scenario categories */}
-      <CategorySection
-        title="Opening (RFI)"
-        scenarios={groupedScenarios.opening}
-        defaultExpanded={groupedScenarios.opening.some(s => s.is_leak)}
-      />
+      {/* Progress Bar */}
+      {totalWithSession > 0 && (
+        <div className="bg-slate-100 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-slate-700">Session Progress</span>
+            <span className="text-sm text-slate-500">
+              {summary.scenarios_improved} of {totalWithSession} leaks improved
+            </span>
+          </div>
+          <div className="h-3 bg-slate-200 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-full transition-all duration-500"
+              style={{
+                width: `${totalWithSession > 0 ? (summary.scenarios_improved / totalWithSession) * 100 : 0}%`
+              }}
+            />
+          </div>
+        </div>
+      )}
 
-      <CategorySection
-        title="Defense vs Opens"
-        scenarios={groupedScenarios.defense}
-        defaultExpanded={groupedScenarios.defense.some(s => s.is_leak)}
-      />
+      {/* Category Sections */}
+      <div className="space-y-3">
+        <CategorySection
+          title="Opening Ranges (RFI)"
+          icon={<Target size={18} />}
+          scenarios={groupedScenarios.opening}
+          defaultExpanded={groupedScenarios.opening.some(s => s.is_leak && s.session_sample > 0)}
+        />
 
-      <CategorySection
-        title="Facing 3-Bet"
-        scenarios={groupedScenarios.facing_3bet}
-        defaultExpanded={groupedScenarios.facing_3bet.some(s => s.is_leak)}
-      />
+        <CategorySection
+          title="Defense vs Opens"
+          icon={<Target size={18} />}
+          scenarios={groupedScenarios.defense}
+          defaultExpanded={groupedScenarios.defense.some(s => s.is_leak && s.session_sample > 0)}
+        />
+
+        <CategorySection
+          title="Facing 3-Bet"
+          icon={<Target size={18} />}
+          scenarios={groupedScenarios.facing_3bet}
+          defaultExpanded={groupedScenarios.facing_3bet.some(s => s.is_leak && s.session_sample > 0)}
+        />
+      </div>
 
       {/* No leaks message */}
       {summary.scenarios_with_leaks === 0 && (
-        <div className="text-center py-8 bg-green-50 rounded-lg border border-green-200">
-          <CheckCircle className="mx-auto mb-2 text-green-600" size={32} />
-          <p className="text-green-700 font-medium">No significant leaks identified</p>
-          <p className="text-sm text-green-600">Your overall play is within GTO ranges</p>
+        <div className="text-center py-12 bg-emerald-50 rounded-xl border border-emerald-100">
+          <CheckCircle2 className="mx-auto mb-3 text-emerald-500" size={40} />
+          <p className="text-emerald-700 font-semibold">Great job!</p>
+          <p className="text-sm text-emerald-600 mt-1">No significant leaks identified in your play</p>
         </div>
       )}
+
+      {/* Footer */}
+      <div className="text-center text-xs text-slate-400 pt-4 border-t border-slate-100">
+        Based on {data.session_hands} hands this session
+      </div>
     </div>
   );
 };
