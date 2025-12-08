@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   X, Loader2, MessageSquare, TrendingUp, TrendingDown, Target,
   AlertTriangle, CheckCircle, Users, BookOpen, ChevronDown, ChevronRight,
-  AlertCircle, Info, ExternalLink, Zap
+  AlertCircle, Info, ExternalLink, Zap, ClipboardCheck, Activity
 } from 'lucide-react';
 import HandReplayModal from './HandReplayModal';
 import { api } from '../services/api';
@@ -62,6 +62,32 @@ interface Debrief {
     stats: Record<string, number | string | null> | null;
     confidence: { tier: string; label: string; language: string };
   }>;
+  pregame_strategy: {
+    strategy_id: number;
+    created_at: string;
+    table_classification: string;
+    softness_score: number | null;
+    general_strategy: {
+      overview?: string;
+      key_principle?: string;
+      opening_adjustments?: string[];
+      three_bet_adjustments?: string[];
+    };
+    opponent_exploits: Array<{ name: string; exploit: string }>;
+    priority_actions: string[];
+  } | null;
+  leak_progress: Array<{
+    leak_name: string;
+    leak_description: string;
+    lifetime_value: number;
+    session_value: number;
+    gto_value: number;
+    session_sample: number;
+    improved: boolean;
+    closer_to_gto: boolean;
+    severity: string;
+    direction: string;
+  }>;
   ai_debrief: {
     executive_summary: string;
     went_well: string[];
@@ -71,9 +97,11 @@ interface Debrief {
       tendency: string;
       recommendation: string;
     }>;
+    strategy_execution: string | null;
+    leak_progress_summary: string | null;
     study_recommendations: string[];
   };
-  disclaimers: Record<string, string>;
+  disclaimers: Record<string, string | null>;
 }
 
 // Confidence badge component
@@ -315,6 +343,103 @@ const DebriefModal: React.FC<DebriefModalProps> = ({ isOpen, onClose, sessionId,
                         </li>
                       ))}
                     </ul>
+                  </CollapsibleSection>
+                )}
+
+                {/* Strategy Execution */}
+                {debrief.pregame_strategy && (
+                  <CollapsibleSection
+                    title="Strategy Execution"
+                    icon={<ClipboardCheck size={18} className="text-cyan-600" />}
+                    isExpanded={expandedSections.has('strategy')}
+                    onToggle={() => toggleSection('strategy')}
+                  >
+                    <div className="space-y-3">
+                      <div className="bg-cyan-50 rounded-lg p-3 border border-cyan-200">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-medium text-cyan-800">Pre-Game Strategy</span>
+                          <span className="text-xs text-cyan-600">
+                            {debrief.pregame_strategy.table_classification} table
+                            {debrief.pregame_strategy.softness_score && ` (${debrief.pregame_strategy.softness_score}/10)`}
+                          </span>
+                        </div>
+                        {debrief.pregame_strategy.general_strategy?.key_principle && (
+                          <p className="text-sm text-cyan-700 mb-2">
+                            <strong>Key Principle:</strong> {debrief.pregame_strategy.general_strategy.key_principle}
+                          </p>
+                        )}
+                        {debrief.pregame_strategy.priority_actions?.length > 0 && (
+                          <div className="text-sm text-cyan-700">
+                            <strong>Priority Actions:</strong>
+                            <ul className="list-disc list-inside mt-1">
+                              {debrief.pregame_strategy.priority_actions.slice(0, 3).map((action, i) => (
+                                <li key={i}>{action}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                      {debrief.ai_debrief.strategy_execution && (
+                        <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                          <span className="font-medium text-gray-700">Execution Assessment:</span>
+                          <p className="text-sm text-gray-600 mt-1">{debrief.ai_debrief.strategy_execution}</p>
+                        </div>
+                      )}
+                    </div>
+                  </CollapsibleSection>
+                )}
+
+                {/* Leak Progress */}
+                {debrief.leak_progress?.length > 0 && (
+                  <CollapsibleSection
+                    title="Leak Progress"
+                    icon={<Activity size={18} className="text-violet-600" />}
+                    isExpanded={expandedSections.has('leakProgress')}
+                    onToggle={() => toggleSection('leakProgress')}
+                    badge={
+                      <span className="text-xs text-violet-600 bg-violet-50 px-2 py-0.5 rounded-full">
+                        {debrief.leak_progress.filter(l => l.improved).length}/{debrief.leak_progress.length} improved
+                      </span>
+                    }
+                  >
+                    <div className="space-y-3">
+                      {debrief.ai_debrief.leak_progress_summary && (
+                        <p className="text-sm text-gray-700 mb-3">{debrief.ai_debrief.leak_progress_summary}</p>
+                      )}
+                      {debrief.leak_progress.map((leak, i) => (
+                        <div
+                          key={i}
+                          className={`rounded-lg p-3 border ${
+                            leak.improved
+                              ? 'bg-green-50 border-green-200'
+                              : 'bg-amber-50 border-amber-200'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className={`font-medium ${leak.improved ? 'text-green-800' : 'text-amber-800'}`}>
+                              {leak.leak_name}
+                            </span>
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${
+                              leak.improved
+                                ? 'bg-green-200 text-green-800'
+                                : 'bg-amber-200 text-amber-800'
+                            }`}>
+                              {leak.improved ? 'Improved' : 'Needs Work'}
+                            </span>
+                          </div>
+                          <div className="text-sm text-gray-600">
+                            <span>Session: <strong>{leak.session_value.toFixed(1)}%</strong></span>
+                            <span className="mx-2">|</span>
+                            <span>Lifetime: {leak.lifetime_value.toFixed(1)}%</span>
+                            <span className="mx-2">|</span>
+                            <span>GTO: {leak.gto_value.toFixed(1)}%</span>
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            ({leak.session_sample} opportunities this session)
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </CollapsibleSection>
                 )}
 

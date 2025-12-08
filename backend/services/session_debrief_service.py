@@ -8,13 +8,14 @@ Uses ONLY data from our database - no AI assumptions.
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from typing import Dict, Any, List, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import logging
 import anthropic
 import os
 
 from backend.services.hero_gto_analyzer import HeroGTOAnalyzer
+from backend.services.stats_calculator import StatsCalculator
 
 logger = logging.getLogger(__name__)
 
@@ -465,13 +466,180 @@ def find_missed_opportunities(
     return missed[:8]  # Limit to top 8
 
 
+def get_session_strategy(db: Session, session_id: int) -> Optional[Dict[str, Any]]:
+    """Get pre-game strategy that was generated for this session (if any)."""
+    # Get session info to find matching strategy
+    session_result = db.execute(text("""
+        SELECT player_name, table_stakes, start_time
+        FROM sessions WHERE session_id = :session_id
+    """), {"session_id": session_id}).fetchone()
+
+    if not session_result:
+        return None
+
+    hero_name = session_result.player_name
+    stake_level = session_result.table_stakes
+    session_start = session_result.start_time
+
+    # Look for strategy generated within 24 hours before session start
+    strategy_result = db.execute(text("""
+        SELECT id, created_at, strategy, opponents, table_classification, softness_score
+        FROM pregame_strategies
+        WHERE hero_nickname = :hero_name
+        AND (stake_level = :stake_level OR stake_level IS NULL)
+        AND created_at >= :earliest
+        AND created_at <= :latest
+        ORDER BY created_at DESC
+        LIMIT 1
+    """), {
+        "hero_name": hero_name,
+        "stake_level": stake_level,
+        "earliest": session_start - timedelta(hours=24),
+        "latest": session_start + timedelta(hours=1)  # Allow 1 hour buffer after session start
+    }).fetchone()
+
+    if not strategy_result:
+        return None
+
+    try:
+        strategy_data = json.loads(strategy_result.strategy) if isinstance(strategy_result.strategy, str) else strategy_result.strategy
+        opponents_data = json.loads(strategy_result.opponents) if isinstance(strategy_result.opponents, str) else strategy_result.opponents
+
+        return {
+            "strategy_id": strategy_result.id,
+            "created_at": strategy_result.created_at.isoformat() if strategy_result.created_at else None,
+            "table_classification": strategy_result.table_classification,
+            "softness_score": float(strategy_result.softness_score) if strategy_result.softness_score else None,
+            "general_strategy": strategy_data.get("general_strategy", {}),
+            "opponent_exploits": strategy_data.get("opponent_exploits", []),
+            "priority_actions": strategy_data.get("priority_actions", []),
+            "opponents_snapshot": opponents_data
+        }
+    except (json.JSONDecodeError, TypeError) as e:
+        logger.error(f"Error parsing strategy data: {e}")
+        return None
+
+
+def get_hero_lifetime_leaks(db: Session, hero_name: str) -> List[Dict[str, Any]]:
+    """Get hero's lifetime leak analysis from player_stats."""
+    # Get player stats from database
+    stats_result = db.execute(text("""
+        SELECT *
+        FROM player_stats
+        WHERE player_name = :hero_name
+    """), {"hero_name": hero_name}).fetchone()
+
+    if not stats_result:
+        return []
+
+    # Convert to dict for StatsCalculator
+    stats = {
+        "player_name": stats_result.player_name,
+        "total_hands": stats_result.total_hands,
+        "vpip_pct": float(stats_result.vpip_pct) if stats_result.vpip_pct else None,
+        "pfr_pct": float(stats_result.pfr_pct) if stats_result.pfr_pct else None,
+        "three_bet_pct": float(stats_result.three_bet_pct) if stats_result.three_bet_pct else None,
+        "fold_to_three_bet_pct": float(stats_result.fold_to_three_bet_pct) if stats_result.fold_to_three_bet_pct else None,
+        "cold_call_pct": float(stats_result.cold_call_pct) if stats_result.cold_call_pct else None,
+        "limp_pct": float(stats_result.limp_pct) if stats_result.limp_pct else None,
+        "steal_attempt_pct": float(stats_result.steal_attempt_pct) if stats_result.steal_attempt_pct else None,
+        "fold_to_steal_pct": float(stats_result.fold_to_steal_pct) if stats_result.fold_to_steal_pct else None,
+        # Sample counts for confidence
+        "vpip_hands": stats_result.total_hands,
+        "pfr_hands": stats_result.total_hands,
+        "three_bet_opportunities": getattr(stats_result, 'three_bet_opportunities', None),
+        "facing_three_bet_opportunities": getattr(stats_result, 'facing_three_bet_opportunities', None),
+    }
+
+    try:
+        calculator = StatsCalculator(stats)
+        leak_analysis = calculator.get_leak_analysis()
+        return leak_analysis.get("leaks", [])
+    except Exception as e:
+        logger.error(f"Error calculating leaks: {e}")
+        return []
+
+
+def analyze_leak_progress(
+    hero_stats: Dict[str, Any],
+    lifetime_leaks: List[Dict[str, Any]],
+    gto_baselines: Dict[str, Any]
+) -> List[Dict[str, Any]]:
+    """Compare session stats to lifetime leaks to see if player improved."""
+    progress = []
+
+    # Map leak stat names to hero_stats keys
+    stat_mapping = {
+        "vpip": "vpip",
+        "pfr": "pfr",
+        "three_bet": "three_bet",
+        "fold_to_3bet": "fold_to_3bet",
+        "cold_call": "cold_call",
+        "limp": "limp",
+    }
+
+    for leak in lifetime_leaks[:5]:  # Top 5 leaks only
+        stat_name = leak.get("stat", "").lower().replace("-", "_").replace(" ", "_")
+
+        # Find matching session stat
+        session_stat_key = None
+        for key, mapped in stat_mapping.items():
+            if key in stat_name or stat_name in key:
+                session_stat_key = mapped
+                break
+
+        if not session_stat_key or session_stat_key not in hero_stats:
+            continue
+
+        session_stat = hero_stats[session_stat_key]
+        if isinstance(session_stat, dict):
+            session_value = session_stat.get("value", 0)
+            session_sample = session_stat.get("sample", 0)
+        else:
+            continue
+
+        lifetime_value = leak.get("hero_value", leak.get("value", 0))
+        gto_value = leak.get("gto_value", gto_baselines.get(session_stat_key, 0))
+        leak_direction = leak.get("direction", "unknown")  # "too_high" or "too_low"
+
+        # Calculate if session shows improvement
+        if leak_direction == "too_high":
+            # Player was doing something too much - lower is better
+            improved = session_value < lifetime_value
+            closer_to_gto = abs(session_value - gto_value) < abs(lifetime_value - gto_value)
+        elif leak_direction == "too_low":
+            # Player was doing something too little - higher is better
+            improved = session_value > lifetime_value
+            closer_to_gto = abs(session_value - gto_value) < abs(lifetime_value - gto_value)
+        else:
+            improved = False
+            closer_to_gto = False
+
+        progress.append({
+            "leak_name": leak.get("name", stat_name),
+            "leak_description": leak.get("description", ""),
+            "lifetime_value": lifetime_value,
+            "session_value": session_value,
+            "gto_value": gto_value,
+            "session_sample": session_sample,
+            "improved": improved,
+            "closer_to_gto": closer_to_gto,
+            "severity": leak.get("severity", "minor"),
+            "direction": leak_direction
+        })
+
+    return progress
+
+
 def generate_ai_debrief(
     session_meta: Dict[str, Any],
     hero_stats: Dict[str, Any],
     gto_baselines: Dict[str, Any],
     gto_mistakes: List[Dict[str, Any]],
     opponents: List[Dict[str, Any]],
-    missed_opportunities: List[Dict[str, Any]]
+    missed_opportunities: List[Dict[str, Any]],
+    pregame_strategy: Optional[Dict[str, Any]] = None,
+    leak_progress: Optional[List[Dict[str, Any]]] = None
 ) -> Dict[str, Any]:
     """Generate AI debrief using single-shot approach with all data."""
     client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
@@ -511,6 +679,47 @@ def generate_ai_debrief(
     for m in missed_opportunities:
         missed_text += f"  Hand #{m['hand_number']}: {m['opportunity']} vs {m['opponent']} ({m['opponent_tendency']})\n"
 
+    # Format pre-game strategy if available
+    strategy_text = ""
+    if pregame_strategy:
+        general = pregame_strategy.get("general_strategy", {})
+        exploits = pregame_strategy.get("opponent_exploits", [])
+        priority = pregame_strategy.get("priority_actions", [])
+
+        strategy_text = f"""
+=== PRE-GAME STRATEGY (generated before session) ===
+Table Classification: {pregame_strategy.get('table_classification', 'Unknown')}
+Softness Score: {pregame_strategy.get('softness_score', 'N/A')}/10
+
+Key Principle: {general.get('key_principle', 'N/A')}
+Overview: {general.get('overview', 'N/A')}
+
+Priority Actions:
+{chr(10).join(f'  - {a}' for a in priority[:3]) if priority else '  None specified'}
+
+Opponent Exploits Recommended:
+{chr(10).join(f'  - {e.get("name", "Unknown")}: {e.get("exploit", "N/A")}' for e in exploits[:5]) if exploits else '  None specified'}
+"""
+
+    # Format leak progress if available
+    leak_progress_text = ""
+    if leak_progress:
+        improved = [l for l in leak_progress if l.get("improved")]
+        not_improved = [l for l in leak_progress if not l.get("improved")]
+
+        if improved or not_improved:
+            leak_progress_text = "\n=== LEAK PROGRESS (vs lifetime stats) ===\n"
+
+            if improved:
+                leak_progress_text += "IMPROVED this session:\n"
+                for l in improved:
+                    leak_progress_text += f"  - {l['leak_name']}: Session {l['session_value']:.1f}% vs Lifetime {l['lifetime_value']:.1f}% (GTO: {l['gto_value']:.1f}%)\n"
+
+            if not_improved:
+                leak_progress_text += "NEEDS WORK:\n"
+                for l in not_improved:
+                    leak_progress_text += f"  - {l['leak_name']}: Session {l['session_value']:.1f}% vs Lifetime {l['lifetime_value']:.1f}% (GTO: {l['gto_value']:.1f}%)\n"
+
     system_prompt = """You are a professional poker coach providing a session debrief.
 
 CRITICAL RULES:
@@ -520,6 +729,8 @@ CRITICAL RULES:
 4. Distinguish between GTO mistakes and potential exploitative adjustments
 5. For opponent reads, always state the sample size and confidence level
 6. Be encouraging but honest about limitations
+7. If a pre-game strategy was provided, comment on how well it was executed
+8. If leak progress data is provided, acknowledge improvements and areas still needing work
 
 Format your response as JSON with these exact keys:
 {
@@ -527,6 +738,8 @@ Format your response as JSON with these exact keys:
   "went_well": ["list of 2-3 things that went well with specific numbers"],
   "areas_for_improvement": ["list of 2-3 areas to work on with specific numbers"],
   "opponent_insights": [{"name": "...", "tendency": "...", "recommendation": "..."}],
+  "strategy_execution": "If strategy was provided, brief assessment of execution. Otherwise null.",
+  "leak_progress_summary": "If leak data was provided, brief summary of progress. Otherwise null.",
   "study_recommendations": ["1-3 actionable study items"]
 }"""
 
@@ -552,10 +765,12 @@ Stakes: {session_meta['stake_level']}
 
 === MISSED EXPLOIT OPPORTUNITIES ===
 {missed_text if missed_text else "No clear missed opportunities identified"}
-
+{strategy_text}{leak_progress_text}
 === INSTRUCTIONS ===
 Generate a constructive debrief. For EVERY number you cite, it must appear in the data above.
 Note sample size limitations honestly. Do not claim patterns without sufficient data.
+If strategy execution data is available, assess how well the strategy was followed.
+If leak progress data is available, acknowledge improvements and remaining work.
 Return ONLY valid JSON."""
 
     logger.info("Generating AI debrief...")
@@ -604,6 +819,8 @@ def generate_session_debrief(db: Session, session_id: int) -> Dict[str, Any]:
     if not session_meta:
         raise ValueError(f"Session {session_id} not found")
 
+    hero_name = session_meta.get("player_name", "")
+
     # 2. Get GTO baselines from database
     gto_baselines = get_gto_baselines(db)
 
@@ -619,17 +836,26 @@ def generate_session_debrief(db: Session, session_id: int) -> Dict[str, Any]:
     # 6. Find missed opportunities
     missed_opportunities = find_missed_opportunities(db, session_id, opponents, gto_baselines)
 
-    # 7. Generate AI debrief
+    # 7. Get pre-game strategy if one was generated for this session
+    pregame_strategy = get_session_strategy(db, session_id)
+
+    # 8. Get hero's lifetime leaks and compare to session
+    lifetime_leaks = get_hero_lifetime_leaks(db, hero_name) if hero_name else []
+    leak_progress = analyze_leak_progress(hero_stats, lifetime_leaks, gto_baselines) if lifetime_leaks else []
+
+    # 9. Generate AI debrief with all data
     ai_analysis = generate_ai_debrief(
         session_meta=session_meta,
         hero_stats=hero_stats,
         gto_baselines=gto_baselines,
         gto_mistakes=gto_mistakes,
         opponents=opponents,
-        missed_opportunities=missed_opportunities
+        missed_opportunities=missed_opportunities,
+        pregame_strategy=pregame_strategy,
+        leak_progress=leak_progress
     )
 
-    # 8. Compile final response
+    # 10. Compile final response
     return {
         "session_summary": session_meta,
         "gto_analysis": {
@@ -644,11 +870,15 @@ def generate_session_debrief(db: Session, session_id: int) -> Dict[str, Any]:
         "opponents": [
             opp for opp in opponents if opp["db_total_hands"] >= 50
         ],
+        "pregame_strategy": pregame_strategy,
+        "leak_progress": leak_progress,
         "ai_debrief": ai_analysis,
         "disclaimers": {
             "session_sample": f"Based on {session_meta['total_hands']} hands. Session stats have high variance.",
             "gto_comparison": "GTO baselines assume 100bb stacks and standard 6-max play.",
-            "opponent_confidence": "Opponent reads require 100+ hands for moderate confidence, 300+ for high confidence."
+            "opponent_confidence": "Opponent reads require 100+ hands for moderate confidence, 300+ for high confidence.",
+            "strategy_note": "Strategy execution assessment is qualitative based on session actions." if pregame_strategy else None,
+            "leak_note": "Leak progress comparison uses lifetime stats as baseline." if leak_progress else None
         }
     }
 
