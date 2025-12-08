@@ -370,14 +370,18 @@ def find_missed_opportunities(
     if not exploitable_opponents:
         return missed
 
-    # Check for missed 3-bet bluff opportunities
+    gto_vpip = gto_baselines.get("vpip", 22)
+    gto_pfr = gto_baselines.get("pfr", 18)
+    gto_f3b = gto_baselines.get("fold_to_3bet", 52)
+    gto_3bet = gto_baselines.get("three_bet", 7)
+
     for opp_name, opp_data in exploitable_opponents.items():
         stats = opp_data["stats"]
-        gto_f3b = gto_baselines.get("fold_to_3bet", 52)
+        if not stats:
+            continue
 
-        # If opponent overfolds to 3bet significantly
+        # 1. Missed 3-bet bluff vs overfolders
         if stats.get("fold_to_3bet") and stats["fold_to_3bet"] > gto_f3b + 15:
-            # Find hands where hero called vs this opponent's open instead of 3-betting
             hands = db.execute(text("""
                 SELECT phs.hand_id
                 FROM player_hand_summary phs
@@ -390,7 +394,7 @@ def find_missed_opportunities(
                     AND opp.player_name = :opp_name
                     AND opp.pfr = true
                 )
-                LIMIT 3
+                LIMIT 2
             """), {"session_id": session_id, "hero_name": hero_name, "opp_name": opp_name}).fetchall()
 
             for hand in hands:
@@ -405,7 +409,60 @@ def find_missed_opportunities(
                     "confidence": opp_data["confidence"]["label"]
                 })
 
-    return missed[:5]  # Limit to top 5
+        # 2. Calling station detection - value bet thinner
+        if stats.get("vpip") and stats["vpip"] > gto_vpip + 20:
+            missed.append({
+                "hand_id": None,
+                "hand_number": "General",
+                "opponent": opp_name,
+                "opportunity": "Value bet thinner",
+                "opponent_tendency": f"VPIP {stats['vpip']:.1f}% (GTO: {gto_vpip}%) - calling station",
+                "opponent_sample": opp_data["db_total_hands"],
+                "hero_action": "Consider wider value range",
+                "confidence": opp_data["confidence"]["label"]
+            })
+
+        # 3. Nit detection - steal more / bluff more
+        if stats.get("vpip") and stats["vpip"] < gto_vpip - 10:
+            pfr_val = stats.get("pfr", 0)
+            missed.append({
+                "hand_id": None,
+                "hand_number": "General",
+                "opponent": opp_name,
+                "opportunity": "Steal / bluff more",
+                "opponent_tendency": f"VPIP {stats['vpip']:.1f}%, PFR {pfr_val:.1f}% - tight/nitty player",
+                "opponent_sample": opp_data["db_total_hands"],
+                "hero_action": "Attack their blinds, bluff more",
+                "confidence": opp_data["confidence"]["label"]
+            })
+
+        # 4. Over-aggressive 3-bettor - widen 4-bet range or call more
+        if stats.get("three_bet") and stats["three_bet"] > gto_3bet + 5:
+            missed.append({
+                "hand_id": None,
+                "hand_number": "General",
+                "opponent": opp_name,
+                "opportunity": "Defend vs aggressive 3-bettor",
+                "opponent_tendency": f"3-bet {stats['three_bet']:.1f}% (GTO: {gto_3bet}%) - likely over-bluffing",
+                "opponent_sample": opp_data["db_total_hands"],
+                "hero_action": "4-bet bluff more, call wider",
+                "confidence": opp_data["confidence"]["label"]
+            })
+
+        # 5. Tight 3-bettor - fold more vs their 3-bets
+        if stats.get("three_bet") and stats["three_bet"] < gto_3bet - 3:
+            missed.append({
+                "hand_id": None,
+                "hand_number": "General",
+                "opponent": opp_name,
+                "opportunity": "Respect tight 3-bets",
+                "opponent_tendency": f"3-bet only {stats['three_bet']:.1f}% (GTO: {gto_3bet}%) - value-heavy",
+                "opponent_sample": opp_data["db_total_hands"],
+                "hero_action": "Fold more marginal hands vs their 3-bet",
+                "confidence": opp_data["confidence"]["label"]
+            })
+
+    return missed[:8]  # Limit to top 8
 
 
 def generate_ai_debrief(

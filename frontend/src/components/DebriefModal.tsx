@@ -2,8 +2,11 @@ import React, { useState, useEffect } from 'react';
 import {
   X, Loader2, MessageSquare, TrendingUp, TrendingDown, Target,
   AlertTriangle, CheckCircle, Users, BookOpen, ChevronDown, ChevronRight,
-  AlertCircle, Info
+  AlertCircle, Info, ExternalLink, Zap
 } from 'lucide-react';
+import HandReplayModal from './HandReplayModal';
+import api from '../services/api';
+import type { HandReplayResponse } from '../types';
 
 interface DebriefModalProps {
   isOpen: boolean;
@@ -129,6 +132,20 @@ const DebriefModal: React.FC<DebriefModalProps> = ({ isOpen, onClose, sessionId,
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     new Set(['summary', 'recommendations'])
   );
+  const [replayData, setReplayData] = useState<HandReplayResponse | null>(null);
+  const [loadingReplay, setLoadingReplay] = useState(false);
+
+  const handleViewHand = async (handId: number) => {
+    setLoadingReplay(true);
+    try {
+      const data = await api.getHandReplay(handId);
+      setReplayData(data);
+    } catch (err) {
+      console.error('Error loading hand replay:', err);
+    } finally {
+      setLoadingReplay(false);
+    }
+  };
 
   useEffect(() => {
     if (isOpen && (sessionId || sessionIds?.length)) {
@@ -314,11 +331,16 @@ const DebriefModal: React.FC<DebriefModalProps> = ({ isOpen, onClose, sessionId,
                       {debrief.gto_analysis.mistakes.slice(0, 5).map((mistake, i) => (
                         <div key={i} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
                           <div className="flex items-start justify-between">
-                            <div>
-                              <span className="text-sm font-medium text-gray-900">
-                                Hand #{mistake.hand_number}
-                              </span>
-                              <span className="text-sm text-gray-500 ml-2">
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => handleViewHand(mistake.hand_id)}
+                                className="text-sm font-medium text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                                disabled={loadingReplay}
+                              >
+                                <ExternalLink size={12} />
+                                Hand #{mistake.hand_number.slice(-8)}
+                              </button>
+                              <span className="text-sm text-gray-500">
                                 {mistake.scenario}
                               </span>
                             </div>
@@ -337,6 +359,43 @@ const DebriefModal: React.FC<DebriefModalProps> = ({ isOpen, onClose, sessionId,
                           {mistake.explanation && (
                             <p className="mt-1 text-sm text-gray-500">{mistake.explanation}</p>
                           )}
+                        </div>
+                      ))}
+                    </div>
+                  </CollapsibleSection>
+                )}
+
+                {/* Exploit Opportunities */}
+                {debrief.exploit_analysis?.missed_opportunities?.length > 0 && (
+                  <CollapsibleSection
+                    title="Exploit Opportunities"
+                    icon={<Zap size={18} className="text-orange-600" />}
+                    isExpanded={expandedSections.has('exploits')}
+                    onToggle={() => toggleSection('exploits')}
+                    badge={<span className="text-xs text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full">{debrief.exploit_analysis.missed_opportunities.length}</span>}
+                  >
+                    <div className="space-y-3">
+                      {debrief.exploit_analysis.missed_opportunities.map((opp, i) => (
+                        <div key={i} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-gray-900">{opp.opportunity}</span>
+                              <span className="text-sm text-gray-500">vs {opp.opponent}</span>
+                              <ConfidenceBadge confidence={opp.confidence} />
+                            </div>
+                            {opp.hand_id && (
+                              <button
+                                onClick={() => handleViewHand(opp.hand_id)}
+                                className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                                disabled={loadingReplay}
+                              >
+                                <ExternalLink size={10} />
+                                View hand
+                              </button>
+                            )}
+                          </div>
+                          <p className="text-sm text-gray-600">{opp.opponent_tendency}</p>
+                          <p className="text-sm text-orange-600 mt-1 font-medium">{opp.hero_action}</p>
                         </div>
                       ))}
                     </div>
@@ -406,6 +465,14 @@ const DebriefModal: React.FC<DebriefModalProps> = ({ isOpen, onClose, sessionId,
           </div>
         </div>
       </div>
+
+      {/* Hand Replay Modal */}
+      {replayData && (
+        <HandReplayModal
+          data={replayData}
+          onClose={() => setReplayData(null)}
+        />
+      )}
     </div>
   );
 };
