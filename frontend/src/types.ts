@@ -1044,10 +1044,20 @@ export interface PreGameOpponentExploit {
   exploit: string;
 }
 
+export interface PreGameLeakReminder {
+  leak_id: string;
+  description: string;
+  session_goal: string;
+  current_value: number;
+  target_value: number;
+  gto_value: number;
+}
+
 export interface PreGameStrategy {
   general_strategy: PreGameGeneralStrategy;
   opponent_exploits: PreGameOpponentExploit[];
   priority_actions: string[];
+  leak_reminders?: PreGameLeakReminder[];
 }
 
 export interface PreGameStrategyDetail {

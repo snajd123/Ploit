@@ -259,6 +259,50 @@ const PreGame = () => {
           </div>
         </div>
 
+        {/* Session Goals (Leak Reminders) */}
+        {strategyDetail.strategy.leak_reminders && strategyDetail.strategy.leak_reminders.length > 0 && (
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-amber-50 to-orange-50">
+              <h2 className="font-semibold text-gray-900 flex items-center space-x-2">
+                <Target className="w-5 h-5 text-amber-500" />
+                <span>Your Session Goals</span>
+                <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                  {strategyDetail.strategy.leak_reminders.length} targets
+                </span>
+              </h2>
+              <p className="text-sm text-gray-500 mt-1">Personal improvement targets based on your leaks</p>
+            </div>
+            <div className="p-5 space-y-4">
+              {strategyDetail.strategy.leak_reminders.map((reminder, i) => (
+                <div key={i} className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-lg p-4">
+                  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      <h4 className="font-medium text-gray-900">{reminder.description}</h4>
+                      <p className="text-sm text-amber-700 mt-1">{reminder.session_goal}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4 mt-3 text-sm">
+                    <div className="text-center">
+                      <div className="text-xs text-gray-500">Current</div>
+                      <div className="font-semibold text-gray-700">{reminder.current_value?.toFixed(1)}%</div>
+                    </div>
+                    <div className="text-amber-400">→</div>
+                    <div className="text-center">
+                      <div className="text-xs text-amber-600">Target</div>
+                      <div className="font-bold text-amber-700">{reminder.target_value?.toFixed(1)}%</div>
+                    </div>
+                    <div className="text-gray-300">|</div>
+                    <div className="text-center">
+                      <div className="text-xs text-green-500">GTO</div>
+                      <div className="font-medium text-green-600">{reminder.gto_value?.toFixed(1)}%</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Known Opponents with Exploits */}
         {knownOpponents.length > 0 && (
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
