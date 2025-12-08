@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Calendar, Clock, TrendingUp, TrendingDown, Target, AlertTriangle, LineChart } from 'lucide-react';
+import { ArrowLeft, Calendar, Clock, TrendingUp, TrendingDown, Target, AlertTriangle, LineChart, MessageSquare } from 'lucide-react';
 import LeakProgressView from '../components/LeakProgressView';
 import PositionalPLView from '../components/PositionalPLView';
 import PreflopMistakesView from '../components/PreflopMistakesView';
 import GTOScoreView from '../components/GTOScoreView';
+import DebriefModal from '../components/DebriefModal';
 
 type SessionTab = 'overview' | 'mistakes' | 'leaks';
 
@@ -32,6 +33,7 @@ const SessionDetail: React.FC = () => {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<SessionTab>('overview');
+  const [showDebrief, setShowDebrief] = useState(false);
 
   useEffect(() => {
     if (sessionId) {
@@ -137,19 +139,28 @@ const SessionDetail: React.FC = () => {
             </div>
           </div>
 
-          <div className="text-right">
-            <div className={`text-3xl font-bold ${session.profit_loss_bb >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              <div className="flex items-center gap-2">
-                {session.profit_loss_bb >= 0 ? (
-                  <TrendingUp className="w-8 h-8" />
-                ) : (
-                  <TrendingDown className="w-8 h-8" />
-                )}
-                {session.profit_loss_bb >= 0 ? '+' : ''}{session.profit_loss_bb.toFixed(1)} bb
+          <div className="text-right flex items-start gap-4">
+            <button
+              onClick={() => setShowDebrief(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 transition-all shadow-sm"
+            >
+              <MessageSquare className="w-4 h-4" />
+              Debrief
+            </button>
+            <div>
+              <div className={`text-3xl font-bold ${session.profit_loss_bb >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                <div className="flex items-center gap-2">
+                  {session.profit_loss_bb >= 0 ? (
+                    <TrendingUp className="w-8 h-8" />
+                  ) : (
+                    <TrendingDown className="w-8 h-8" />
+                  )}
+                  {session.profit_loss_bb >= 0 ? '+' : ''}{session.profit_loss_bb.toFixed(1)} bb
+                </div>
               </div>
-            </div>
-            <div className={`text-sm mt-1 ${session.bb_100 >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {session.bb_100 >= 0 ? '+' : ''}{session.bb_100.toFixed(1)} bb/100
+              <div className={`text-sm mt-1 ${session.bb_100 >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {session.bb_100 >= 0 ? '+' : ''}{session.bb_100.toFixed(1)} bb/100
+              </div>
             </div>
           </div>
         </div>
@@ -199,6 +210,13 @@ const SessionDetail: React.FC = () => {
           <LeakProgressView sessionId={parseInt(sessionId || '0')} />
         </div>
       )}
+
+      {/* Debrief Modal */}
+      <DebriefModal
+        isOpen={showDebrief}
+        onClose={() => setShowDebrief(false)}
+        sessionId={parseInt(sessionId || '0')}
+      />
     </div>
   );
 };

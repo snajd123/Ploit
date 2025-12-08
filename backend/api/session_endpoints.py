@@ -14,7 +14,11 @@ from ..services.session_detector import SessionDetector
 from ..services.hero_gto_analyzer import HeroGTOAnalyzer
 from ..services.opponent_analyzer import OpponentAnalyzer
 from ..services.hero_detection import get_hero_nicknames
+from ..services.session_debrief_service import generate_session_debrief, generate_multi_session_debrief
 import re
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 
@@ -2343,3 +2347,61 @@ def get_aggregate_gto_score(request: MultiSessionRequest, db: Session = Depends(
         "improvement_suggestion": improvement_suggestions.get(weakest_area, ""),
         "confidence": "high" if total_hands >= 200 else "moderate" if total_hands >= 100 else "low"
     }
+
+
+# =============================================================================
+# SESSION DEBRIEF ENDPOINTS
+# =============================================================================
+
+class DebriefRequest(BaseModel):
+    """Request for multi-session debrief"""
+    session_ids: List[int]
+
+
+@router.get("/{session_id}/debrief")
+def get_session_debrief(
+    session_id: int,
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Generate an AI-powered debrief for a single session.
+
+    Analyzes the session from both GTO and exploitative perspectives,
+    using only data from our database.
+    """
+    try:
+        logger.info(f"Generating debrief for session {session_id}")
+        debrief = generate_session_debrief(db, session_id)
+        return debrief
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error generating debrief: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate debrief: {str(e)}")
+
+
+@router.post("/debrief")
+def get_multi_session_debrief(
+    request: DebriefRequest,
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Generate an AI-powered debrief for multiple sessions combined.
+
+    Aggregates data across sessions and provides unified analysis.
+    """
+    if not request.session_ids:
+        raise HTTPException(status_code=400, detail="No session IDs provided")
+
+    if len(request.session_ids) > 20:
+        raise HTTPException(status_code=400, detail="Maximum 20 sessions allowed per debrief")
+
+    try:
+        logger.info(f"Generating debrief for {len(request.session_ids)} sessions")
+        debrief = generate_multi_session_debrief(db, request.session_ids)
+        return debrief
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error generating multi-session debrief: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate debrief: {str(e)}")
