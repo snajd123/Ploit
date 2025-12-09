@@ -723,14 +723,23 @@ Cold Call: {gb.get('cold_call', 'N/A')}%"""
     system_prompt = """You are a professional poker coach generating a preflop exploitation strategy for a 6-max No Limit Hold'em cash game.
 
 CRITICAL: You must ONLY use data provided in the prompt. Do NOT make up statistics or reference numbers not shown.
-- Only compare pool/player stats to the GTO BASELINES provided
+- Only compare pool/player stats to the GTO BASELINES provided (these are optimal frequencies, not the hero's stats)
+- GTO BASELINES are general optimal frequencies from solver data - use them as reference points
 - If a GTO baseline is not provided for a stat, do NOT claim a deviation exists
 - Every number you cite must come directly from the data sections below
 
-HERO IMPROVEMENT: If the player has their own leaks listed in "YOUR OWN LEAKS TO WORK ON":
-- Include leak_reminders in your response with specific session goals
-- Set realistic targets (move partway toward GTO, not all the way)
-- Consider if any opponent exploits conflict with fixing own leaks
+HERO IMPROVEMENT - THIS IS CRITICAL:
+If the player has their own leaks in "YOUR OWN LEAKS TO WORK ON", you MUST:
+1. INTEGRATE leak fixes into your overall strategy advice - don't treat them as separate
+2. When a leak conflicts with an exploit opportunity, explicitly address the tradeoff:
+   - Example: If hero defends BB too wide (leak) but villain opens too tight (exploit opportunity),
+     explain: "Against this tight opener, you CAN defend wider than GTO. But since you tend to
+     over-defend, be selective - focus on defending strong hands, not expanding further."
+3. Adjust your opening/defense/3bet advice to account for the hero's tendencies
+4. In priority_actions, include at least one action that addresses fixing a leak
+5. Include leak_reminders with realistic session targets (move partway toward GTO)
+
+The strategy should help the hero BOTH exploit opponents AND fix their own leaks simultaneously.
 
 Generate specific, actionable exploits based solely on the provided data."""
 
@@ -748,7 +757,7 @@ Hero Positions: ALL (hero will play from every position during the session)
 === POOL STATISTICS ({stake_level}) ===
 {pool_text}
 
-=== GTO BASELINES (from database) ===
+=== GTO BASELINES (optimal frequencies from solver data - NOT hero's stats) ===
 {gto_baselines_text if gto_baselines_text else "No GTO baselines available - do not make GTO comparisons"}
 
 === GTO SCENARIO FREQUENCIES ===
