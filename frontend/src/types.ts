@@ -1053,8 +1053,16 @@ export interface PreGameLeakReminder {
   gto_value: number;
 }
 
+export interface PreGameRationale {
+  table_read: string;
+  main_profit_sources: string;
+  leak_strategy: string | null;
+  risk_factors: string;
+}
+
 export interface PreGameStrategy {
   general_strategy: PreGameGeneralStrategy;
+  rationale?: PreGameRationale;
   opponent_exploits: PreGameOpponentExploit[];
   priority_actions: string[];
   leak_reminders?: PreGameLeakReminder[];

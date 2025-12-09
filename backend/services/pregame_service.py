@@ -782,6 +782,12 @@ Based ONLY on the data above, return a JSON strategy with this exact structure:
     "defense_adjustments": ["2-3 blind defense adjustments"],
     "key_principle": "One sentence - most important thing to remember"
   }},
+  "rationale": {{
+    "table_read": "2-3 sentences explaining WHY this table has the classification it does - what patterns in the data led to this conclusion",
+    "main_profit_sources": "2-3 sentences identifying WHERE the money will come from - which players/situations are most profitable and why",
+    "leak_strategy": "If hero has leaks: 2-3 sentences on how to balance fixing leaks while still exploiting. If no leaks: null",
+    "risk_factors": "1-2 sentences on what to watch out for - any tough players or tricky situations"
+  }},
   "opponent_exploits": [
     {{
       "name": "PlayerName",

@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Target, ChevronRight, AlertCircle, Mail, MailCheck, Trash2,
   Users, Clock, ArrowLeft, Zap, Shield, Eye, TrendingUp,
-  ChevronDown, ChevronUp, AlertTriangle, Code, X
+  ChevronDown, ChevronUp, AlertTriangle, Code, X, Lightbulb
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -177,6 +177,38 @@ const PreGame = () => {
             </div>
           </div>
         </div>
+
+        {/* Rationale Section */}
+        {strategyDetail.strategy.rationale && (
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-slate-50 to-gray-50">
+              <h2 className="font-semibold text-gray-900 flex items-center space-x-2">
+                <Lightbulb className="w-5 h-5 text-slate-500" />
+                <span>Strategy Rationale</span>
+              </h2>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <h4 className="text-sm font-semibold text-gray-700 mb-1">Table Read</h4>
+                <p className="text-gray-600 text-sm">{strategyDetail.strategy.rationale.table_read}</p>
+              </div>
+              <div>
+                <h4 className="text-sm font-semibold text-green-700 mb-1">Main Profit Sources</h4>
+                <p className="text-gray-600 text-sm">{strategyDetail.strategy.rationale.main_profit_sources}</p>
+              </div>
+              {strategyDetail.strategy.rationale.leak_strategy && (
+                <div>
+                  <h4 className="text-sm font-semibold text-amber-700 mb-1">Leak vs Exploit Balance</h4>
+                  <p className="text-gray-600 text-sm">{strategyDetail.strategy.rationale.leak_strategy}</p>
+                </div>
+              )}
+              <div>
+                <h4 className="text-sm font-semibold text-red-700 mb-1">Risk Factors</h4>
+                <p className="text-gray-600 text-sm">{strategyDetail.strategy.rationale.risk_factors}</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Overview */}
         <div className="bg-white rounded-xl border border-gray-200 p-5">
