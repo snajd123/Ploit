@@ -669,6 +669,250 @@ def get_strategy_goal_progress(db: Session, session_id: int, hero_name: str) -> 
     return all_progress
 
 
+def get_exploit_execution(db: Session, session_id: int, hero_name: str) -> List[Dict[str, Any]]:
+    """
+    Calculate how well the hero executed opponent exploits from their strategy.
+
+    Tracks actions against specific opponents and compares to baseline.
+    """
+    import re
+
+    # Get all strategies with opponent_exploits for this session
+    strategies_result = db.execute(text("""
+        SELECT DISTINCT ps.id, ps.strategy, ps.created_at
+        FROM pregame_strategies ps
+        JOIN player_hand_summary phs ON phs.strategy_id = ps.id
+        WHERE phs.session_id = :session_id
+        AND LOWER(phs.player_name) = LOWER(:hero_name)
+        ORDER BY ps.created_at
+    """), {"session_id": session_id, "hero_name": hero_name}).fetchall()
+
+    if not strategies_result:
+        return []
+
+    all_executions = []
+
+    for strategy_row in strategies_result:
+        strategy_id = strategy_row[0]
+        strategy_json = strategy_row[1]
+
+        try:
+            strategy_data = json.loads(strategy_json) if isinstance(strategy_json, str) else strategy_json
+            opponent_exploits = strategy_data.get("opponent_exploits", [])
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+        if not opponent_exploits:
+            continue
+
+        for exploit in opponent_exploits:
+            target_name = exploit.get("name", "")
+            exploit_text = exploit.get("exploit", "").lower()
+
+            if not target_name:
+                continue
+
+            # Determine exploit type from text
+            exploit_type = None
+            if any(x in exploit_text for x in ["3-bet", "3bet", "three-bet", "three bet"]):
+                if any(x in exploit_text for x in ["fold", "give up", "don't"]):
+                    exploit_type = "fold_to_3bet"
+                else:
+                    exploit_type = "3bet_wide"
+            elif any(x in exploit_text for x in ["don't bluff", "dont bluff", "no bluff", "passive", "don't barrel"]):
+                exploit_type = "no_bluff"
+            elif any(x in exploit_text for x in ["isolate", "steal", "attack blind"]):
+                exploit_type = "isolate"
+            elif any(x in exploit_text for x in ["call down", "call wider", "don't fold"]):
+                exploit_type = "call_down"
+            elif any(x in exploit_text for x in ["value bet", "thin value", "bet for value"]):
+                exploit_type = "thin_value"
+            elif any(x in exploit_text for x in ["fold to", "give up to", "respect"]):
+                exploit_type = "fold_more"
+
+            if not exploit_type:
+                # Default: track general interaction frequency
+                exploit_type = "general"
+
+            # Get hands where both hero and target were at the table
+            hands_together = db.execute(text("""
+                SELECT COUNT(DISTINCT h1.hand_id)
+                FROM player_hand_summary h1
+                JOIN player_hand_summary h2 ON h1.hand_id = h2.hand_id
+                WHERE h1.session_id = :session_id
+                AND h1.strategy_id = :strategy_id
+                AND LOWER(h1.player_name) = LOWER(:hero_name)
+                AND LOWER(h2.player_name) = LOWER(:target_name)
+            """), {
+                "session_id": session_id,
+                "strategy_id": strategy_id,
+                "hero_name": hero_name,
+                "target_name": target_name
+            }).fetchone()
+
+            hands_count = hands_together[0] if hands_together else 0
+
+            if hands_count == 0:
+                all_executions.append({
+                    "target_name": target_name,
+                    "exploit_text": exploit.get("exploit", ""),
+                    "exploit_type": exploit_type,
+                    "execution_status": "no_opportunity",
+                    "hands_together": 0,
+                    "opportunities": 0,
+                    "actions_taken": 0,
+                    "hero_frequency": None,
+                    "baseline_frequency": None,
+                    "confidence": 0,
+                    "strategy_id": strategy_id
+                })
+                continue
+
+            # Calculate metrics based on exploit type
+            opportunities = 0
+            actions_taken = 0
+            hero_frequency = None
+            baseline_frequency = None
+
+            if exploit_type == "3bet_wide":
+                # Track: when target opened, did hero 3-bet?
+                result = db.execute(text("""
+                    SELECT
+                        COUNT(*) FILTER (WHERE h2.pfr = true) as target_opens,
+                        COUNT(*) FILTER (WHERE h2.pfr = true AND h1.made_three_bet = true) as hero_3bets
+                    FROM player_hand_summary h1
+                    JOIN player_hand_summary h2 ON h1.hand_id = h2.hand_id
+                    WHERE h1.session_id = :session_id
+                    AND h1.strategy_id = :strategy_id
+                    AND LOWER(h1.player_name) = LOWER(:hero_name)
+                    AND LOWER(h2.player_name) = LOWER(:target_name)
+                    AND h1.faced_raise = true
+                """), {
+                    "session_id": session_id,
+                    "strategy_id": strategy_id,
+                    "hero_name": hero_name,
+                    "target_name": target_name
+                }).fetchone()
+
+                if result:
+                    opportunities = result[0] or 0
+                    actions_taken = result[1] or 0
+                    if opportunities > 0:
+                        hero_frequency = (actions_taken / opportunities) * 100
+
+                # Get baseline 3-bet frequency
+                baseline = db.execute(text("""
+                    SELECT
+                        COUNT(*) FILTER (WHERE faced_raise = true) as opps,
+                        COUNT(*) FILTER (WHERE made_three_bet = true) as three_bets
+                    FROM player_hand_summary
+                    WHERE session_id = :session_id
+                    AND LOWER(player_name) = LOWER(:hero_name)
+                """), {"session_id": session_id, "hero_name": hero_name}).fetchone()
+
+                if baseline and baseline[0] and baseline[0] > 0:
+                    baseline_frequency = (baseline[1] / baseline[0]) * 100
+
+            elif exploit_type == "isolate":
+                # Track: when target was in blinds, did hero steal?
+                result = db.execute(text("""
+                    SELECT
+                        COUNT(*) FILTER (WHERE h2.position IN ('BB', 'SB') AND h1.position IN ('BTN', 'CO', 'SB') AND h1.pot_unopened = true) as opportunities,
+                        COUNT(*) FILTER (WHERE h2.position IN ('BB', 'SB') AND h1.position IN ('BTN', 'CO', 'SB') AND h1.pot_unopened = true AND h1.pfr = true) as steals
+                    FROM player_hand_summary h1
+                    JOIN player_hand_summary h2 ON h1.hand_id = h2.hand_id
+                    WHERE h1.session_id = :session_id
+                    AND h1.strategy_id = :strategy_id
+                    AND LOWER(h1.player_name) = LOWER(:hero_name)
+                    AND LOWER(h2.player_name) = LOWER(:target_name)
+                """), {
+                    "session_id": session_id,
+                    "strategy_id": strategy_id,
+                    "hero_name": hero_name,
+                    "target_name": target_name
+                }).fetchone()
+
+                if result:
+                    opportunities = result[0] or 0
+                    actions_taken = result[1] or 0
+                    if opportunities > 0:
+                        hero_frequency = (actions_taken / opportunities) * 100
+
+                # Baseline steal frequency
+                baseline = db.execute(text("""
+                    SELECT
+                        COUNT(*) FILTER (WHERE position IN ('BTN', 'CO', 'SB') AND pot_unopened = true) as opps,
+                        COUNT(*) FILTER (WHERE position IN ('BTN', 'CO', 'SB') AND pot_unopened = true AND pfr = true) as steals
+                    FROM player_hand_summary
+                    WHERE session_id = :session_id
+                    AND LOWER(player_name) = LOWER(:hero_name)
+                """), {"session_id": session_id, "hero_name": hero_name}).fetchone()
+
+                if baseline and baseline[0] and baseline[0] > 0:
+                    baseline_frequency = (baseline[1] / baseline[0]) * 100
+
+            else:
+                # General: just track hands together
+                opportunities = hands_count
+                actions_taken = 0  # Can't determine without specific exploit type
+
+            # Determine execution status
+            execution_status = "no_opportunity"
+            confidence = 0
+
+            if opportunities >= 3:
+                confidence = min(1.0, opportunities / 10)
+
+                if hero_frequency is not None and baseline_frequency is not None:
+                    diff = hero_frequency - baseline_frequency
+
+                    if exploit_type in ["3bet_wide", "isolate", "thin_value"]:
+                        # Should be HIGHER than baseline
+                        if diff >= 10:
+                            execution_status = "executed"
+                        elif diff >= 0:
+                            execution_status = "partially"
+                        else:
+                            execution_status = "not_executed"
+                    elif exploit_type in ["no_bluff", "fold_more"]:
+                        # Should be LOWER than baseline
+                        if diff <= -10:
+                            execution_status = "executed"
+                        elif diff <= 0:
+                            execution_status = "partially"
+                        else:
+                            execution_status = "not_executed"
+                    elif exploit_type == "call_down":
+                        # Should call MORE (lower fold %)
+                        if diff <= -10:
+                            execution_status = "executed"
+                        elif diff <= 0:
+                            execution_status = "partially"
+                        else:
+                            execution_status = "not_executed"
+                else:
+                    execution_status = "inconclusive"
+            elif opportunities > 0:
+                execution_status = "insufficient_data"
+                confidence = opportunities / 3
+
+            all_executions.append({
+                "target_name": target_name,
+                "exploit_text": exploit.get("exploit", ""),
+                "exploit_type": exploit_type,
+                "execution_status": execution_status,
+                "hands_together": hands_count,
+                "opportunities": opportunities,
+                "actions_taken": actions_taken,
+                "hero_frequency": round(hero_frequency, 1) if hero_frequency is not None else None,
+                "baseline_frequency": round(baseline_frequency, 1) if baseline_frequency is not None else None,
+                "confidence": round(confidence, 2),
+                "strategy_id": strategy_id
+            })
+
+    return all_executions
+
+
 def get_hero_lifetime_priority_leaks(db: Session, hero_name: str) -> List[Dict[str, Any]]:
     """
     Get hero's lifetime priority leaks using the same scenario-based analysis as My Game.
@@ -1103,7 +1347,8 @@ def generate_ai_debrief(
     missed_opportunities: List[Dict[str, Any]],
     pregame_strategy: Optional[Dict[str, Any]] = None,
     leak_progress: Optional[List[Dict[str, Any]]] = None,
-    strategy_goal_progress: Optional[List[Dict[str, Any]]] = None
+    strategy_goal_progress: Optional[List[Dict[str, Any]]] = None,
+    exploit_execution: Optional[List[Dict[str, Any]]] = None
 ) -> Dict[str, Any]:
     """Generate AI debrief using single-shot approach with all data."""
     client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
@@ -1210,6 +1455,41 @@ Opponent Exploits Recommended:
                 for g in goals_missed:
                     strategy_goal_text += f"  - {g['description']}: {g['actual_value']:.1f}% vs Baseline {g['baseline_value']:.1f}% (Target: {g['target_value']:.1f}%, {g['sample_size']} samples)\n"
 
+    # Format exploit execution (how well did hero execute opponent exploits)
+    exploit_execution_text = ""
+    if exploit_execution:
+        executed = [e for e in exploit_execution if e.get("execution_status") == "executed"]
+        partial = [e for e in exploit_execution if e.get("execution_status") == "partially"]
+        not_executed = [e for e in exploit_execution if e.get("execution_status") == "not_executed"]
+        no_opp = [e for e in exploit_execution if e.get("execution_status") in ["no_opportunity", "insufficient_data"]]
+
+        if executed or partial or not_executed or no_opp:
+            exploit_execution_text = "\n=== EXPLOIT EXECUTION (vs specific opponents) ===\n"
+            exploit_execution_text += "These track how well you executed the opponent exploits from your pre-game strategy:\n\n"
+
+            if executed:
+                exploit_execution_text += "EXECUTED (performed exploit vs target):\n"
+                for e in executed:
+                    freq_text = f"Your freq: {e['hero_frequency']:.1f}% vs Baseline: {e['baseline_frequency']:.1f}%" if e.get('hero_frequency') is not None else ""
+                    exploit_execution_text += f"  - vs {e['target_name']}: {e['exploit_text']} ({e['opportunities']} opportunities, {freq_text})\n"
+
+            if partial:
+                exploit_execution_text += "PARTIALLY EXECUTED (some adjustment made):\n"
+                for e in partial:
+                    freq_text = f"Your freq: {e['hero_frequency']:.1f}% vs Baseline: {e['baseline_frequency']:.1f}%" if e.get('hero_frequency') is not None else ""
+                    exploit_execution_text += f"  - vs {e['target_name']}: {e['exploit_text']} ({e['opportunities']} opportunities, {freq_text})\n"
+
+            if not_executed:
+                exploit_execution_text += "NOT EXECUTED (did not adjust vs target):\n"
+                for e in not_executed:
+                    freq_text = f"Your freq: {e['hero_frequency']:.1f}% vs Baseline: {e['baseline_frequency']:.1f}%" if e.get('hero_frequency') is not None else ""
+                    exploit_execution_text += f"  - vs {e['target_name']}: {e['exploit_text']} ({e['opportunities']} opportunities, {freq_text})\n"
+
+            if no_opp:
+                exploit_execution_text += "NO OPPORTUNITY or INSUFFICIENT DATA:\n"
+                for e in no_opp:
+                    exploit_execution_text += f"  - vs {e['target_name']}: {e['exploit_text']} ({e['hands_together']} hands together)\n"
+
     system_prompt = """You are a professional poker coach providing a session debrief.
 
 CRITICAL RULES:
@@ -1222,6 +1502,7 @@ CRITICAL RULES:
 7. If a pre-game strategy was provided, comment on how well it was executed
 8. If leak progress data is provided, acknowledge improvements and areas still needing work
 9. If strategy goal execution data is provided, assess how well the player met their pre-session targets
+10. If exploit execution data is provided, assess how well the player adjusted their play vs specific opponents based on their pre-game exploits
 
 Format your response as JSON with these exact keys:
 {
@@ -1231,6 +1512,7 @@ Format your response as JSON with these exact keys:
   "opponent_insights": [{"name": "...", "tendency": "...", "recommendation": "..."}],
   "strategy_execution": "If strategy was provided, brief assessment of execution. Otherwise null.",
   "strategy_goals_summary": "If strategy goal execution data was provided, brief summary of goals hit/improved/missed. Otherwise null.",
+  "exploit_execution_summary": "If exploit execution data was provided, brief summary of how well exploits were executed vs targets. Otherwise null.",
   "leak_progress_summary": "If leak data was provided, brief summary of progress. Otherwise null.",
   "study_recommendations": ["1-3 actionable study items"]
 }"""
@@ -1257,12 +1539,13 @@ Stakes: {session_meta['stake_level']}
 
 === MISSED EXPLOIT OPPORTUNITIES ===
 {missed_text if missed_text else "No clear missed opportunities identified"}
-{strategy_text}{strategy_goal_text}{leak_progress_text}
+{strategy_text}{strategy_goal_text}{exploit_execution_text}{leak_progress_text}
 === INSTRUCTIONS ===
 Generate a constructive debrief. For EVERY number you cite, it must appear in the data above.
 Note sample size limitations honestly. Do not claim patterns without sufficient data.
 If strategy execution data is available, assess how well the strategy was followed.
 If strategy goal execution data is available, assess how well the player met their pre-session targets.
+If exploit execution data is available, assess how well the player executed their opponent exploits.
 If leak progress data is available, acknowledge improvements and remaining work.
 Return ONLY valid JSON."""
 
@@ -1353,7 +1636,10 @@ def generate_session_debrief(db: Session, session_id: int) -> Dict[str, Any]:
     # 9. Get strategy goal progress (comparing session performance to pre-game strategy targets)
     strategy_goal_progress = get_strategy_goal_progress(db, session_id, hero_name) if hero_name else []
 
-    # 10. Generate AI debrief with all data
+    # 10. Get exploit execution (how well did hero execute opponent exploits)
+    exploit_execution = get_exploit_execution(db, session_id, hero_name) if hero_name else []
+
+    # 11. Generate AI debrief with all data
     ai_result = generate_ai_debrief(
         session_meta=session_meta,
         hero_stats=hero_stats,
@@ -1363,10 +1649,11 @@ def generate_session_debrief(db: Session, session_id: int) -> Dict[str, Any]:
         missed_opportunities=missed_opportunities,
         pregame_strategy=pregame_strategy,
         leak_progress=leak_progress,
-        strategy_goal_progress=strategy_goal_progress
+        strategy_goal_progress=strategy_goal_progress,
+        exploit_execution=exploit_execution
     )
 
-    # 11. Compile final response
+    # 12. Compile final response
     return {
         "session_summary": session_meta,
         "gto_analysis": {
@@ -1384,6 +1671,7 @@ def generate_session_debrief(db: Session, session_id: int) -> Dict[str, Any]:
         "pregame_strategy": pregame_strategy,
         "leak_progress": leak_progress,
         "strategy_goal_progress": strategy_goal_progress,
+        "exploit_execution": exploit_execution,
         "ai_debrief": ai_result.get("analysis", {}),
         "ai_debug": {
             "prompt": ai_result.get("ai_prompt", ""),
@@ -1395,7 +1683,8 @@ def generate_session_debrief(db: Session, session_id: int) -> Dict[str, Any]:
             "opponent_confidence": "Opponent reads require 100+ hands for moderate confidence, 300+ for high confidence.",
             "strategy_note": "Strategy execution assessment is qualitative based on session actions." if pregame_strategy else None,
             "leak_note": "Leak progress comparison uses lifetime stats as baseline." if leak_progress else None,
-            "strategy_goals_note": "Strategy goal progress compares session performance to pre-game targets." if strategy_goal_progress else None
+            "strategy_goals_note": "Strategy goal progress compares session performance to pre-game targets." if strategy_goal_progress else None,
+            "exploit_note": "Exploit execution compares your actions vs specific opponents to your baseline." if exploit_execution else None
         }
     }
 

@@ -106,6 +106,19 @@ interface Debrief {
     hit_target: boolean | null;
     strategy_id: number;
   }>;
+  exploit_execution: Array<{
+    target_name: string;
+    exploit_text: string;
+    exploit_type: string;
+    execution_status: 'executed' | 'partially' | 'not_executed' | 'no_opportunity' | 'insufficient_data' | 'inconclusive';
+    hands_together: number;
+    opportunities: number;
+    actions_taken: number;
+    hero_frequency: number | null;
+    baseline_frequency: number | null;
+    confidence: number;
+    strategy_id: number;
+  }>;
   ai_debrief: {
     executive_summary: string;
     went_well: string[];
@@ -117,6 +130,7 @@ interface Debrief {
     }>;
     strategy_execution: string | null;
     strategy_goals_summary: string | null;
+    exploit_execution_summary: string | null;
     leak_progress_summary: string | null;
     study_recommendations: string[];
   };
@@ -500,6 +514,104 @@ const DebriefModal: React.FC<DebriefModalProps> = ({ isOpen, onClose, sessionId,
                           </div>
                         </div>
                       ))}
+                    </div>
+                  </CollapsibleSection>
+                )}
+
+                {/* Exploit Execution */}
+                {debrief.exploit_execution?.length > 0 && (
+                  <CollapsibleSection
+                    title="Exploit Execution"
+                    icon={<Zap size={18} className="text-rose-600" />}
+                    isExpanded={expandedSections.has('exploitExecution')}
+                    onToggle={() => toggleSection('exploitExecution')}
+                    badge={
+                      <span className="text-xs text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full">
+                        {debrief.exploit_execution.filter(e => e.execution_status === 'executed').length}/
+                        {debrief.exploit_execution.filter(e => !['no_opportunity', 'insufficient_data'].includes(e.execution_status)).length} executed
+                      </span>
+                    }
+                  >
+                    <div className="space-y-3">
+                      {debrief.ai_debrief.exploit_execution_summary && (
+                        <p className="text-sm text-gray-700 mb-3">{debrief.ai_debrief.exploit_execution_summary}</p>
+                      )}
+                      {debrief.exploit_execution.map((exploit, i) => {
+                        const statusColors = {
+                          executed: { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-800', badge: 'bg-green-200 text-green-800' },
+                          partially: { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-800', badge: 'bg-blue-200 text-blue-800' },
+                          not_executed: { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-800', badge: 'bg-amber-200 text-amber-800' },
+                          no_opportunity: { bg: 'bg-gray-50', border: 'border-gray-200', text: 'text-gray-600', badge: 'bg-gray-200 text-gray-600' },
+                          insufficient_data: { bg: 'bg-gray-50', border: 'border-gray-200', text: 'text-gray-600', badge: 'bg-gray-200 text-gray-600' },
+                          inconclusive: { bg: 'bg-gray-50', border: 'border-gray-200', text: 'text-gray-600', badge: 'bg-gray-200 text-gray-600' }
+                        };
+                        const statusLabels = {
+                          executed: '✓ Executed',
+                          partially: '↗ Partial',
+                          not_executed: 'Not Executed',
+                          no_opportunity: 'No Opportunity',
+                          insufficient_data: 'Insufficient Data',
+                          inconclusive: 'Inconclusive'
+                        };
+                        const colors = statusColors[exploit.execution_status] || statusColors.inconclusive;
+
+                        return (
+                          <div
+                            key={i}
+                            className={`rounded-lg p-3 border ${colors.bg} ${colors.border}`}
+                          >
+                            <div className="flex items-center justify-between mb-1">
+                              <div className="flex items-center gap-2">
+                                <span className={`font-medium ${colors.text}`}>
+                                  vs {exploit.target_name}
+                                </span>
+                              </div>
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${colors.badge}`}>
+                                {statusLabels[exploit.execution_status]}
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-600 mb-2">{exploit.exploit_text}</p>
+                            {exploit.hero_frequency !== null && exploit.baseline_frequency !== null && (
+                              <div className="flex items-center gap-4 mt-2 text-sm">
+                                <div className="text-center">
+                                  <div className="text-gray-500 text-xs">Baseline</div>
+                                  <div className="font-medium text-gray-600">{exploit.baseline_frequency.toFixed(1)}%</div>
+                                </div>
+                                <div className="text-gray-400">→</div>
+                                <div className="text-center">
+                                  <div className={`text-xs ${
+                                    exploit.execution_status === 'executed' ? 'text-green-600' :
+                                    exploit.execution_status === 'partially' ? 'text-blue-600' :
+                                    'text-amber-600'
+                                  }`}>
+                                    vs Target
+                                  </div>
+                                  <div className={`font-bold ${
+                                    exploit.execution_status === 'executed' ? 'text-green-700' :
+                                    exploit.execution_status === 'partially' ? 'text-blue-700' :
+                                    'text-amber-700'
+                                  }`}>
+                                    {exploit.hero_frequency.toFixed(1)}%
+                                  </div>
+                                </div>
+                                <div className="text-gray-400">|</div>
+                                <div className="text-center">
+                                  <div className="text-gray-500 text-xs">Diff</div>
+                                  <div className={`font-medium ${
+                                    exploit.hero_frequency > exploit.baseline_frequency ? 'text-green-600' : 'text-amber-600'
+                                  }`}>
+                                    {(exploit.hero_frequency - exploit.baseline_frequency) >= 0 ? '+' : ''}
+                                    {(exploit.hero_frequency - exploit.baseline_frequency).toFixed(1)}%
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            <div className="text-xs text-gray-500 mt-2">
+                              {exploit.hands_together} hands together, {exploit.opportunities} opportunities
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </CollapsibleSection>
                 )}
