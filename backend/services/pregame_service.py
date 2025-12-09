@@ -708,7 +708,8 @@ def generate_strategy_with_claude(
         hero_leaks_text = "Based on your lifetime stats, focus on these areas:\n"
         for leak in gathered_data["hero_leaks"]:
             direction = leak.get("leak_direction", "").replace("_", " ")
-            hero_leaks_text += f"  - {leak['display_name']}: You play {leak['current_value']}% vs GTO {leak['gto_value']}% ({direction})\n"
+            scenario_id = leak.get("scenario_id", "unknown")
+            hero_leaks_text += f"  - [{scenario_id}] {leak['display_name']}: You play {leak['current_value']:.1f}% vs GTO {leak['gto_value']:.1f}% ({direction})\n"
             hero_leaks_text += f"    Severity: {leak['leak_severity'].upper()} | Sample: {leak['sample_size']} hands\n"
 
     # Format GTO baselines section
@@ -796,12 +797,12 @@ Based ONLY on the data above, return a JSON strategy with this exact structure:
   ],
   "leak_reminders": [
     {{
-      "leak_id": "scenario_id from YOUR OWN LEAKS section",
+      "leak_id": "EXACT scenario_id from brackets in YOUR OWN LEAKS section (e.g., defense_BB_fold)",
       "description": "Short description of the leak",
-      "session_goal": "Specific target for this session (e.g., 'Defend BB at 45% instead of 38%')",
-      "current_value": 38.0,
-      "target_value": 45.0,
-      "gto_value": 48.0
+      "session_goal": "Specific target for this session (e.g., 'Fold BB at 60% instead of 52%')",
+      "current_value": 52.0,
+      "target_value": 60.0,
+      "gto_value": 68.0
     }}
   ],
   "priority_actions": ["Top 3 highest-EV actions for this session"]
@@ -813,6 +814,7 @@ RULES:
 - Do NOT make GTO comparisons unless GTO baselines are provided
 - Be specific with hand examples (e.g., "3-bet A5s-A2s, K9s+")
 - Include leak_reminders ONLY if YOUR OWN LEAKS section has data
+- For leak_reminders: use the EXACT scenario_id from the brackets (e.g., [defense_BB_fold] → leak_id: "defense_BB_fold")
 - For leak_reminders, set target_value between current_value and gto_value (realistic improvement)
 
 Return ONLY the JSON object, no other text."""
