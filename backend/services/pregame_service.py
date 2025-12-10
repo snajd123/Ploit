@@ -825,19 +825,10 @@ CRITICAL: You must ONLY use data provided in the prompt. Do NOT make up statisti
 
 POOL-LEVEL STRATEGY:
 The POOL STATISTICS section shows aggregate tendencies for all players at this stake level. Use these to:
-1. Identify population-wide exploits (e.g., if pool fold_to_3bet is high, 3-bet bluff more often)
+1. Identify population-wide exploits based on deviations from GTO
 2. Understand baseline expectations for unknown players
 3. Adjust default ranges for the stake level
-4. Consider player type distribution (more FISHes = more value betting, more NITs = more stealing)
-
-Key pool tendencies to exploit:
-- High fold_to_3bet (>60%): 3-bet bluff aggressively with suited connectors and suited aces
-- High fold_to_steal (>75%): Widen steal ranges from CO/BTN/SB
-- Low squeeze (<3%): Isolate limpers more aggressively
-- High cold_call (>10%): Tighten 3-bet bluffs, size up for value
-- High limp (>5%): Iso-raise wider, punish passive play
-- Low 3bet_vs_steal (<7%): Steal relentlessly from late position
-- High exploitability (>60): Table is soft, maximize value betting
+4. Consider player type distribution when forming your strategy
 
 HERO IMPROVEMENT - THIS IS CRITICAL:
 If the player has their own leaks in "YOUR OWN LEAKS TO WORK ON", you MUST:
