@@ -73,6 +73,7 @@ interface Debrief {
       opening_adjustments?: string[];
       three_bet_adjustments?: string[];
     };
+    strategy_reasoning?: string;  // Plain text AI reasoning for the strategy
     opponent_exploits: Array<{ name: string; exploit: string }>;
     priority_actions: string[];
   } | null;
@@ -129,6 +130,7 @@ interface Debrief {
       recommendation: string;
     }>;
     strategy_execution: string | null;
+    strategy_alignment: string | null;  // Assessment of alignment with "Why This Strategy?" reasoning
     strategy_goals_summary: string | null;
     exploit_execution_summary: string | null;
     leak_progress_summary: string | null;
@@ -393,6 +395,32 @@ const DebriefModal: React.FC<DebriefModalProps> = ({ isOpen, onClose, sessionId,
                 >
                   {debrief.pregame_strategy ? (
                     <div className="space-y-3">
+                      {/* Strategy Reasoning - Why This Strategy? */}
+                      {debrief.pregame_strategy.strategy_reasoning && (
+                        <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                          <h4 className="font-medium text-slate-800 mb-2 flex items-center gap-2">
+                            <span className="text-slate-500">💡</span>
+                            Why This Strategy?
+                          </h4>
+                          <p className="text-sm text-slate-700 leading-relaxed">
+                            {debrief.pregame_strategy.strategy_reasoning}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Strategy Alignment Assessment - Did player follow the reasoning? */}
+                      {debrief.ai_debrief.strategy_alignment && (
+                        <div className="bg-indigo-50 rounded-lg p-4 border border-indigo-200">
+                          <h4 className="font-medium text-indigo-800 mb-2 flex items-center gap-2">
+                            <span className="text-indigo-500">🎯</span>
+                            Did You Follow the Plan?
+                          </h4>
+                          <p className="text-sm text-indigo-700 leading-relaxed">
+                            {debrief.ai_debrief.strategy_alignment}
+                          </p>
+                        </div>
+                      )}
+
                       <div className="bg-cyan-50 rounded-lg p-3 border border-cyan-200">
                         <div className="flex items-center justify-between mb-2">
                           <span className="font-medium text-cyan-800">Pre-Game Strategy</span>

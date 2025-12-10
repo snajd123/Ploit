@@ -498,6 +498,7 @@ def get_session_strategy(db: Session, session_id: int) -> Optional[Dict[str, Any
             "table_classification": strategy_result.table_classification,
             "softness_score": float(strategy_result.softness_score) if strategy_result.softness_score else None,
             "general_strategy": strategy_data.get("general_strategy", {}),
+            "strategy_reasoning": strategy_data.get("strategy_reasoning"),  # Plain text AI reasoning
             "opponent_exploits": strategy_data.get("opponent_exploits", []),
             "priority_actions": strategy_data.get("priority_actions", []),
             "opponents_snapshot": opponents_data
@@ -1394,6 +1395,7 @@ def generate_ai_debrief(
         general = pregame_strategy.get("general_strategy", {})
         exploits = pregame_strategy.get("opponent_exploits", [])
         priority = pregame_strategy.get("priority_actions", [])
+        strategy_reasoning = pregame_strategy.get("strategy_reasoning", "")
 
         strategy_text = f"""
 === PRE-GAME STRATEGY (generated before session) ===
@@ -1402,6 +1404,9 @@ Softness Score: {pregame_strategy.get('softness_score', 'N/A')}/10
 
 Key Principle: {general.get('key_principle', 'N/A')}
 Overview: {general.get('overview', 'N/A')}
+
+=== WHY THIS STRATEGY? (AI's reasoning for the approach) ===
+{strategy_reasoning if strategy_reasoning else 'No reasoning provided'}
 
 Priority Actions:
 {chr(10).join(f'  - {a}' for a in priority[:3]) if priority else '  None specified'}
@@ -1503,6 +1508,7 @@ CRITICAL RULES:
 8. If leak progress data is provided, acknowledge improvements and areas still needing work
 9. If strategy goal execution data is provided, assess how well the player met their pre-session targets
 10. If exploit execution data is provided, assess how well the player adjusted their play vs specific opponents based on their pre-game exploits
+11. IMPORTANT: If "WHY THIS STRATEGY?" reasoning is provided, assess whether the player's actual session aligned with that reasoning. Did they follow the intended approach? Did they balance exploitation vs GTO vs leak-fixing as recommended?
 
 Format your response as JSON with these exact keys:
 {
@@ -1511,6 +1517,7 @@ Format your response as JSON with these exact keys:
   "areas_for_improvement": ["list of 2-3 areas to work on with specific numbers"],
   "opponent_insights": [{"name": "...", "tendency": "...", "recommendation": "..."}],
   "strategy_execution": "If strategy was provided, brief assessment of execution. Otherwise null.",
+  "strategy_alignment": "If 'WHY THIS STRATEGY?' reasoning was provided, write 2-4 sentences assessing whether the player's session aligned with that reasoning. Did they follow the intended exploitation vs GTO balance? Did they prioritize what the strategy recommended? Be specific about what aligned or didn't align. Otherwise null.",
   "strategy_goals_summary": "If strategy goal execution data was provided, brief summary of goals hit/improved/missed. Otherwise null.",
   "exploit_execution_summary": "If exploit execution data was provided, brief summary of how well exploits were executed vs targets. Otherwise null.",
   "leak_progress_summary": "If leak data was provided, brief summary of progress. Otherwise null.",
@@ -1544,6 +1551,7 @@ Stakes: {session_meta['stake_level']}
 Generate a constructive debrief. For EVERY number you cite, it must appear in the data above.
 Note sample size limitations honestly. Do not claim patterns without sufficient data.
 If strategy execution data is available, assess how well the strategy was followed.
+If "WHY THIS STRATEGY?" reasoning is available, assess whether the session aligned with that reasoning - did the player follow the recommended balance between exploitation, GTO play, and leak-fixing?
 If strategy goal execution data is available, assess how well the player met their pre-session targets.
 If exploit execution data is available, assess how well the player executed their opponent exploits.
 If leak progress data is available, acknowledge improvements and remaining work.
