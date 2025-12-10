@@ -467,8 +467,8 @@ def pre_gather_strategy_data(
             all_leaks = get_hero_lifetime_priority_leaks(db, hero_name)
 
             # Filter to top 5 most actionable leaks:
-            # - Must be moderate or major severity
-            # - Must have sufficient sample size (50+)
+            # - Include minor severity if deviation >= 5% (to give AI something to work with)
+            # - Relaxed sample size (30+) for pre-game since we want directional guidance
             priority_leaks = [
                 {
                     "scenario_id": leak.get("scenario_id"),
@@ -484,8 +484,9 @@ def pre_gather_strategy_data(
                     "sample_size": leak.get("overall_sample", 0)
                 }
                 for leak in all_leaks
-                if leak.get("leak_severity") in ["moderate", "major"]
-                and leak.get("overall_sample", 0) >= 50
+                if (leak.get("leak_severity") in ["moderate", "major"]
+                    or (leak.get("leak_severity") == "minor" and abs(leak.get("overall_deviation", 0)) >= 5))
+                and leak.get("overall_sample", 0) >= 30
             ][:5]
 
             data["hero_leaks"] = priority_leaks
@@ -1060,6 +1061,8 @@ Based ONLY on the data above, return a JSON strategy with this exact structure:
 }}
 
 RULES:
+- CRITICAL: If "YOUR OWN LEAKS TO WORK ON" lists any leaks, you MUST populate leak_reminders with at least 1-3 entries using the exact scenario_id shown in brackets (e.g., [defense_BB_fold])
+- If no hero leaks are listed, set leak_reminders to an empty array []
 - ONLY include opponent_exploits for players with 30+ hands of data
 - ONLY cite numbers that appear in the data sections above
 - Do NOT make GTO comparisons unless GTO baselines are provided
