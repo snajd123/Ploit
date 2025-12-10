@@ -178,16 +178,31 @@ const PreGame = () => {
           </div>
         </div>
 
-        {/* Rationale Section */}
-        {strategyDetail.strategy.rationale && (
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-slate-50 to-gray-50">
-              <h2 className="font-semibold text-gray-900 flex items-center space-x-2">
-                <Lightbulb className="w-5 h-5 text-slate-500" />
-                <span>Strategy Rationale</span>
-              </h2>
+        {/* Strategy Reasoning - Plain text narrative */}
+        {strategyDetail.strategy.strategy_reasoning && (
+          <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl border border-slate-200 p-5">
+            <div className="flex items-start gap-4">
+              <div className="p-2 bg-white rounded-lg shadow-sm">
+                <Lightbulb className="w-5 h-5 text-slate-600" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-slate-800 mb-2">Why This Strategy?</h3>
+                <p className="text-slate-700 leading-relaxed">
+                  {strategyDetail.strategy.strategy_reasoning}
+                </p>
+              </div>
             </div>
-            <div className="p-5 space-y-4">
+          </div>
+        )}
+
+        {/* Rationale Section - Collapsible details */}
+        {strategyDetail.strategy.rationale && (
+          <details className="bg-white rounded-xl border border-gray-200 overflow-hidden group">
+            <summary className="px-5 py-4 cursor-pointer hover:bg-gray-50 transition-colors flex items-center justify-between">
+              <span className="font-semibold text-gray-900">Detailed Rationale</span>
+              <ChevronDown className="w-4 h-4 text-gray-400 group-open:rotate-180 transition-transform" />
+            </summary>
+            <div className="px-5 pb-5 pt-2 space-y-4 border-t border-gray-100">
               <div>
                 <h4 className="text-sm font-semibold text-gray-700 mb-1">Table Read</h4>
                 <p className="text-gray-600 text-sm">{strategyDetail.strategy.rationale.table_read}</p>
@@ -207,7 +222,7 @@ const PreGame = () => {
                 <p className="text-gray-600 text-sm">{strategyDetail.strategy.rationale.risk_factors}</p>
               </div>
             </div>
-          </div>
+          </details>
         )}
 
         {/* Exploitation Reasoning Section - Redesigned */}

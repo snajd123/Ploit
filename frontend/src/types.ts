@@ -1107,6 +1107,7 @@ export interface ExploitationReasoning {
 export interface PreGameStrategy {
   general_strategy: PreGameGeneralStrategy;
   rationale?: PreGameRationale;
+  strategy_reasoning?: string;  // Plain text narrative explaining AI's thought process
   exploitation_reasoning?: ExploitationReasoning;
   opponent_exploits: PreGameOpponentExploit[];
   priority_actions: string[];

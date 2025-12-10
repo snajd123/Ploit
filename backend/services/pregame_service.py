@@ -1008,6 +1008,7 @@ Based ONLY on the data above, return a JSON strategy with this exact structure:
     "leak_strategy": "If hero has leaks: 2-3 sentences on how to balance fixing leaks while still exploiting. If no leaks: null",
     "risk_factors": "1-2 sentences on what to watch out for - any tough players or tricky situations"
   }},
+  "strategy_reasoning": "A 4-6 sentence paragraph in plain English explaining your thought process. Explain: (1) How you weighed exploiting opponent weaknesses vs playing GTO - what made you lean one way or the other? (2) If hero has leaks, how did you balance fixing them vs maximizing exploitation? Did you prioritize one over the other and why? (3) What's the overall philosophy for this session - are we hunting fish, playing solid vs regs, or focusing on self-improvement? Write this as a cohesive narrative, not bullet points.",
   "exploitation_reasoning": {{
     "gto_deviations": [
       {{
