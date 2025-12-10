@@ -283,7 +283,7 @@ def pre_gather_strategy_data(
         logger.error(f"Error getting pool stats: {e}")
         db.rollback()
 
-    # 2. Calculate aggregate GTO baselines from database
+    # 2. Calculate aggregate GTO baselines from database for ALL stats
     try:
         # GTO VPIP/PFR: Average of all opening ranges
         open_result = db.execute(text("""
@@ -294,33 +294,64 @@ def pre_gather_strategy_data(
             data["gto_baselines"]["vpip"] = round(float(open_result.avg_open) * 100, 1)
             data["gto_baselines"]["pfr"] = data["gto_baselines"]["vpip"]
 
-        # GTO 3-bet: Average of all 3-bet scenarios
+        # GTO 3-bet: Average of all 3-bet scenarios (defense category)
         three_bet_result = db.execute(text("""
             SELECT AVG(gto_aggregate_freq) as avg_3bet
-            FROM gto_scenarios WHERE action = '3bet' AND gto_aggregate_freq IS NOT NULL
+            FROM gto_scenarios WHERE action = '3bet' AND category = 'defense' AND gto_aggregate_freq IS NOT NULL
         """)).fetchone()
         if three_bet_result and three_bet_result.avg_3bet:
             data["gto_baselines"]["three_bet"] = round(float(three_bet_result.avg_3bet) * 100, 1)
 
-        # GTO Fold to 3-bet: Calculate as % of opening range
+        # GTO Fold to 3-bet: Average of fold actions when facing 3-bet
         fold_3bet_result = db.execute(text("""
-            SELECT AVG(g1.gto_aggregate_freq) as avg_fold, AVG(g2.gto_aggregate_freq) as avg_open
-            FROM gto_scenarios g1
-            JOIN gto_scenarios g2 ON g2.scenario_name = g1.position || '_open'
-            WHERE g1.action = 'fold' AND g1.category = 'facing_3bet'
-            AND g1.gto_aggregate_freq IS NOT NULL AND g2.gto_aggregate_freq IS NOT NULL
+            SELECT AVG(gto_aggregate_freq) as avg_fold
+            FROM gto_scenarios
+            WHERE action = 'fold' AND category = 'facing_3bet'
+            AND gto_aggregate_freq IS NOT NULL
         """)).fetchone()
-        if fold_3bet_result and fold_3bet_result.avg_fold and fold_3bet_result.avg_open:
-            gto_fold_pct = (float(fold_3bet_result.avg_fold) / float(fold_3bet_result.avg_open)) * 100
-            data["gto_baselines"]["fold_to_3bet"] = round(gto_fold_pct, 1)
+        if fold_3bet_result and fold_3bet_result.avg_fold:
+            data["gto_baselines"]["fold_to_3bet"] = round(float(fold_3bet_result.avg_fold) * 100, 1)
 
-        # GTO Cold Call
+        # GTO 4-bet: Average of 4-bet actions when facing 3-bet
+        four_bet_result = db.execute(text("""
+            SELECT AVG(gto_aggregate_freq) as avg_4bet
+            FROM gto_scenarios
+            WHERE action = '4bet' AND category = 'facing_3bet'
+            AND gto_aggregate_freq IS NOT NULL
+        """)).fetchone()
+        if four_bet_result and four_bet_result.avg_4bet:
+            data["gto_baselines"]["four_bet"] = round(float(four_bet_result.avg_4bet) * 100, 1)
+
+        # GTO Cold Call: Average of call actions in defense category
         cold_call_result = db.execute(text("""
             SELECT AVG(gto_aggregate_freq) as avg_cc
             FROM gto_scenarios WHERE action = 'call' AND category = 'defense' AND gto_aggregate_freq IS NOT NULL
         """)).fetchone()
         if cold_call_result and cold_call_result.avg_cc:
             data["gto_baselines"]["cold_call"] = round(float(cold_call_result.avg_cc) * 100, 1)
+
+        # GTO Fold in defense (fold to open)
+        fold_defense_result = db.execute(text("""
+            SELECT AVG(gto_aggregate_freq) as avg_fold
+            FROM gto_scenarios WHERE action = 'fold' AND category = 'defense' AND gto_aggregate_freq IS NOT NULL
+        """)).fetchone()
+        if fold_defense_result and fold_defense_result.avg_fold:
+            data["gto_baselines"]["fold_to_open"] = round(float(fold_defense_result.avg_fold) * 100, 1)
+
+        # GTO Limp (if exists)
+        limp_result = db.execute(text("""
+            SELECT AVG(gto_aggregate_freq) as avg_limp
+            FROM gto_scenarios WHERE action = 'limp' AND gto_aggregate_freq IS NOT NULL
+        """)).fetchone()
+        if limp_result and limp_result.avg_limp:
+            data["gto_baselines"]["limp"] = round(float(limp_result.avg_limp) * 100, 1)
+        else:
+            # GTO limp is essentially 0% in 6-max cash
+            data["gto_baselines"]["limp"] = 0.0
+
+        # Note: squeeze, steal_attempt, fold_to_steal, 3bet_vs_steal are positional metrics
+        # that don't have direct GTO scenarios - they're derived from the existing scenarios
+        # We'll note this in the prompt so the AI knows these aren't available
 
         logger.info(f"GTO baselines calculated: {data['gto_baselines']}")
     except Exception as e:
@@ -330,35 +361,33 @@ def pre_gather_strategy_data(
         except:
             pass
 
-    # 3. Key GTO scenarios - opening ranges and common spots
-    key_scenarios = [
-        # Opening ranges
-        "UTG_open", "MP_open", "HJ_open", "CO_open", "BTN_open", "SB_open",
-        # BTN defense vs 3-bet
-        "BTN_3bet_fold_vs_BB", "BTN_3bet_call_vs_BB", "BTN_3bet_4bet_vs_BB",
-        "BTN_3bet_fold_vs_SB", "BTN_3bet_call_vs_SB",
-        # CO defense vs 3-bet
-        "CO_3bet_fold_vs_BTN", "CO_3bet_fold_vs_BB",
-        # BB defense vs opens
-        "BB_vs_BTN_call", "BB_vs_BTN_3bet", "BB_vs_BTN_fold",
-        "BB_vs_CO_call", "BB_vs_CO_3bet", "BB_vs_CO_fold",
-        "BB_vs_SB_call", "BB_vs_SB_3bet", "BB_vs_SB_fold",
-        # SB defense
-        "SB_vs_BTN_call", "SB_vs_BTN_3bet", "SB_vs_BTN_fold",
-    ]
+    # 3. Fetch ALL GTO scenarios from database (not hardcoded list)
+    try:
+        all_scenarios = db.execute(text("""
+            SELECT scenario_name, gto_aggregate_freq, position, vs_position, action, category
+            FROM gto_scenarios
+            WHERE gto_aggregate_freq IS NOT NULL
+            ORDER BY category, position, vs_position, action
+        """)).fetchall()
 
-    for scenario in key_scenarios:
+        for row in all_scenarios:
+            scenario_name = row[0]
+            freq = float(row[1]) * 100 if row[1] else None
+            data["gto_scenarios"][scenario_name] = {
+                "gto_frequency_pct": round(freq, 1) if freq else None,
+                "position": row[2],
+                "vs_position": row[3],
+                "action": row[4],
+                "category": row[5]
+            }
+
+        logger.info(f"Loaded {len(data['gto_scenarios'])} GTO scenarios from database")
+    except Exception as e:
+        logger.error(f"Error loading GTO scenarios: {e}")
         try:
-            result_json = _get_gto_scenario_frequency(db, scenario)
-            result = json.loads(result_json)
-            if "error" not in result:
-                data["gto_scenarios"][scenario] = result
-        except Exception as e:
-            logger.debug(f"GTO scenario {scenario} not found: {e}")
-            try:
-                db.rollback()
-            except:
-                pass
+            db.rollback()
+        except:
+            pass
 
     # 3. Full stats and GTO comparison for each opponent with database data
     for opp in opponent_profiles:
@@ -730,16 +759,39 @@ def generate_strategy_with_claude(
 
     opponents_text = "\n".join(opponent_summaries)
 
-    # Format GTO scenarios compactly
+    # Format GTO scenarios by category
     gto_text = ""
     if gathered_data["gto_scenarios"]:
+        # Group by category
+        by_category = {}
+        for name, scenario_data in gathered_data["gto_scenarios"].items():
+            cat = scenario_data.get("category", "other")
+            if cat not in by_category:
+                by_category[cat] = []
+            freq = scenario_data.get("gto_frequency_pct", "N/A")
+            by_category[cat].append(f"  {name}: {freq}%")
+
+        # Format each category
+        category_order = ["opening", "defense", "facing_3bet", "facing_4bet"]
+        category_labels = {
+            "opening": "OPENING RANGES",
+            "defense": "DEFENSE (vs opens)",
+            "facing_3bet": "FACING 3-BET",
+            "facing_4bet": "FACING 4-BET"
+        }
+
         gto_lines = []
-        for name, data in gathered_data["gto_scenarios"].items():
-            freq = data.get("gto_frequency_pct", "N/A")
-            extra = ""
-            if "pct_of_opening_range" in data:
-                extra = f" ({data['pct_of_opening_range']}% of opening range)"
-            gto_lines.append(f"  {name}: {freq}%{extra}")
+        for cat in category_order:
+            if cat in by_category:
+                gto_lines.append(f"\n{category_labels.get(cat, cat.upper())}:")
+                gto_lines.extend(sorted(by_category[cat]))
+
+        # Add any remaining categories
+        for cat, scenarios in by_category.items():
+            if cat not in category_order:
+                gto_lines.append(f"\n{cat.upper()}:")
+                gto_lines.extend(sorted(scenarios))
+
         gto_text = "\n".join(gto_lines)
 
     # Format pool stats - use direct pool query for comprehensive data
@@ -810,9 +862,20 @@ def generate_strategy_with_claude(
     gto_baselines_text = ""
     if gathered_data.get("gto_baselines"):
         gb = gathered_data["gto_baselines"]
-        gto_baselines_text = f"""VPIP: {gb.get('vpip', 'N/A')}% | PFR: {gb.get('pfr', 'N/A')}%
-3-bet: {gb.get('three_bet', 'N/A')}% | Fold to 3-bet: {gb.get('fold_to_3bet', 'N/A')}%
-Cold Call: {gb.get('cold_call', 'N/A')}%"""
+        gto_baselines_text = f"""CORE STATS:
+  VPIP: {gb.get('vpip', 'N/A')}% | PFR: {gb.get('pfr', 'N/A')}% | Limp: {gb.get('limp', 'N/A')}%
+
+AGGRESSION:
+  3-bet: {gb.get('three_bet', 'N/A')}% | 4-bet: {gb.get('four_bet', 'N/A')}%
+
+DEFENSE:
+  Cold Call: {gb.get('cold_call', 'N/A')}% | Fold to Open: {gb.get('fold_to_open', 'N/A')}%
+
+FACING 3-BET:
+  Fold to 3-bet: {gb.get('fold_to_3bet', 'N/A')}%
+
+NOTE: Squeeze, Steal Attempt, Fold to Steal, and 3-bet vs Steal are positional/situational
+metrics without direct GTO aggregate baselines. Compare these to pool averages instead."""
 
     # System prompt
     system_prompt = """You are a professional poker coach generating a preflop exploitation strategy for a 6-max No Limit Hold'em cash game.
