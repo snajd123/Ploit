@@ -506,6 +506,21 @@ async def import_from_email(
             target_hand = parse_result.hands[0]
             logger.info(f"Single hand - generating pre-game strategy for #{target_hand.hand_id}")
 
+            # Check for duplicate - prevent SendGrid retry from creating duplicate strategies
+            from sqlalchemy import text as sql_text
+            existing = db.execute(sql_text("""
+                SELECT id FROM pregame_strategies
+                WHERE hand_number = :hand_number
+                AND created_at > NOW() - INTERVAL '1 hour'
+            """), {"hand_number": str(target_hand.hand_id)}).fetchone()
+
+            if existing:
+                logger.info(f"Strategy already exists for hand #{target_hand.hand_id} (strategy_id={existing[0]}), skipping duplicate")
+                return JSONResponse(
+                    status_code=200,
+                    content={"detail": "Strategy already exists for this hand", "strategy_id": existing[0]}
+                )
+
             from backend.services.pregame_service import process_pregame_analysis
             from backend.services.hero_detection import get_hero_nicknames
 
