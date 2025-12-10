@@ -3,8 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Target, ChevronRight, AlertCircle, Mail, MailCheck, Trash2,
   Users, Clock, ArrowLeft, Zap, Shield, Eye, TrendingUp,
-  ChevronDown, ChevronUp, AlertTriangle, Code, X, Lightbulb,
-  Activity, AlertOctagon, RefreshCw
+  ChevronDown, ChevronUp, AlertTriangle, Code, X, Lightbulb
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -211,140 +210,174 @@ const PreGame = () => {
           </div>
         )}
 
-        {/* Exploitation Reasoning Section */}
+        {/* Exploitation Reasoning Section - Redesigned */}
         {strategyDetail.strategy.exploitation_reasoning && (
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-indigo-50 to-purple-50">
-              <h2 className="font-semibold text-gray-900 flex items-center space-x-2">
-                <Activity className="w-5 h-5 text-indigo-500" />
-                <span>Exploitation Analysis</span>
-              </h2>
-              <p className="text-sm text-gray-500 mt-1">How the strategy was derived from pool data vs GTO</p>
-            </div>
-            <div className="p-5 space-y-6">
-              {/* Exploitation Intensity Meter */}
-              {strategyDetail.strategy.exploitation_reasoning.exploitation_intensity && (
-                <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-sm font-semibold text-indigo-700">Exploitation Intensity</h4>
-                    <span className="text-2xl font-bold text-indigo-600">
-                      {strategyDetail.strategy.exploitation_reasoning.exploitation_intensity.level}%
+          <div className="space-y-4">
+            {/* Hero: Exploitation Intensity */}
+            {strategyDetail.strategy.exploitation_reasoning.exploitation_intensity && (
+              <div className="bg-white rounded-xl border border-gray-200 p-5">
+                <div className="flex items-center gap-6">
+                  {/* Circular Gauge */}
+                  <div className="relative w-24 h-24 flex-shrink-0">
+                    <svg className="w-24 h-24 -rotate-90" viewBox="0 0 100 100">
+                      <circle cx="50" cy="50" r="40" fill="none" stroke="#e5e7eb" strokeWidth="8" />
+                      <circle
+                        cx="50" cy="50" r="40" fill="none"
+                        stroke={
+                          strategyDetail.strategy.exploitation_reasoning.exploitation_intensity.level >= 70 ? '#ef4444' :
+                          strategyDetail.strategy.exploitation_reasoning.exploitation_intensity.level >= 40 ? '#f59e0b' :
+                          '#22c55e'
+                        }
+                        strokeWidth="8"
+                        strokeLinecap="round"
+                        strokeDasharray={`${strategyDetail.strategy.exploitation_reasoning.exploitation_intensity.level * 2.51} 251`}
+                      />
+                    </svg>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className={`text-2xl font-bold ${
+                        strategyDetail.strategy.exploitation_reasoning.exploitation_intensity.level >= 70 ? 'text-red-600' :
+                        strategyDetail.strategy.exploitation_reasoning.exploitation_intensity.level >= 40 ? 'text-amber-600' :
+                        'text-green-600'
+                      }`}>
+                        {strategyDetail.strategy.exploitation_reasoning.exploitation_intensity.level}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Explanation */}
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="font-semibold text-gray-900">Exploitation Level</h3>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                        strategyDetail.strategy.exploitation_reasoning.exploitation_intensity.level >= 70
+                          ? 'bg-red-100 text-red-700'
+                          : strategyDetail.strategy.exploitation_reasoning.exploitation_intensity.level >= 40
+                            ? 'bg-amber-100 text-amber-700'
+                            : 'bg-green-100 text-green-700'
+                      }`}>
+                        {strategyDetail.strategy.exploitation_reasoning.exploitation_intensity.level >= 70 ? 'Aggressive' :
+                         strategyDetail.strategy.exploitation_reasoning.exploitation_intensity.level >= 40 ? 'Moderate' : 'Conservative'}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-600">
+                      {strategyDetail.strategy.exploitation_reasoning.exploitation_intensity.explanation}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Deviations Table - Compact */}
+            {strategyDetail.strategy.exploitation_reasoning.gto_deviations?.length > 0 && (
+              <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+                  <h3 className="font-semibold text-gray-900 text-sm">Pool vs GTO Deviations</h3>
+                </div>
+                <div className="divide-y divide-gray-100">
+                  {strategyDetail.strategy.exploitation_reasoning.gto_deviations.map((dev, i) => (
+                    <div key={i} className="px-4 py-3 hover:bg-gray-50 transition-colors">
+                      <div className="flex items-center gap-4">
+                        {/* Stat name and confidence */}
+                        <div className="w-32 flex-shrink-0">
+                          <span className="font-medium text-gray-900 text-sm">{dev.stat}</span>
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <div className={`w-1.5 h-1.5 rounded-full ${
+                              dev.confidence === 'HIGH' ? 'bg-green-500' :
+                              dev.confidence === 'MEDIUM' ? 'bg-yellow-500' : 'bg-gray-400'
+                            }`} />
+                            <span className="text-xs text-gray-400">{dev.sample_size.toLocaleString()}h</span>
+                          </div>
+                        </div>
+
+                        {/* Visual deviation bar */}
+                        <div className="flex-1 flex items-center gap-3">
+                          <span className="text-xs text-gray-500 w-12 text-right">{dev.observed_value.toFixed(0)}%</span>
+                          <div className="flex-1 h-2 bg-gray-100 rounded-full relative overflow-hidden">
+                            {/* GTO marker */}
+                            <div
+                              className="absolute top-0 bottom-0 w-0.5 bg-green-500 z-10"
+                              style={{ left: `${Math.min(dev.gto_value, 100)}%` }}
+                            />
+                            {/* Pool value bar */}
+                            <div
+                              className={`h-full rounded-full ${dev.deviation_pp > 0 ? 'bg-red-400' : 'bg-blue-400'}`}
+                              style={{ width: `${Math.min(dev.observed_value, 100)}%` }}
+                            />
+                          </div>
+                          <span className="text-xs text-green-600 w-12">GTO {dev.gto_value.toFixed(0)}%</span>
+                        </div>
+
+                        {/* Deviation badge */}
+                        <div className={`px-2 py-1 rounded text-xs font-semibold w-16 text-center ${
+                          Math.abs(dev.deviation_pp) >= 10 ? 'bg-red-100 text-red-700' :
+                          Math.abs(dev.deviation_pp) >= 5 ? 'bg-amber-100 text-amber-700' :
+                          'bg-gray-100 text-gray-600'
+                        }`}>
+                          {dev.deviation_pp > 0 ? '+' : ''}{dev.deviation_pp.toFixed(0)}pp
+                        </div>
+                      </div>
+
+                      {/* Exploit action - subtle */}
+                      <div className="mt-2 ml-32 pl-4">
+                        <span className="text-xs text-indigo-600">→ {dev.exploit_direction}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Collapsible: Risks & Adaptations */}
+            {((strategyDetail.strategy.exploitation_reasoning.what_if_wrong?.length > 0) ||
+              (strategyDetail.strategy.exploitation_reasoning.adaptation_triggers?.length > 0)) && (
+              <details className="bg-white rounded-xl border border-gray-200 overflow-hidden group">
+                <summary className="px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-gray-400" />
+                    <span className="text-sm font-medium text-gray-700">Risks & Adaptations</span>
+                    <span className="text-xs text-gray-400">
+                      ({(strategyDetail.strategy.exploitation_reasoning.what_if_wrong?.length || 0) +
+                        (strategyDetail.strategy.exploitation_reasoning.adaptation_triggers?.length || 0)} items)
                     </span>
                   </div>
-                  <div className="h-3 bg-gray-200 rounded-full overflow-hidden mb-2">
-                    <div
-                      className="h-full bg-gradient-to-r from-green-500 via-yellow-500 to-red-500 transition-all"
-                      style={{ width: `${strategyDetail.strategy.exploitation_reasoning.exploitation_intensity.level}%` }}
-                    />
-                  </div>
-                  <p className="text-sm text-gray-600">
-                    {strategyDetail.strategy.exploitation_reasoning.exploitation_intensity.explanation}
-                  </p>
-                </div>
-              )}
+                  <ChevronDown className="w-4 h-4 text-gray-400 group-open:rotate-180 transition-transform" />
+                </summary>
 
-              {/* GTO Deviations Grid */}
-              {strategyDetail.strategy.exploitation_reasoning.gto_deviations?.length > 0 && (
-                <div>
-                  <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center space-x-2">
-                    <TrendingUp className="w-4 h-4 text-blue-500" />
-                    <span>Key GTO Deviations</span>
-                  </h4>
-                  <div className="grid gap-3">
-                    {strategyDetail.strategy.exploitation_reasoning.gto_deviations.map((dev, i) => (
-                      <div key={i} className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                        <div className="flex items-start justify-between mb-2">
-                          <div>
-                            <span className="font-medium text-gray-900">{dev.stat}</span>
-                            <span className={`ml-2 px-2 py-0.5 rounded text-xs font-medium ${
-                              dev.confidence === 'HIGH' ? 'bg-green-100 text-green-700' :
-                              dev.confidence === 'MEDIUM' ? 'bg-yellow-100 text-yellow-700' :
-                              'bg-gray-100 text-gray-600'
-                            }`}>
-                              {dev.confidence}
-                            </span>
+                <div className="px-4 pb-4 pt-2 space-y-4 border-t border-gray-100">
+                  {/* What If Wrong - Compact */}
+                  {strategyDetail.strategy.exploitation_reasoning.what_if_wrong?.length > 0 && (
+                    <div>
+                      <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">If Reads Are Wrong</h4>
+                      <div className="space-y-2">
+                        {strategyDetail.strategy.exploitation_reasoning.what_if_wrong.map((scenario, i) => (
+                          <div key={i} className="text-sm border-l-2 border-amber-300 pl-3 py-1">
+                            <span className="text-gray-700">{scenario.assumption}</span>
+                            <span className="text-gray-400 mx-1">—</span>
+                            <span className="text-gray-500">{scenario.mitigation}</span>
                           </div>
-                          <div className="text-right text-sm">
-                            <span className="text-gray-500">{dev.sample_size.toLocaleString()} hands</span>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-4 text-sm mb-2">
-                          <div>
-                            <span className="text-gray-500">Pool: </span>
-                            <span className="font-semibold text-gray-800">{dev.observed_value.toFixed(1)}%</span>
-                          </div>
-                          <span className="text-gray-300">vs</span>
-                          <div>
-                            <span className="text-gray-500">GTO: </span>
-                            <span className="font-semibold text-green-600">{dev.gto_value.toFixed(1)}%</span>
-                          </div>
-                          <div className={`font-bold ${dev.deviation_pp > 0 ? 'text-red-600' : 'text-blue-600'}`}>
-                            ({dev.deviation_pp > 0 ? '+' : ''}{dev.deviation_pp.toFixed(1)}pp)
-                          </div>
-                        </div>
-                        <div className="text-sm text-indigo-700 bg-indigo-50 rounded px-2 py-1">
-                          → {dev.exploit_direction}
-                        </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+                    </div>
+                  )}
 
-              {/* What If Wrong */}
-              {strategyDetail.strategy.exploitation_reasoning.what_if_wrong?.length > 0 && (
-                <div>
-                  <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center space-x-2">
-                    <AlertOctagon className="w-4 h-4 text-amber-500" />
-                    <span>If Our Reads Are Wrong</span>
-                  </h4>
-                  <div className="space-y-2">
-                    {strategyDetail.strategy.exploitation_reasoning.what_if_wrong.map((scenario, i) => (
-                      <div key={i} className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                        <div className="text-sm">
-                          <span className="font-medium text-amber-800">If: </span>
-                          <span className="text-gray-700">{scenario.assumption}</span>
-                        </div>
-                        <div className="text-sm mt-1">
-                          <span className="font-medium text-red-700">Risk: </span>
-                          <span className="text-gray-600">{scenario.risk}</span>
-                        </div>
-                        <div className="text-sm mt-1">
-                          <span className="font-medium text-green-700">Mitigation: </span>
-                          <span className="text-gray-600">{scenario.mitigation}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Adaptation Triggers */}
-              {strategyDetail.strategy.exploitation_reasoning.adaptation_triggers?.length > 0 && (
-                <div>
-                  <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center space-x-2">
-                    <RefreshCw className="w-4 h-4 text-blue-500" />
-                    <span>Mid-Session Adaptation Triggers</span>
-                  </h4>
-                  <div className="space-y-2">
-                    {strategyDetail.strategy.exploitation_reasoning.adaptation_triggers.map((trigger, i) => (
-                      <div key={i} className="flex items-start space-x-3 bg-blue-50 border border-blue-200 rounded-lg p-3">
-                        <div className="flex-1">
-                          <div className="text-sm">
-                            <span className="font-medium text-blue-800">Watch for: </span>
+                  {/* Adaptation Triggers - Compact */}
+                  {strategyDetail.strategy.exploitation_reasoning.adaptation_triggers?.length > 0 && (
+                    <div>
+                      <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Watch For</h4>
+                      <div className="space-y-2">
+                        {strategyDetail.strategy.exploitation_reasoning.adaptation_triggers.map((trigger, i) => (
+                          <div key={i} className="text-sm border-l-2 border-blue-300 pl-3 py-1">
                             <span className="text-gray-700">{trigger.observation}</span>
+                            <span className="text-gray-400 mx-1">→</span>
+                            <span className="text-gray-500">{trigger.action}</span>
                           </div>
-                          <div className="text-sm mt-1">
-                            <span className="font-medium text-gray-700">Then: </span>
-                            <span className="text-gray-600">{trigger.action}</span>
-                          </div>
-                        </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              </details>
+            )}
           </div>
         )}
 
