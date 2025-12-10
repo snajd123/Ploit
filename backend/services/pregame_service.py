@@ -927,6 +927,20 @@ CRITICAL: You must ONLY use data provided in the prompt. Do NOT make up statisti
 - If a GTO baseline is not provided for a stat, do NOT claim a deviation exists
 - Every number you cite must come directly from the data sections below
 
+EXPLOITATION REASONING - EXPLAIN YOUR LOGIC:
+For EVERY strategy adjustment, you must explain:
+1. GTO BASELINE: What does optimal play look like?
+2. OBSERVED DEVIATION: How does this pool/player differ? (cite exact numbers)
+3. EXPLOIT LOGIC: Why does this deviation create profit?
+4. CONFIDENCE WEIGHT: How much to exploit based on sample size?
+
+SAMPLE SIZE GUIDELINES for exploitation intensity:
+- <50 hands: LOW confidence - lean toward GTO with minor adjustments (25% exploit)
+- 50-100 hands: MEDIUM-LOW - noticeable adjustments (40% exploit)
+- 100-200 hands: MEDIUM - clear exploitation (60% exploit)
+- 200-500 hands: HIGH - strong exploitation (80% exploit)
+- 500+ hands: VERY HIGH - full exploitation (100% exploit)
+
 POOL-LEVEL STRATEGY:
 The POOL STATISTICS section shows aggregate tendencies for all players at this stake level. Use these to:
 1. Identify population-wide exploits based on deviations from GTO
@@ -994,6 +1008,37 @@ Based ONLY on the data above, return a JSON strategy with this exact structure:
     "leak_strategy": "If hero has leaks: 2-3 sentences on how to balance fixing leaks while still exploiting. If no leaks: null",
     "risk_factors": "1-2 sentences on what to watch out for - any tough players or tricky situations"
   }},
+  "exploitation_reasoning": {{
+    "gto_deviations": [
+      {{
+        "stat": "Stat name (e.g., 'Pool Fold-to-3bet')",
+        "observed_value": 61.2,
+        "gto_value": 52.0,
+        "deviation_pp": 9.2,
+        "exploit_direction": "What to do (e.g., '3-bet wider as bluff')",
+        "sample_size": 12450,
+        "confidence": "HIGH/MEDIUM/LOW based on sample"
+      }}
+    ],
+    "exploitation_intensity": {{
+      "level": 75,
+      "explanation": "2 sentences on why this intensity (e.g., 'Applying 75% exploit intensity due to mixed confidence - 3 opponents with 200+ hands, 2 unknowns using pool defaults.')"
+    }},
+    "what_if_wrong": [
+      {{
+        "assumption": "What we assume (e.g., 'Pool overfolds to 3-bets')",
+        "if_wrong": "Impact if wrong (e.g., 'Our 3-bet bluffs become marginal, losing ~0.2bb each')",
+        "hedge": "How to protect (e.g., 'Keep value-heavy 3-bet range as insurance')"
+      }}
+    ],
+    "adaptation_triggers": [
+      {{
+        "signal": "What to watch for (e.g., 'Getting called on 3-bets >50% of the time')",
+        "meaning": "What it means (e.g., 'Table is defending better than pool average')",
+        "adjustment": "What to do (e.g., 'Reduce bluff 3-bets, keep value range')"
+      }}
+    ]
+  }},
   "opponent_exploits": [
     {{
       "name": "PlayerName",
@@ -1030,7 +1075,7 @@ Return ONLY the JSON object, no other text."""
     logger.info("Making single-shot API call to Claude...")
     response = client.messages.create(
         model="claude-sonnet-4-20250514",
-        max_tokens=2000,
+        max_tokens=4000,  # Increased for exploitation_reasoning section
         system=system_prompt,
         messages=[{"role": "user", "content": user_message}]
     )

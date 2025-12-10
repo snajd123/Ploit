@@ -3,7 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Target, ChevronRight, AlertCircle, Mail, MailCheck, Trash2,
   Users, Clock, ArrowLeft, Zap, Shield, Eye, TrendingUp,
-  ChevronDown, ChevronUp, AlertTriangle, Code, X, Lightbulb
+  ChevronDown, ChevronUp, AlertTriangle, Code, X, Lightbulb,
+  Activity, AlertOctagon, RefreshCw
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -206,6 +207,143 @@ const PreGame = () => {
                 <h4 className="text-sm font-semibold text-red-700 mb-1">Risk Factors</h4>
                 <p className="text-gray-600 text-sm">{strategyDetail.strategy.rationale.risk_factors}</p>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Exploitation Reasoning Section */}
+        {strategyDetail.strategy.exploitation_reasoning && (
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-indigo-50 to-purple-50">
+              <h2 className="font-semibold text-gray-900 flex items-center space-x-2">
+                <Activity className="w-5 h-5 text-indigo-500" />
+                <span>Exploitation Analysis</span>
+              </h2>
+              <p className="text-sm text-gray-500 mt-1">How the strategy was derived from pool data vs GTO</p>
+            </div>
+            <div className="p-5 space-y-6">
+              {/* Exploitation Intensity Meter */}
+              {strategyDetail.strategy.exploitation_reasoning.exploitation_intensity && (
+                <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-semibold text-indigo-700">Exploitation Intensity</h4>
+                    <span className="text-2xl font-bold text-indigo-600">
+                      {strategyDetail.strategy.exploitation_reasoning.exploitation_intensity.level}%
+                    </span>
+                  </div>
+                  <div className="h-3 bg-gray-200 rounded-full overflow-hidden mb-2">
+                    <div
+                      className="h-full bg-gradient-to-r from-green-500 via-yellow-500 to-red-500 transition-all"
+                      style={{ width: `${strategyDetail.strategy.exploitation_reasoning.exploitation_intensity.level}%` }}
+                    />
+                  </div>
+                  <p className="text-sm text-gray-600">
+                    {strategyDetail.strategy.exploitation_reasoning.exploitation_intensity.explanation}
+                  </p>
+                </div>
+              )}
+
+              {/* GTO Deviations Grid */}
+              {strategyDetail.strategy.exploitation_reasoning.gto_deviations?.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center space-x-2">
+                    <TrendingUp className="w-4 h-4 text-blue-500" />
+                    <span>Key GTO Deviations</span>
+                  </h4>
+                  <div className="grid gap-3">
+                    {strategyDetail.strategy.exploitation_reasoning.gto_deviations.map((dev, i) => (
+                      <div key={i} className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                        <div className="flex items-start justify-between mb-2">
+                          <div>
+                            <span className="font-medium text-gray-900">{dev.stat}</span>
+                            <span className={`ml-2 px-2 py-0.5 rounded text-xs font-medium ${
+                              dev.confidence === 'HIGH' ? 'bg-green-100 text-green-700' :
+                              dev.confidence === 'MEDIUM' ? 'bg-yellow-100 text-yellow-700' :
+                              'bg-gray-100 text-gray-600'
+                            }`}>
+                              {dev.confidence}
+                            </span>
+                          </div>
+                          <div className="text-right text-sm">
+                            <span className="text-gray-500">{dev.sample_size.toLocaleString()} hands</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4 text-sm mb-2">
+                          <div>
+                            <span className="text-gray-500">Pool: </span>
+                            <span className="font-semibold text-gray-800">{dev.observed_value.toFixed(1)}%</span>
+                          </div>
+                          <span className="text-gray-300">vs</span>
+                          <div>
+                            <span className="text-gray-500">GTO: </span>
+                            <span className="font-semibold text-green-600">{dev.gto_value.toFixed(1)}%</span>
+                          </div>
+                          <div className={`font-bold ${dev.deviation_pp > 0 ? 'text-red-600' : 'text-blue-600'}`}>
+                            ({dev.deviation_pp > 0 ? '+' : ''}{dev.deviation_pp.toFixed(1)}pp)
+                          </div>
+                        </div>
+                        <div className="text-sm text-indigo-700 bg-indigo-50 rounded px-2 py-1">
+                          → {dev.exploit_direction}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* What If Wrong */}
+              {strategyDetail.strategy.exploitation_reasoning.what_if_wrong?.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center space-x-2">
+                    <AlertOctagon className="w-4 h-4 text-amber-500" />
+                    <span>If Our Reads Are Wrong</span>
+                  </h4>
+                  <div className="space-y-2">
+                    {strategyDetail.strategy.exploitation_reasoning.what_if_wrong.map((scenario, i) => (
+                      <div key={i} className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                        <div className="text-sm">
+                          <span className="font-medium text-amber-800">If: </span>
+                          <span className="text-gray-700">{scenario.assumption}</span>
+                        </div>
+                        <div className="text-sm mt-1">
+                          <span className="font-medium text-red-700">Risk: </span>
+                          <span className="text-gray-600">{scenario.risk}</span>
+                        </div>
+                        <div className="text-sm mt-1">
+                          <span className="font-medium text-green-700">Mitigation: </span>
+                          <span className="text-gray-600">{scenario.mitigation}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Adaptation Triggers */}
+              {strategyDetail.strategy.exploitation_reasoning.adaptation_triggers?.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center space-x-2">
+                    <RefreshCw className="w-4 h-4 text-blue-500" />
+                    <span>Mid-Session Adaptation Triggers</span>
+                  </h4>
+                  <div className="space-y-2">
+                    {strategyDetail.strategy.exploitation_reasoning.adaptation_triggers.map((trigger, i) => (
+                      <div key={i} className="flex items-start space-x-3 bg-blue-50 border border-blue-200 rounded-lg p-3">
+                        <div className="flex-1">
+                          <div className="text-sm">
+                            <span className="font-medium text-blue-800">Watch for: </span>
+                            <span className="text-gray-700">{trigger.observation}</span>
+                          </div>
+                          <div className="text-sm mt-1">
+                            <span className="font-medium text-gray-700">Then: </span>
+                            <span className="text-gray-600">{trigger.action}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

@@ -1070,9 +1070,44 @@ export interface PreGameRationale {
   risk_factors: string;
 }
 
+// Exploitation Reasoning Types (explains HOW strategy was derived)
+export interface GTODeviation {
+  stat: string;
+  observed_value: number;
+  gto_value: number;
+  deviation_pp: number;  // Deviation in percentage points
+  exploit_direction: string;
+  sample_size: number;
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+}
+
+export interface ExploitationIntensity {
+  level: number;  // 0-100, how aggressively to exploit
+  explanation: string;
+}
+
+export interface WhatIfWrong {
+  assumption: string;
+  risk: string;
+  mitigation: string;
+}
+
+export interface AdaptationTrigger {
+  observation: string;
+  action: string;
+}
+
+export interface ExploitationReasoning {
+  gto_deviations: GTODeviation[];
+  exploitation_intensity: ExploitationIntensity;
+  what_if_wrong: WhatIfWrong[];
+  adaptation_triggers: AdaptationTrigger[];
+}
+
 export interface PreGameStrategy {
   general_strategy: PreGameGeneralStrategy;
   rationale?: PreGameRationale;
+  exploitation_reasoning?: ExploitationReasoning;
   opponent_exploits: PreGameOpponentExploit[];
   priority_actions: string[];
   leak_reminders?: PreGameLeakReminder[];
