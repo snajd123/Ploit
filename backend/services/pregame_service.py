@@ -66,7 +66,16 @@ def get_population_stats_from_db(db: Session, stake_level: str, hero_nicknames: 
                 ps.vpip_pct,
                 ps.pfr_pct,
                 ps.three_bet_pct,
-                ps.fold_to_three_bet_pct
+                ps.fold_to_three_bet_pct,
+                ps.four_bet_pct,
+                ps.cold_call_pct,
+                ps.squeeze_pct,
+                ps.limp_pct,
+                ps.steal_attempt_pct,
+                ps.fold_to_steal_pct,
+                ps.three_bet_vs_steal_pct,
+                ps.exploitability_index,
+                ps.player_type
             FROM player_stake_hands psh
             JOIN player_stats ps ON psh.player_name = ps.player_name
         )
@@ -76,7 +85,21 @@ def get_population_stats_from_db(db: Session, stake_level: str, hero_nicknames: 
             SUM(vpip_pct * hands_at_stake) as weighted_vpip,
             SUM(pfr_pct * hands_at_stake) as weighted_pfr,
             SUM(three_bet_pct * hands_at_stake) as weighted_3bet,
-            SUM(fold_to_three_bet_pct * hands_at_stake) as weighted_f3b
+            SUM(fold_to_three_bet_pct * hands_at_stake) as weighted_f3b,
+            SUM(four_bet_pct * hands_at_stake) as weighted_4bet,
+            SUM(cold_call_pct * hands_at_stake) as weighted_cold_call,
+            SUM(squeeze_pct * hands_at_stake) as weighted_squeeze,
+            SUM(limp_pct * hands_at_stake) as weighted_limp,
+            SUM(steal_attempt_pct * hands_at_stake) as weighted_steal,
+            SUM(fold_to_steal_pct * hands_at_stake) as weighted_fold_to_steal,
+            SUM(three_bet_vs_steal_pct * hands_at_stake) as weighted_3bet_vs_steal,
+            SUM(exploitability_index * hands_at_stake) as weighted_exploitability,
+            COUNT(*) FILTER (WHERE player_type = 'NIT') as nit_count,
+            COUNT(*) FILTER (WHERE player_type = 'TAG') as tag_count,
+            COUNT(*) FILTER (WHERE player_type = 'LAG') as lag_count,
+            COUNT(*) FILTER (WHERE player_type = 'FISH') as fish_count,
+            COUNT(*) FILTER (WHERE player_type = 'CALLING_STATION') as station_count,
+            COUNT(*) FILTER (WHERE player_type = 'MANIAC') as maniac_count
         FROM player_with_stats
     """
 
@@ -84,19 +107,57 @@ def get_population_stats_from_db(db: Session, stake_level: str, hero_nicknames: 
         result = db.execute(text(query), params).fetchone()
 
         if result and result.player_count and result.player_count > 5 and result.total_hands > 0:
-            avg_vpip = float(result.weighted_vpip) / float(result.total_hands) if result.weighted_vpip else 25.0
-            avg_pfr = float(result.weighted_pfr) / float(result.total_hands) if result.weighted_pfr else 18.0
-            avg_3bet = float(result.weighted_3bet) / float(result.total_hands) if result.weighted_3bet else 6.0
-            avg_f3b = float(result.weighted_f3b) / float(result.total_hands) if result.weighted_f3b else 55.0
+            total = float(result.total_hands)
+
+            # Calculate weighted averages
+            def weighted_avg(val, default=0.0):
+                return round(float(val) / total, 1) if val else default
+
+            avg_vpip = weighted_avg(result.weighted_vpip, 25.0)
+            avg_pfr = weighted_avg(result.weighted_pfr, 18.0)
+            avg_3bet = weighted_avg(result.weighted_3bet, 6.0)
+            avg_f3b = weighted_avg(result.weighted_f3b, 55.0)
+            avg_4bet = weighted_avg(result.weighted_4bet, 2.0)
+            avg_cold_call = weighted_avg(result.weighted_cold_call, 8.0)
+            avg_squeeze = weighted_avg(result.weighted_squeeze, 3.0)
+            avg_limp = weighted_avg(result.weighted_limp, 5.0)
+            avg_steal = weighted_avg(result.weighted_steal, 35.0)
+            avg_fold_to_steal = weighted_avg(result.weighted_fold_to_steal, 75.0)
+            avg_3bet_vs_steal = weighted_avg(result.weighted_3bet_vs_steal, 8.0)
+            avg_exploitability = weighted_avg(result.weighted_exploitability, 50.0)
+
+            # Build player type distribution
+            type_distribution = {}
+            if result.nit_count > 0:
+                type_distribution['NIT'] = result.nit_count
+            if result.tag_count > 0:
+                type_distribution['TAG'] = result.tag_count
+            if result.lag_count > 0:
+                type_distribution['LAG'] = result.lag_count
+            if result.fish_count > 0:
+                type_distribution['FISH'] = result.fish_count
+            if result.station_count > 0:
+                type_distribution['CALLING_STATION'] = result.station_count
+            if result.maniac_count > 0:
+                type_distribution['MANIAC'] = result.maniac_count
 
             logger.info(f"Pool stats for {stake}: {result.player_count} players, {result.total_hands} hands, VPIP={avg_vpip:.1f}%, PFR={avg_pfr:.1f}%")
             return {
-                "vpip": round(avg_vpip, 1),
-                "pfr": round(avg_pfr, 1),
-                "three_bet": round(avg_3bet, 1),
-                "fold_to_3bet": round(avg_f3b, 1),
+                "vpip": avg_vpip,
+                "pfr": avg_pfr,
+                "three_bet": avg_3bet,
+                "fold_to_3bet": avg_f3b,
+                "four_bet": avg_4bet,
+                "cold_call": avg_cold_call,
+                "squeeze": avg_squeeze,
+                "limp": avg_limp,
+                "steal_attempt": avg_steal,
+                "fold_to_steal": avg_fold_to_steal,
+                "three_bet_vs_steal": avg_3bet_vs_steal,
+                "exploitability": avg_exploitability,
+                "player_type_distribution": type_distribution,
                 "player_count": result.player_count,
-                "total_hands": result.total_hands,
+                "total_hands": int(result.total_hands),
                 "source": "database"
             }
     except Exception as e:
@@ -110,15 +171,15 @@ def get_population_stats_from_db(db: Session, stake_level: str, hero_nicknames: 
     # Stake-specific fallback defaults based on typical population tendencies
     # NL2 is loosest/most passive, gets tighter as stakes increase
     STAKE_DEFAULTS = {
-        "NL2": {"vpip": 30.0, "pfr": 17.0, "three_bet": 5.5, "fold_to_3bet": 60.0},
-        "NL4": {"vpip": 29.0, "pfr": 17.0, "three_bet": 5.5, "fold_to_3bet": 59.0},
-        "NL5": {"vpip": 28.0, "pfr": 17.0, "three_bet": 6.0, "fold_to_3bet": 58.0},
-        "NL10": {"vpip": 26.0, "pfr": 18.0, "three_bet": 6.5, "fold_to_3bet": 56.0},
-        "NL25": {"vpip": 24.0, "pfr": 19.0, "three_bet": 7.0, "fold_to_3bet": 54.0},
-        "NL50": {"vpip": 22.0, "pfr": 18.0, "three_bet": 7.5, "fold_to_3bet": 52.0},
+        "NL2": {"vpip": 30.0, "pfr": 17.0, "three_bet": 5.5, "fold_to_3bet": 60.0, "four_bet": 1.5, "cold_call": 10.0, "squeeze": 2.5, "limp": 8.0, "steal_attempt": 32.0, "fold_to_steal": 78.0, "three_bet_vs_steal": 6.0, "exploitability": 60.0},
+        "NL4": {"vpip": 29.0, "pfr": 17.0, "three_bet": 5.5, "fold_to_3bet": 59.0, "four_bet": 1.5, "cold_call": 9.5, "squeeze": 2.5, "limp": 7.0, "steal_attempt": 33.0, "fold_to_steal": 77.0, "three_bet_vs_steal": 6.5, "exploitability": 58.0},
+        "NL5": {"vpip": 28.0, "pfr": 17.0, "three_bet": 6.0, "fold_to_3bet": 58.0, "four_bet": 1.8, "cold_call": 9.0, "squeeze": 3.0, "limp": 6.0, "steal_attempt": 34.0, "fold_to_steal": 76.0, "three_bet_vs_steal": 7.0, "exploitability": 55.0},
+        "NL10": {"vpip": 26.0, "pfr": 18.0, "three_bet": 6.5, "fold_to_3bet": 56.0, "four_bet": 2.0, "cold_call": 8.0, "squeeze": 3.5, "limp": 4.0, "steal_attempt": 36.0, "fold_to_steal": 74.0, "three_bet_vs_steal": 7.5, "exploitability": 50.0},
+        "NL25": {"vpip": 24.0, "pfr": 19.0, "three_bet": 7.0, "fold_to_3bet": 54.0, "four_bet": 2.5, "cold_call": 7.0, "squeeze": 4.0, "limp": 3.0, "steal_attempt": 38.0, "fold_to_steal": 72.0, "three_bet_vs_steal": 8.0, "exploitability": 45.0},
+        "NL50": {"vpip": 22.0, "pfr": 18.0, "three_bet": 7.5, "fold_to_3bet": 52.0, "four_bet": 3.0, "cold_call": 6.0, "squeeze": 4.5, "limp": 2.0, "steal_attempt": 40.0, "fold_to_steal": 70.0, "three_bet_vs_steal": 8.5, "exploitability": 40.0},
     }
 
-    defaults = STAKE_DEFAULTS.get(stake, {"vpip": 28.0, "pfr": 17.0, "three_bet": 6.0, "fold_to_3bet": 58.0})
+    defaults = STAKE_DEFAULTS.get(stake, {"vpip": 28.0, "pfr": 17.0, "three_bet": 6.0, "fold_to_3bet": 58.0, "four_bet": 2.0, "cold_call": 8.0, "squeeze": 3.0, "limp": 5.0, "steal_attempt": 35.0, "fold_to_steal": 75.0, "three_bet_vs_steal": 7.0, "exploitability": 50.0})
 
     logger.warning(f"No pool data for {stake}, using stake-specific defaults")
     return {
@@ -126,7 +187,17 @@ def get_population_stats_from_db(db: Session, stake_level: str, hero_nicknames: 
         "pfr": defaults["pfr"],
         "three_bet": defaults["three_bet"],
         "fold_to_3bet": defaults["fold_to_3bet"],
+        "four_bet": defaults["four_bet"],
+        "cold_call": defaults["cold_call"],
+        "squeeze": defaults["squeeze"],
+        "limp": defaults["limp"],
+        "steal_attempt": defaults["steal_attempt"],
+        "fold_to_steal": defaults["fold_to_steal"],
+        "three_bet_vs_steal": defaults["three_bet_vs_steal"],
+        "exploitability": defaults["exploitability"],
+        "player_type_distribution": {},
         "player_count": 0,
+        "total_hands": 0,
         "source": f"default_{stake}"
     }
 
@@ -671,9 +742,32 @@ def generate_strategy_with_claude(
             gto_lines.append(f"  {name}: {freq}%{extra}")
         gto_text = "\n".join(gto_lines)
 
-    # Format pool stats
+    # Format pool stats - use direct pool query for comprehensive data
+    pool_stats_direct = get_population_stats_from_db(db, stake_level, hero_nicknames)
     pool_text = "No pool data available"
-    if gathered_data["pool_stats"] and "weighted_averages" not in str(gathered_data["pool_stats"].get("error", "")):
+    if pool_stats_direct.get("source") != "default_" + stake_level.upper():
+        ps = pool_stats_direct
+        type_dist = ps.get("player_type_distribution", {})
+        type_str = ", ".join([f"{k}: {v}" for k, v in type_dist.items()]) if type_dist else "No type data"
+
+        pool_text = f"""Players: {ps.get('player_count', 'N/A')} | Total Hands: {ps.get('total_hands', 'N/A')}
+  Avg Exploitability: {ps.get('exploitability', 'N/A')}/100
+
+  CORE STATS:
+  VPIP: {ps.get('vpip', 'N/A')}% | PFR: {ps.get('pfr', 'N/A')}% | 3bet: {ps.get('three_bet', 'N/A')}% | Fold to 3bet: {ps.get('fold_to_3bet', 'N/A')}%
+
+  AGGRESSION:
+  4bet: {ps.get('four_bet', 'N/A')}% | Squeeze: {ps.get('squeeze', 'N/A')}% | Steal Attempt: {ps.get('steal_attempt', 'N/A')}%
+
+  PASSIVITY:
+  Cold Call: {ps.get('cold_call', 'N/A')}% | Limp: {ps.get('limp', 'N/A')}%
+
+  BLIND DEFENSE:
+  Fold to Steal: {ps.get('fold_to_steal', 'N/A')}% | 3bet vs Steal: {ps.get('three_bet_vs_steal', 'N/A')}%
+
+  PLAYER TYPE DISTRIBUTION: {type_str}"""
+    elif gathered_data["pool_stats"] and "weighted_averages" not in str(gathered_data["pool_stats"].get("error", "")):
+        # Fallback to gathered data
         ps = gathered_data["pool_stats"]
         wa = ps.get("weighted_averages", {})
         pool_text = f"""Players: {ps.get('player_count', 'N/A')} | Hands: {ps.get('total_hands', 'N/A')}
@@ -728,6 +822,22 @@ CRITICAL: You must ONLY use data provided in the prompt. Do NOT make up statisti
 - GTO BASELINES are general optimal frequencies from solver data - use them as reference points
 - If a GTO baseline is not provided for a stat, do NOT claim a deviation exists
 - Every number you cite must come directly from the data sections below
+
+POOL-LEVEL STRATEGY:
+The POOL STATISTICS section shows aggregate tendencies for all players at this stake level. Use these to:
+1. Identify population-wide exploits (e.g., if pool fold_to_3bet is high, 3-bet bluff more often)
+2. Understand baseline expectations for unknown players
+3. Adjust default ranges for the stake level
+4. Consider player type distribution (more FISHes = more value betting, more NITs = more stealing)
+
+Key pool tendencies to exploit:
+- High fold_to_3bet (>60%): 3-bet bluff aggressively with suited connectors and suited aces
+- High fold_to_steal (>75%): Widen steal ranges from CO/BTN/SB
+- Low squeeze (<3%): Isolate limpers more aggressively
+- High cold_call (>10%): Tighten 3-bet bluffs, size up for value
+- High limp (>5%): Iso-raise wider, punish passive play
+- Low 3bet_vs_steal (<7%): Steal relentlessly from late position
+- High exploitability (>60): Table is soft, maximize value betting
 
 HERO IMPROVEMENT - THIS IS CRITICAL:
 If the player has their own leaks in "YOUR OWN LEAKS TO WORK ON", you MUST:

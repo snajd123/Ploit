@@ -29,6 +29,16 @@ class PoolSummary(BaseModel):
     avg_vpip: float
     avg_pfr: float
     avg_3bet: float
+    avg_fold_to_3bet: float
+    avg_4bet: float
+    avg_cold_call: float
+    avg_squeeze: float
+    avg_limp: float
+    avg_steal_attempt: float
+    avg_fold_to_steal: float
+    avg_3bet_vs_steal: float
+    avg_exploitability: float
+    player_type_distribution: Dict[str, int]
 
 
 class PoolPlayer(BaseModel):
@@ -94,14 +104,24 @@ def get_pools(db: Session = Depends(get_db)) -> List[PoolSummary]:
             ORDER BY player_name, hands_at_stake DESC
         ),
         player_with_stats AS (
-            -- Join with player_stats for VPIP/PFR/3bet
+            -- Join with player_stats for all stats
             SELECT
                 pps.player_name,
                 pps.stake_level,
                 pps.hands_at_stake,
                 ps.vpip_pct,
                 ps.pfr_pct,
-                ps.three_bet_pct
+                ps.three_bet_pct,
+                ps.fold_to_three_bet_pct,
+                ps.four_bet_pct,
+                ps.cold_call_pct,
+                ps.squeeze_pct,
+                ps.limp_pct,
+                ps.steal_attempt_pct,
+                ps.fold_to_steal_pct,
+                ps.three_bet_vs_steal_pct,
+                ps.exploitability_index,
+                ps.player_type
             FROM player_primary_stake pps
             LEFT JOIN player_stats ps ON pps.player_name = ps.player_name
         )
@@ -111,7 +131,23 @@ def get_pools(db: Session = Depends(get_db)) -> List[PoolSummary]:
             COALESCE(SUM(hands_at_stake), 0) as total_hands,
             COALESCE(AVG(vpip_pct), 0) as avg_vpip,
             COALESCE(AVG(pfr_pct), 0) as avg_pfr,
-            COALESCE(AVG(three_bet_pct), 0) as avg_3bet
+            COALESCE(AVG(three_bet_pct), 0) as avg_3bet,
+            COALESCE(AVG(fold_to_three_bet_pct), 0) as avg_fold_to_3bet,
+            COALESCE(AVG(four_bet_pct), 0) as avg_4bet,
+            COALESCE(AVG(cold_call_pct), 0) as avg_cold_call,
+            COALESCE(AVG(squeeze_pct), 0) as avg_squeeze,
+            COALESCE(AVG(limp_pct), 0) as avg_limp,
+            COALESCE(AVG(steal_attempt_pct), 0) as avg_steal_attempt,
+            COALESCE(AVG(fold_to_steal_pct), 0) as avg_fold_to_steal,
+            COALESCE(AVG(three_bet_vs_steal_pct), 0) as avg_3bet_vs_steal,
+            COALESCE(AVG(exploitability_index), 0) as avg_exploitability,
+            COUNT(*) FILTER (WHERE player_type = 'NIT') as nit_count,
+            COUNT(*) FILTER (WHERE player_type = 'TAG') as tag_count,
+            COUNT(*) FILTER (WHERE player_type = 'LAG') as lag_count,
+            COUNT(*) FILTER (WHERE player_type = 'FISH') as fish_count,
+            COUNT(*) FILTER (WHERE player_type = 'CALLING_STATION') as station_count,
+            COUNT(*) FILTER (WHERE player_type = 'MANIAC') as maniac_count,
+            COUNT(*) FILTER (WHERE player_type IS NULL OR player_type = 'UNKNOWN') as unknown_count
         FROM player_with_stats
         GROUP BY stake_level
         ORDER BY total_hands DESC
@@ -127,6 +163,23 @@ def get_pools(db: Session = Depends(get_db)) -> List[PoolSummary]:
         pool_id = get_pool_id(site, stake)
         display_name = get_pool_display_name(site, stake)
 
+        # Build player type distribution
+        type_distribution = {}
+        if row.nit_count > 0:
+            type_distribution['NIT'] = row.nit_count
+        if row.tag_count > 0:
+            type_distribution['TAG'] = row.tag_count
+        if row.lag_count > 0:
+            type_distribution['LAG'] = row.lag_count
+        if row.fish_count > 0:
+            type_distribution['FISH'] = row.fish_count
+        if row.station_count > 0:
+            type_distribution['CALLING_STATION'] = row.station_count
+        if row.maniac_count > 0:
+            type_distribution['MANIAC'] = row.maniac_count
+        if row.unknown_count > 0:
+            type_distribution['UNKNOWN'] = row.unknown_count
+
         pools.append(PoolSummary(
             pool_id=pool_id,
             display_name=display_name,
@@ -136,7 +189,17 @@ def get_pools(db: Session = Depends(get_db)) -> List[PoolSummary]:
             total_hands=row.total_hands,
             avg_vpip=round(float(row.avg_vpip), 1),
             avg_pfr=round(float(row.avg_pfr), 1),
-            avg_3bet=round(float(row.avg_3bet), 1)
+            avg_3bet=round(float(row.avg_3bet), 1),
+            avg_fold_to_3bet=round(float(row.avg_fold_to_3bet), 1),
+            avg_4bet=round(float(row.avg_4bet), 1),
+            avg_cold_call=round(float(row.avg_cold_call), 1),
+            avg_squeeze=round(float(row.avg_squeeze), 1),
+            avg_limp=round(float(row.avg_limp), 1),
+            avg_steal_attempt=round(float(row.avg_steal_attempt), 1),
+            avg_fold_to_steal=round(float(row.avg_fold_to_steal), 1),
+            avg_3bet_vs_steal=round(float(row.avg_3bet_vs_steal), 1),
+            avg_exploitability=round(float(row.avg_exploitability), 1),
+            player_type_distribution=type_distribution
         ))
 
     return pools
@@ -184,6 +247,14 @@ def get_pool_detail(
                 ps.pfr_pct,
                 ps.three_bet_pct,
                 ps.fold_to_three_bet_pct,
+                ps.four_bet_pct,
+                ps.cold_call_pct,
+                ps.squeeze_pct,
+                ps.limp_pct,
+                ps.steal_attempt_pct,
+                ps.fold_to_steal_pct,
+                ps.three_bet_vs_steal_pct,
+                ps.exploitability_index,
                 ps.player_type
             FROM player_stake_hands psh
             LEFT JOIN player_stats ps ON psh.player_name = ps.player_name
@@ -192,7 +263,7 @@ def get_pool_detail(
     """
 
     # Add sorting
-    valid_sort = {"total_hands", "vpip_pct", "pfr_pct", "three_bet_pct", "player_name"}
+    valid_sort = {"total_hands", "vpip_pct", "pfr_pct", "three_bet_pct", "fold_to_three_bet_pct", "exploitability_index", "player_name"}
     if sort_by in valid_sort:
         query += f" ORDER BY {sort_by} DESC"
     else:
@@ -208,38 +279,58 @@ def get_pool_detail(
 
     players = []
     total_hands = 0
-    sum_vpip = 0.0
-    sum_pfr = 0.0
-    sum_3bet = 0.0
+    # Weighted sums for all stats
+    sums = {
+        'vpip': 0.0, 'pfr': 0.0, '3bet': 0.0, 'fold_to_3bet': 0.0,
+        '4bet': 0.0, 'cold_call': 0.0, 'squeeze': 0.0, 'limp': 0.0,
+        'steal_attempt': 0.0, 'fold_to_steal': 0.0, '3bet_vs_steal': 0.0,
+        'exploitability': 0.0
+    }
 
     for row in rows:
         hands = row.total_hands or 0
-        vpip = float(row.vpip_pct or 0)
-        pfr = float(row.pfr_pct or 0)
-        three_bet = float(row.three_bet_pct or 0)
-
         total_hands += hands
-        sum_vpip += vpip * hands
-        sum_pfr += pfr * hands
-        sum_3bet += three_bet * hands
+
+        # Accumulate weighted sums
+        sums['vpip'] += float(row.vpip_pct or 0) * hands
+        sums['pfr'] += float(row.pfr_pct or 0) * hands
+        sums['3bet'] += float(row.three_bet_pct or 0) * hands
+        sums['fold_to_3bet'] += float(row.fold_to_three_bet_pct or 0) * hands
+        sums['4bet'] += float(row.four_bet_pct or 0) * hands
+        sums['cold_call'] += float(row.cold_call_pct or 0) * hands
+        sums['squeeze'] += float(row.squeeze_pct or 0) * hands
+        sums['limp'] += float(row.limp_pct or 0) * hands
+        sums['steal_attempt'] += float(row.steal_attempt_pct or 0) * hands
+        sums['fold_to_steal'] += float(row.fold_to_steal_pct or 0) * hands
+        sums['3bet_vs_steal'] += float(row.three_bet_vs_steal_pct or 0) * hands
+        sums['exploitability'] += float(row.exploitability_index or 0) * hands
 
         players.append(PoolPlayer(
             player_name=row.player_name,
             total_hands=hands,
-            vpip_pct=round(vpip, 1),
-            pfr_pct=round(pfr, 1),
-            three_bet_pct=round(three_bet, 1),
+            vpip_pct=round(float(row.vpip_pct or 0), 1),
+            pfr_pct=round(float(row.pfr_pct or 0), 1),
+            three_bet_pct=round(float(row.three_bet_pct or 0), 1),
             fold_to_three_bet_pct=round(float(row.fold_to_three_bet_pct), 1) if row.fold_to_three_bet_pct else None,
             player_type=row.player_type
         ))
 
-    # Weighted averages
+    # Weighted averages for all stats
     avg_stats = {}
     if total_hands > 0:
         avg_stats = {
-            "vpip": round(sum_vpip / total_hands, 1),
-            "pfr": round(sum_pfr / total_hands, 1),
-            "3bet": round(sum_3bet / total_hands, 1)
+            "vpip": round(sums['vpip'] / total_hands, 1),
+            "pfr": round(sums['pfr'] / total_hands, 1),
+            "3bet": round(sums['3bet'] / total_hands, 1),
+            "fold_to_3bet": round(sums['fold_to_3bet'] / total_hands, 1),
+            "4bet": round(sums['4bet'] / total_hands, 1),
+            "cold_call": round(sums['cold_call'] / total_hands, 1),
+            "squeeze": round(sums['squeeze'] / total_hands, 1),
+            "limp": round(sums['limp'] / total_hands, 1),
+            "steal_attempt": round(sums['steal_attempt'] / total_hands, 1),
+            "fold_to_steal": round(sums['fold_to_steal'] / total_hands, 1),
+            "3bet_vs_steal": round(sums['3bet_vs_steal'] / total_hands, 1),
+            "exploitability": round(sums['exploitability'] / total_hands, 1)
         }
 
     site = 'PokerStars'  # Default for now

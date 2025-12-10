@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Users, ChevronRight, AlertCircle, Search, Filter } from 'lucide-react';
+import { Users, ChevronRight, AlertCircle, Search, Filter, TrendingUp, Target, Shield, Zap } from 'lucide-react';
 import { api } from '../services/api';
 import type { PoolSummary, PoolDetail } from '../types';
 
@@ -149,27 +149,113 @@ const Pools = () => {
         <div className="flex-1">
           {poolDetail && (
             <>
-              {/* Pool stats */}
-              <div className="grid grid-cols-3 gap-4 mb-6">
-                <div className="card">
-                  <p className="text-sm text-gray-500">Avg VPIP</p>
-                  <p className="text-2xl font-bold text-gray-900">
+              {/* Pool stats - Primary */}
+              <div className="grid grid-cols-4 gap-3 mb-4">
+                <div className="card bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
+                  <div className="flex items-center gap-2 mb-1">
+                    <TrendingUp size={14} className="text-blue-600" />
+                    <p className="text-xs text-blue-600 font-medium">VPIP</p>
+                  </div>
+                  <p className="text-xl font-bold text-blue-900">
                     {poolDetail.avg_stats.vpip?.toFixed(1) || 'N/A'}%
                   </p>
                 </div>
-                <div className="card">
-                  <p className="text-sm text-gray-500">Avg PFR</p>
-                  <p className="text-2xl font-bold text-gray-900">
+                <div className="card bg-gradient-to-br from-green-50 to-green-100 border-green-200">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Target size={14} className="text-green-600" />
+                    <p className="text-xs text-green-600 font-medium">PFR</p>
+                  </div>
+                  <p className="text-xl font-bold text-green-900">
                     {poolDetail.avg_stats.pfr?.toFixed(1) || 'N/A'}%
                   </p>
                 </div>
-                <div className="card">
-                  <p className="text-sm text-gray-500">Avg 3-Bet</p>
-                  <p className="text-2xl font-bold text-gray-900">
+                <div className="card bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Zap size={14} className="text-purple-600" />
+                    <p className="text-xs text-purple-600 font-medium">3-Bet</p>
+                  </div>
+                  <p className="text-xl font-bold text-purple-900">
                     {poolDetail.avg_stats['3bet']?.toFixed(1) || 'N/A'}%
                   </p>
                 </div>
+                <div className="card bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Shield size={14} className="text-orange-600" />
+                    <p className="text-xs text-orange-600 font-medium">Fold to 3B</p>
+                  </div>
+                  <p className="text-xl font-bold text-orange-900">
+                    {poolDetail.avg_stats.fold_to_3bet?.toFixed(1) || 'N/A'}%
+                  </p>
+                </div>
               </div>
+
+              {/* Pool stats - Secondary */}
+              <div className="grid grid-cols-6 gap-2 mb-4">
+                <div className="card py-2 px-3">
+                  <p className="text-xs text-gray-500">4-Bet</p>
+                  <p className="text-sm font-semibold text-gray-800">{poolDetail.avg_stats['4bet']?.toFixed(1) || 'N/A'}%</p>
+                </div>
+                <div className="card py-2 px-3">
+                  <p className="text-xs text-gray-500">Cold Call</p>
+                  <p className="text-sm font-semibold text-gray-800">{poolDetail.avg_stats.cold_call?.toFixed(1) || 'N/A'}%</p>
+                </div>
+                <div className="card py-2 px-3">
+                  <p className="text-xs text-gray-500">Squeeze</p>
+                  <p className="text-sm font-semibold text-gray-800">{poolDetail.avg_stats.squeeze?.toFixed(1) || 'N/A'}%</p>
+                </div>
+                <div className="card py-2 px-3">
+                  <p className="text-xs text-gray-500">Limp</p>
+                  <p className="text-sm font-semibold text-gray-800">{poolDetail.avg_stats.limp?.toFixed(1) || 'N/A'}%</p>
+                </div>
+                <div className="card py-2 px-3">
+                  <p className="text-xs text-gray-500">Steal</p>
+                  <p className="text-sm font-semibold text-gray-800">{poolDetail.avg_stats.steal_attempt?.toFixed(1) || 'N/A'}%</p>
+                </div>
+                <div className="card py-2 px-3">
+                  <p className="text-xs text-gray-500">Fold to Steal</p>
+                  <p className="text-sm font-semibold text-gray-800">{poolDetail.avg_stats.fold_to_steal?.toFixed(1) || 'N/A'}%</p>
+                </div>
+              </div>
+
+              {/* Player Type Distribution & Exploitability */}
+              {pools.find(p => p.stake_level === selectedPool) && (
+                <div className="grid grid-cols-2 gap-4 mb-6">
+                  <div className="card">
+                    <h4 className="text-sm font-medium text-gray-700 mb-3">Player Type Distribution</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {Object.entries(pools.find(p => p.stake_level === selectedPool)?.player_type_distribution || {}).map(([type, count]) => (
+                        <span
+                          key={type}
+                          className={`px-2 py-1 rounded text-xs font-medium ${getPlayerTypeColor(type)}`}
+                        >
+                          {type}: {count}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="card">
+                    <h4 className="text-sm font-medium text-gray-700 mb-2">Pool Exploitability</h4>
+                    <div className="flex items-center gap-3">
+                      <div className="text-2xl font-bold text-indigo-600">
+                        {pools.find(p => p.stake_level === selectedPool)?.avg_exploitability?.toFixed(1) || 'N/A'}
+                      </div>
+                      <div className="flex-1">
+                        <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-green-500 via-yellow-500 to-red-500"
+                            style={{ width: `${Math.min(pools.find(p => p.stake_level === selectedPool)?.avg_exploitability || 0, 100)}%` }}
+                          />
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {(pools.find(p => p.stake_level === selectedPool)?.avg_exploitability || 0) > 60 ? 'Soft pool - high profit potential' :
+                           (pools.find(p => p.stake_level === selectedPool)?.avg_exploitability || 0) > 40 ? 'Average pool - selective exploitation' :
+                           'Tough pool - focus on GTO'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Controls */}
               <div className="flex items-center justify-between mb-4">

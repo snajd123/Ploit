@@ -957,6 +957,16 @@ export interface PoolSummary {
   avg_vpip: number;
   avg_pfr: number;
   avg_3bet: number;
+  avg_fold_to_3bet: number;
+  avg_4bet: number;
+  avg_cold_call: number;
+  avg_squeeze: number;
+  avg_limp: number;
+  avg_steal_attempt: number;
+  avg_fold_to_steal: number;
+  avg_3bet_vs_steal: number;
+  avg_exploitability: number;
+  player_type_distribution: Record<string, number>;
 }
 
 export interface PoolPlayer {
