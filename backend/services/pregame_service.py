@@ -349,9 +349,48 @@ def pre_gather_strategy_data(
             # GTO limp is essentially 0% in 6-max cash
             data["gto_baselines"]["limp"] = 0.0
 
-        # Note: squeeze, steal_attempt, fold_to_steal, 3bet_vs_steal are positional metrics
-        # that don't have direct GTO scenarios - they're derived from the existing scenarios
-        # We'll note this in the prompt so the AI knows these aren't available
+        # GTO Steal Attempt = Average of late position opens (CO, BTN)
+        steal_result = db.execute(text("""
+            SELECT AVG(gto_aggregate_freq) as avg_steal
+            FROM gto_scenarios
+            WHERE scenario_name IN ('CO_open', 'BTN_open')
+            AND gto_aggregate_freq IS NOT NULL
+        """)).fetchone()
+        if steal_result and steal_result.avg_steal:
+            data["gto_baselines"]["steal_attempt"] = round(float(steal_result.avg_steal) * 100, 1)
+
+        # GTO Fold to Steal = Average fold from blinds vs late position
+        fold_steal_result = db.execute(text("""
+            SELECT AVG(gto_aggregate_freq) as avg_fold
+            FROM gto_scenarios
+            WHERE action = 'fold' AND category = 'defense'
+            AND scenario_name IN ('BB_vs_CO_fold', 'BB_vs_BTN_fold', 'SB_vs_CO_fold', 'SB_vs_BTN_fold')
+            AND gto_aggregate_freq IS NOT NULL
+        """)).fetchone()
+        if fold_steal_result and fold_steal_result.avg_fold:
+            data["gto_baselines"]["fold_to_steal"] = round(float(fold_steal_result.avg_fold) * 100, 1)
+
+        # GTO 3-bet vs Steal = Average 3-bet from blinds vs late position
+        three_bet_steal_result = db.execute(text("""
+            SELECT AVG(gto_aggregate_freq) as avg_3bet
+            FROM gto_scenarios
+            WHERE action = '3bet' AND category = 'defense'
+            AND scenario_name IN ('BB_vs_CO_3bet', 'BB_vs_BTN_3bet', 'SB_vs_CO_3bet', 'SB_vs_BTN_3bet')
+            AND gto_aggregate_freq IS NOT NULL
+        """)).fetchone()
+        if three_bet_steal_result and three_bet_steal_result.avg_3bet:
+            data["gto_baselines"]["three_bet_vs_steal"] = round(float(three_bet_steal_result.avg_3bet) * 100, 1)
+
+        # GTO Squeeze = Average 3-bet in multiway pots (with caller in between)
+        squeeze_result = db.execute(text("""
+            SELECT AVG(gto_aggregate_freq) as avg_squeeze
+            FROM gto_scenarios
+            WHERE action = '3bet'
+            AND scenario_name ~ '_vs_[A-Z]+_[A-Z]+_3bet$'
+            AND gto_aggregate_freq IS NOT NULL
+        """)).fetchone()
+        if squeeze_result and squeeze_result.avg_squeeze:
+            data["gto_baselines"]["squeeze"] = round(float(squeeze_result.avg_squeeze) * 100, 1)
 
         logger.info(f"GTO baselines calculated: {data['gto_baselines']}")
     except Exception as e:
@@ -866,7 +905,7 @@ def generate_strategy_with_claude(
   VPIP: {gb.get('vpip', 'N/A')}% | PFR: {gb.get('pfr', 'N/A')}% | Limp: {gb.get('limp', 'N/A')}%
 
 AGGRESSION:
-  3-bet: {gb.get('three_bet', 'N/A')}% | 4-bet: {gb.get('four_bet', 'N/A')}%
+  3-bet: {gb.get('three_bet', 'N/A')}% | 4-bet: {gb.get('four_bet', 'N/A')}% | Squeeze: {gb.get('squeeze', 'N/A')}%
 
 DEFENSE:
   Cold Call: {gb.get('cold_call', 'N/A')}% | Fold to Open: {gb.get('fold_to_open', 'N/A')}%
@@ -874,8 +913,10 @@ DEFENSE:
 FACING 3-BET:
   Fold to 3-bet: {gb.get('fold_to_3bet', 'N/A')}%
 
-NOTE: Squeeze, Steal Attempt, Fold to Steal, and 3-bet vs Steal are positional/situational
-metrics without direct GTO aggregate baselines. Compare these to pool averages instead."""
+STEAL/BLIND BATTLE:
+  Steal Attempt (CO/BTN open): {gb.get('steal_attempt', 'N/A')}%
+  Fold to Steal (blinds vs CO/BTN): {gb.get('fold_to_steal', 'N/A')}%
+  3-bet vs Steal (blinds vs CO/BTN): {gb.get('three_bet_vs_steal', 'N/A')}%"""
 
     # System prompt
     system_prompt = """You are a professional poker coach generating a preflop exploitation strategy for a 6-max No Limit Hold'em cash game.
