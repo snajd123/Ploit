@@ -506,19 +506,52 @@ async def import_from_email(
             target_hand = parse_result.hands[0]
             logger.info(f"Single hand - generating pre-game strategy for #{target_hand.hand_id}")
 
-            # Check for duplicate - prevent SendGrid retry from creating duplicate strategies
             from sqlalchemy import text as sql_text
-            existing = db.execute(sql_text("""
+
+            # DEDUPLICATION 1: Check by hand_number (exact match)
+            existing_by_hand = db.execute(sql_text("""
                 SELECT id FROM pregame_strategies
                 WHERE hand_number = :hand_number
                 AND created_at > NOW() - INTERVAL '1 hour'
             """), {"hand_number": str(target_hand.hand_id)}).fetchone()
 
-            if existing:
-                logger.info(f"Strategy already exists for hand #{target_hand.hand_id} (strategy_id={existing[0]}), skipping duplicate")
+            if existing_by_hand:
+                logger.info(f"Strategy already exists for hand #{target_hand.hand_id} (strategy_id={existing_by_hand[0]}), skipping duplicate")
                 return JSONResponse(
                     status_code=200,
-                    content={"detail": "Strategy already exists for this hand", "strategy_id": existing[0]}
+                    content={"detail": "Strategy already exists for this hand", "strategy_id": existing_by_hand[0]}
+                )
+
+            # DEDUPLICATION 2: Check by sender email + time (rate limit - max 1 per 5 minutes per sender)
+            if sender:
+                existing_by_sender = db.execute(sql_text("""
+                    SELECT id, hand_number FROM pregame_strategies
+                    WHERE sender_email = :sender
+                    AND created_at > NOW() - INTERVAL '5 minutes'
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                """), {"sender": sender}).fetchone()
+
+                if existing_by_sender:
+                    logger.warning(f"Rate limit: Strategy recently created for {sender} (strategy_id={existing_by_sender[0]}, hand={existing_by_sender[1]})")
+                    return JSONResponse(
+                        status_code=200,
+                        content={"detail": "Strategy recently generated, please wait 5 minutes", "strategy_id": existing_by_sender[0]}
+                    )
+
+            # DEDUPLICATION 3: Global rate limit (max 1 every 2 minutes across all senders)
+            existing_global = db.execute(sql_text("""
+                SELECT id, sender_email, hand_number FROM pregame_strategies
+                WHERE created_at > NOW() - INTERVAL '2 minutes'
+                ORDER BY created_at DESC
+                LIMIT 1
+            """)).fetchone()
+
+            if existing_global:
+                logger.warning(f"Global rate limit: Recent strategy exists (strategy_id={existing_global[0]}, sender={existing_global[1]}, hand={existing_global[2]})")
+                return JSONResponse(
+                    status_code=200,
+                    content={"detail": "A strategy was recently generated, please wait", "strategy_id": existing_global[0]}
                 )
 
             from backend.services.pregame_service import process_pregame_analysis
