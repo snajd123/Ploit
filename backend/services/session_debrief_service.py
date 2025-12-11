@@ -1510,6 +1510,21 @@ CRITICAL RULES:
 10. If exploit execution data is provided, assess how well the player adjusted their play vs specific opponents based on their pre-game exploits
 11. IMPORTANT: If "WHY THIS STRATEGY?" reasoning is provided, assess whether the player's actual session aligned with that reasoning. Did they follow the intended approach? Did they balance exploitation vs GTO vs leak-fixing as recommended?
 
+CRITICAL - EVALUATING STRATEGY ALIGNMENT:
+When assessing whether the player followed their pre-game strategy, you MUST compare their stats to the RECOMMENDED EXPLOITATIVE TARGETS, NOT to GTO baselines.
+
+Examples:
+- If strategy said "3-bet wider to exploit 58% fold-to-3bet" and player 3-bet MORE than GTO → This is SUCCESS (following the exploit recommendation), NOT a deviation
+- If strategy said "open wider from BTN/CO" and player opened MORE than GTO → This is SUCCESS, NOT over-opening
+- If strategy said "fold more in BB defense" and player folded MORE than GTO → This is SUCCESS in fixing the leak
+
+The pre-game strategy DEFINES what "optimal" means for this session. If an exploitative adjustment was recommended, hitting or exceeding that adjustment is good execution, even if it deviates from GTO.
+
+Only flag stats as problematic if they:
+1. Go AGAINST the strategy recommendation (e.g., strategy said 3-bet more, but player 3-bet less)
+2. Go excessively BEYOND the recommendation in a way that's no longer +EV
+3. Were not mentioned in the strategy and deviate significantly from GTO
+
 Format your response as JSON with these exact keys:
 {
   "executive_summary": "2-3 sentence overview",
@@ -1555,6 +1570,13 @@ If "WHY THIS STRATEGY?" reasoning is available, assess whether the session align
 If strategy goal execution data is available, assess how well the player met their pre-session targets.
 If exploit execution data is available, assess how well the player executed their opponent exploits.
 If leak progress data is available, acknowledge improvements and remaining work.
+
+IMPORTANT: When evaluating stats against strategy recommendations:
+- If the strategy recommended "3-bet wider" and player 3-bet above GTO, this is SUCCESS (following the recommendation)
+- If the strategy recommended "open wider" and player opened above GTO, this is SUCCESS
+- Do NOT say "3-betting was higher than optimal" if the strategy recommended 3-betting more
+- "Optimal" for this session = what the pre-game strategy recommended, not GTO baseline
+
 Return ONLY valid JSON."""
 
     logger.info("Generating AI debrief...")
