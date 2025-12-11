@@ -960,6 +960,19 @@ If the player has their own leaks in "YOUR OWN LEAKS TO WORK ON", you MUST:
 4. In priority_actions, include at least one action that addresses fixing a leak
 5. Include leak_reminders with realistic session targets (move partway toward GTO)
 
+CRITICAL - CONSISTENT TARGETS:
+When mentioning leak fixes in priority_actions, ALWAYS reference the SESSION TARGET (the realistic incremental goal), NOT the GTO target. The session target should be partway between current and GTO.
+
+Example - WRONG (confusing):
+  priority_actions: "Tighten SB defense - fold to 86.7%" (GTO target)
+  leak_reminders: target_value: 78.0 (session target)
+
+Example - CORRECT (consistent):
+  priority_actions: "Tighten SB defense - target 78% fold this session (currently 71%, GTO is 87%)"
+  leak_reminders: target_value: 78.0 (same session target)
+
+The player sees BOTH priority_actions AND leak_reminders - they MUST show the same target numbers to avoid confusion.
+
 The strategy should help the hero BOTH exploit opponents AND fix their own leaks simultaneously.
 
 Generate specific, actionable exploits based solely on the provided data."""
@@ -1057,11 +1070,12 @@ Based ONLY on the data above, return a JSON strategy with this exact structure:
       "gto_value": 68.0
     }}
   ],
-  "priority_actions": ["Top 3 highest-EV actions for this session"]
+  "priority_actions": ["Top 3 highest-EV actions - when mentioning leaks, use SESSION TARGET not GTO"]
 }}
 
 RULES:
 - CRITICAL: If "YOUR OWN LEAKS TO WORK ON" lists any leaks, you MUST populate leak_reminders with at least 1-3 entries using the exact scenario_id shown in brackets (e.g., [defense_BB_fold])
+- CRITICAL: When priority_actions mentions a leak fix, the target number MUST MATCH the target_value in leak_reminders (the session target), NOT the GTO value. Example: if leak_reminders has target_value: 78, priority_actions should say "target 78%" not "fold to 87%"
 - If no hero leaks are listed, set leak_reminders to an empty array []
 - ONLY include opponent_exploits for players with 30+ hands of data
 - ONLY cite numbers that appear in the data sections above
