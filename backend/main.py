@@ -112,7 +112,9 @@ class UploadResponse(BaseModel):
     """Response model for file upload"""
     session_id: int
     hands_parsed: int
-    hands_failed: int
+    hands_skipped: int = 0  # Duplicates that already exist
+    hands_failed: int = 0   # Actual errors
+    skipped_hand_ids: List[str] = []  # List of skipped hand IDs
     players_updated: int
     stake_level: Optional[str] = None
     processing_time: float
@@ -298,22 +300,34 @@ async def upload_hand_history(
             session_id = service.create_upload_session(
                 filename=file.filename,
                 hands_parsed=insert_result['hands_inserted'],
-                hands_failed=insert_result['hands_failed'],
+                hands_failed=insert_result.get('hands_skipped', 0) + insert_result.get('hands_failed', 0),
                 players_updated=len(affected_players),
                 stake_level=stake_level,
                 processing_time=int(processing_time)
             )
 
-            logger.info(f"Upload complete: session_id={session_id}, hands={insert_result['hands_inserted']}")
+            logger.info(f"Upload complete: session_id={session_id}, hands={insert_result['hands_inserted']}, skipped={insert_result.get('hands_skipped', 0)}")
+
+            # Build appropriate message
+            skipped_count = insert_result.get('hands_skipped', 0)
+            failed_count = insert_result.get('hands_failed', 0)
+            if skipped_count > 0 and insert_result['hands_inserted'] > 0:
+                message = f"Imported {insert_result['hands_inserted']} new hands, {skipped_count} already existed"
+            elif skipped_count > 0 and insert_result['hands_inserted'] == 0:
+                message = f"All {skipped_count} hands already imported previously"
+            else:
+                message = f"Successfully processed {insert_result['hands_inserted']} hands"
 
             return UploadResponse(
                 session_id=session_id,
                 hands_parsed=insert_result['hands_inserted'],
-                hands_failed=insert_result['hands_failed'],
+                hands_skipped=skipped_count,
+                hands_failed=failed_count,
+                skipped_hand_ids=insert_result.get('skipped_hand_ids', [])[:50],  # Limit to 50 for response size
                 players_updated=len(affected_players),
                 stake_level=stake_level,
                 processing_time=round(processing_time, 2),
-                message=f"Successfully processed {insert_result['hands_inserted']} hands"
+                message=message
             )
 
         finally:

@@ -295,13 +295,52 @@ const Upload = () => {
               </div>
             </div>
 
+            {/* Skipped hands (duplicates) */}
+            {result.hands_skipped > 0 && (
+              <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="flex items-start space-x-3">
+                  <AlertCircle className="text-blue-500 flex-shrink-0" size={20} />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-blue-800">
+                      {result.hands_skipped} hands already imported
+                    </p>
+                    <p className="text-sm text-blue-700 mt-1">
+                      These hands were skipped because they already exist in your database.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Collapsible list of skipped hand IDs */}
+                {result.skipped_hand_ids && result.skipped_hand_ids.length > 0 && (
+                  <details className="mt-3">
+                    <summary className="cursor-pointer text-sm text-blue-600 hover:text-blue-800">
+                      View skipped hand IDs ({result.skipped_hand_ids.length}{result.skipped_hand_ids.length >= 50 ? '+' : ''})
+                    </summary>
+                    <div className="mt-2 max-h-32 overflow-y-auto bg-white rounded border border-blue-100 p-2">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-1 text-xs font-mono text-gray-600">
+                        {result.skipped_hand_ids.map((handId, i) => (
+                          <span key={i} className="truncate">#{handId}</span>
+                        ))}
+                      </div>
+                      {result.hands_skipped > result.skipped_hand_ids.length && (
+                        <p className="text-xs text-gray-500 mt-2">
+                          ...and {result.hands_skipped - result.skipped_hand_ids.length} more
+                        </p>
+                      )}
+                    </div>
+                  </details>
+                )}
+              </div>
+            )}
+
+            {/* Actual failures (errors) */}
             {result.hands_failed > 0 && (
               <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200 flex items-start space-x-3">
                 <AlertCircle className="text-yellow-500 flex-shrink-0" size={20} />
                 <div>
-                  <p className="text-sm font-medium text-yellow-800">Partial Success</p>
+                  <p className="text-sm font-medium text-yellow-800">Some hands had errors</p>
                   <p className="text-sm text-yellow-700 mt-1">
-                    {result.hands_failed} hands failed to parse and were skipped.
+                    {result.hands_failed} hands failed to parse due to errors.
                   </p>
                 </div>
               </div>

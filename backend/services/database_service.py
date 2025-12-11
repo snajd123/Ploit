@@ -194,12 +194,16 @@ class DatabaseService:
         Returns:
             Dictionary with:
             - hands_inserted: Number successfully inserted
-            - hands_failed: Number that failed
-            - error_details: List of error messages
+            - hands_skipped: Number of duplicates skipped (already exist)
+            - hands_failed: Number that failed with errors
+            - skipped_hand_ids: List of hand IDs that were skipped (duplicates)
+            - error_details: List of error messages for actual failures
         """
         result = {
             'hands_inserted': 0,
+            'hands_skipped': 0,
             'hands_failed': 0,
+            'skipped_hand_ids': [],
             'error_details': []
         }
 
@@ -208,16 +212,18 @@ class DatabaseService:
                 if self.insert_hand(hand):
                     result['hands_inserted'] += 1
                 else:
-                    result['hands_failed'] += 1
-                    result['error_details'].append(f"Hand {hand.hand_id} already exists")
+                    # Hand already exists - this is a skip, not a failure
+                    result['hands_skipped'] += 1
+                    result['skipped_hand_ids'].append(str(hand.hand_id))
 
             except Exception as e:
+                # Actual error - this is a failure
                 result['hands_failed'] += 1
                 error_msg = f"Hand {hand.hand_id} failed: {str(e)}"
                 result['error_details'].append(error_msg)
                 logger.error(error_msg)
 
-        logger.info(f"Batch insert complete: {result['hands_inserted']} inserted, {result['hands_failed']} failed")
+        logger.info(f"Batch insert complete: {result['hands_inserted']} inserted, {result['hands_skipped']} skipped (duplicates), {result['hands_failed']} failed")
         return result
 
     def _get_active_strategy_id(self, timestamp) -> Optional[int]:

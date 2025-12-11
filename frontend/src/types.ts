@@ -68,7 +68,9 @@ export interface DatabaseStats {
 export interface UploadResponse {
   session_id: number;
   hands_parsed: number;
-  hands_failed: number;
+  hands_skipped: number;  // Duplicates that already exist
+  hands_failed: number;   // Actual errors
+  skipped_hand_ids: string[];  // List of skipped hand IDs
   players_updated: number;
   stake_level?: string;
   processing_time: number;
