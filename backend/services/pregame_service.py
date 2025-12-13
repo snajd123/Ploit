@@ -285,14 +285,25 @@ def pre_gather_strategy_data(
 
     # 2. Calculate aggregate GTO baselines from database for ALL stats
     try:
-        # GTO VPIP/PFR: Average of all opening ranges
+        # GTO VPIP/PFR: Weighted average across all 6 positions
+        # Includes 'open' action (UTG/MP/CO/BTN) and 'raise' action (SB)
+        # BB = 0 for opening (only defends), so we divide by 6 positions
         open_result = db.execute(text("""
-            SELECT AVG(gto_aggregate_freq) as avg_open
-            FROM gto_scenarios WHERE action = 'open' AND gto_aggregate_freq IS NOT NULL
+            SELECT
+                COALESCE(SUM(CASE WHEN position = 'UTG' AND action = 'open' THEN gto_aggregate_freq END), 0) +
+                COALESCE(SUM(CASE WHEN position = 'MP' AND action = 'open' THEN gto_aggregate_freq END), 0) +
+                COALESCE(SUM(CASE WHEN position = 'CO' AND action = 'open' THEN gto_aggregate_freq END), 0) +
+                COALESCE(SUM(CASE WHEN position = 'BTN' AND action = 'open' THEN gto_aggregate_freq END), 0) +
+                COALESCE(SUM(CASE WHEN position = 'SB' AND action = 'raise' THEN gto_aggregate_freq END), 0)
+                AS total_open
+            FROM gto_scenarios
+            WHERE category = 'opening' AND gto_aggregate_freq IS NOT NULL
         """)).fetchone()
-        if open_result and open_result.avg_open:
-            data["gto_baselines"]["vpip"] = round(float(open_result.avg_open) * 100, 1)
-            data["gto_baselines"]["pfr"] = data["gto_baselines"]["vpip"]
+        if open_result and open_result.total_open:
+            # Divide by 6 positions (BB = 0 for opening)
+            weighted_pfr = float(open_result.total_open) / 6 * 100
+            data["gto_baselines"]["vpip"] = round(weighted_pfr, 1)
+            data["gto_baselines"]["pfr"] = round(weighted_pfr, 1)
 
         # GTO 3-bet: Average of all 3-bet scenarios (defense category)
         three_bet_result = db.execute(text("""
