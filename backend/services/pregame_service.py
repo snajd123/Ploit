@@ -302,12 +302,13 @@ def pre_gather_strategy_data(
         if three_bet_result and three_bet_result.avg_3bet:
             data["gto_baselines"]["three_bet"] = round(float(three_bet_result.avg_3bet) * 100, 1)
 
-        # GTO Fold to 3-bet: Average of fold actions when facing 3-bet
+        # GTO Fold to 3-bet: Calculate from actual gto_frequencies data
+        # NOTE: gto_aggregate_freq column has incorrect values, so we calculate from per-hand data
         fold_3bet_result = db.execute(text("""
-            SELECT AVG(gto_aggregate_freq) as avg_fold
-            FROM gto_scenarios
-            WHERE action = 'fold' AND category = 'facing_3bet'
-            AND gto_aggregate_freq IS NOT NULL
+            SELECT AVG(gf.frequency) as avg_fold
+            FROM gto_scenarios gs
+            JOIN gto_frequencies gf ON gs.scenario_id = gf.scenario_id
+            WHERE gs.action = 'fold' AND gs.category = 'facing_3bet'
         """)).fetchone()
         if fold_3bet_result and fold_3bet_result.avg_fold:
             data["gto_baselines"]["fold_to_3bet"] = round(float(fold_3bet_result.avg_fold) * 100, 1)
